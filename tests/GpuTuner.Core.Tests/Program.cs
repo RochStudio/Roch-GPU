@@ -106,6 +106,45 @@ using (var svc = new TuningService(new MockBackend()))
     Check("reset", svc.Backend.ReadTuningState(0).CoreOffsetMhz == 0);
 }
 
+// ---- BackgroundMode: what the poll costs when nothing is on screen
+using (var counting = new CountingBackend())
+using (var svc = new TuningService(counting))
+{
+    svc.Initialize();
+
+    // Foreground: full sample, published and stored.
+    svc.StartPolling(20);
+    Thread.Sleep(200);
+    svc.StopPolling();
+    Check("foreground reads full telemetry", counting.FullReads > 0);
+    Check("foreground fills history", svc.History.Snapshot().Length > 0);
+    Check("foreground sets Latest", svc.Latest != null);
+
+    // Background with no fan curve: nothing to drive, so the driver is not touched at all.
+    counting.Reset();
+    svc.BackgroundMode = true;
+    svc.StartPolling(20);
+    Thread.Sleep(200);
+    svc.StopPolling();
+    Check("background idle: no full reads", counting.FullReads == 0);
+    Check("background idle: no temperature reads either", counting.TempReads == 0);
+
+    // Background with a fan curve: temperature only, and the curve still gets stepped.
+    counting.Reset();
+    int historyBefore = svc.History.Snapshot().Length;
+    var bgProfile = new TuningProfile { FanMode = FanMode.Curve };
+    bgProfile.FanCurve.Points = new() { new(0, 44), new(120, 44) };   // flat → always 44 %
+    svc.Apply(bgProfile);
+    counting.Reset();                       // Apply itself reads state; only count the polls
+    svc.StartPolling(20);
+    Thread.Sleep(200);
+    svc.StopPolling();
+    Check("background curve: no full reads", counting.FullReads == 0);
+    Check("background curve: temperature read instead", counting.TempReads > 0);
+    Check("background curve still drives the fan", counting.LastFanPercent == 44);
+    Check("background does not grow history", svc.History.Snapshot().Length == historyBefore);
+}
+
 // ---- V/F curve undervolt maths (the part that can't be tested on hardware here)
 {
     // A toy stock curve: 700 mV→1500 MHz rising to 1100 mV→2700 MHz, 100 MHz per 50 mV.
@@ -365,4 +404,39 @@ sealed class OffsetStyleBackend : GpuTuner.Core.Backends.IGpuBackend
     public void SetFanAuto(int i) { Calls.Add("SetFanAuto"); }
     public void ResetToDefaults(int i) { Calls.Add("ResetToDefaults"); }
     public void Dispose() { }
+}
+
+/// <summary>
+/// Wraps the mock and counts which telemetry path the poll loop took, so BackgroundMode can be
+/// tested for what it actually costs rather than just what it returns.
+/// </summary>
+sealed class CountingBackend : GpuTuner.Core.Backends.IGpuBackend
+{
+    private readonly MockBackend _inner = new();
+
+    public int FullReads;
+    public int TempReads;
+    public int LastFanPercent = -1;
+
+    public void Reset() { FullReads = 0; TempReads = 0; }
+
+    public GpuTelemetry ReadTelemetry(int i) { FullReads++; return _inner.ReadTelemetry(i); }
+    public GpuTelemetry ReadTemperatureOnly(int i) { TempReads++; return new GpuTelemetry { TemperatureC = 55 }; }
+
+    public string BackendName => "Counting";
+    public void Initialize() => _inner.Initialize();
+    public IReadOnlyList<GpuDevice> Devices => _inner.Devices;
+    public GpuCapabilities GetCapabilities(int i) => _inner.GetCapabilities(i);
+    public GpuTuningState ReadTuningState(int i) => _inner.ReadTuningState(i);
+
+    public void SetCoreOffset(int i, int mhz) => _inner.SetCoreOffset(i, mhz);
+    public void SetMemoryOffset(int i, int mhz) => _inner.SetMemoryOffset(i, mhz);
+    public void SetPowerLimit(int i, int pct) => _inner.SetPowerLimit(i, pct);
+    public void SetTempLimit(int i, int c) => _inner.SetTempLimit(i, c);
+    public void SetVoltageBoost(int i, int pct) => _inner.SetVoltageBoost(i, pct);
+    public void SetVoltageCurveOffset(int i, int mv, int extra = 0) => _inner.SetVoltageCurveOffset(i, mv, extra);
+    public void SetFanSpeed(int i, int fan, int pct) { LastFanPercent = pct; _inner.SetFanSpeed(i, fan, pct); }
+    public void SetFanAuto(int i) => _inner.SetFanAuto(i);
+    public void ResetToDefaults(int i) => _inner.ResetToDefaults(i);
+    public void Dispose() => _inner.Dispose();
 }

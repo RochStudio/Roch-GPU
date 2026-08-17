@@ -157,7 +157,7 @@ public partial class MainWindow : Window
                 Left = Left + Width + 8,
                 Top = Top
             };
-            _monitorWindow.Closed += (_, _) => _monitorWindow = null;
+            _monitorWindow.Closed += (_, _) => { _monitorWindow = null; UpdatePollDetail(); };
             _monitorWindow.Show();
         }
         else
@@ -165,15 +165,20 @@ public partial class MainWindow : Window
             _monitorWindow?.Close();      // the Closed handler clears the field
             _monitorWindow = null;
         }
+        UpdatePollDetail();
     }
 
     private void Tray_Click(object sender, RoutedEventArgs e) => MinimizeToTray();
+
+    private bool _inTray;
 
     public void MinimizeToTray()
     {
         if (_tray == null) { WindowState = WindowState.Minimized; return; }
         Hide();
         ShowInTaskbar = false;
+        _inTray = true;
+        UpdatePollDetail();
     }
 
     private void RestoreFromTray()
@@ -182,7 +187,16 @@ public partial class MainWindow : Window
         ShowInTaskbar = true;
         WindowState = WindowState.Normal;
         Activate();
+        _inTray = false;
+        UpdatePollDetail();
     }
+
+    /// <summary>
+    /// Drop the poll to its cheap path whenever nothing of ours is on screen. A full sample is ~13 ms
+    /// of synchronous driver calls; sitting in the tray during a game is precisely when that is worth
+    /// not paying. The monitor window counts as on-screen even if the main window is hidden.
+    /// </summary>
+    private void UpdatePollDetail() => _svc.BackgroundMode = _inTray && _monitorWindow == null;
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {

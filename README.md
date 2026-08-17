@@ -190,6 +190,32 @@ terminal. `info`, `monitor`, `list-profiles` and anything with `--mock` do not.
 
 ---
 
+## What it costs while you game
+
+A monitor that polls the driver every second is competing with your game for the same driver, so the
+tool stops doing it when there is nothing to look at. Minimise to the tray and the poll drops to the
+least work that still keeps a fan curve running — and to no driver call at all if no curve is active.
+
+Measured on an RTX 4070 Ti, driver 591.86, 1000 ms interval:
+
+| State | CPU per 30 s | Per poll |
+|---|---|---|
+| Window or monitor open | 344 ms | 12.97 ms, 198 KB |
+| Tray, fan curve running | — | 0.02 ms, 3.7 KB |
+| Tray, no fan curve | 0 ms | no driver call |
+
+The full sample costs what it does because of one call: NVAPI's power-topology query is 8.8 ms of it
+on its own, and `PerformanceControl.CurrentActiveLimit` accounts for 117 KB of the 198 KB. Neither is
+worth paying for a window nobody is looking at, so the background path reads the thermal sensor and
+nothing else — 0.02 ms, about 580× cheaper.
+
+A background sample is stepped into the fan curve and dropped: it is never stored or graphed, because
+only its temperature field is valid. The graphs therefore show a gap for the time you were in the
+tray rather than a run of zeroes.
+
+If you want telemetry *while* playing, keep the monitor window open — that is the 12.97 ms row, by
+choice. Raising **Poll interval** in settings scales the whole thing down proportionally.
+
 ## How it works
 
 `IGpuBackend` is the vendor-neutral seam. `BackendFactory` picks a backend by *trying to initialise

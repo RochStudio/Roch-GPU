@@ -354,6 +354,14 @@ public sealed class TuningService : IDisposable
 
     // ------------------------------------------------------------------ polling
 
+    /// <summary>
+    /// Set while no window of ours is on screen (minimised to tray, monitor closed). The poll then
+    /// does the least work that still keeps a fan curve running, and no driver call at all when no
+    /// curve is active — a full sample is ~13 ms of synchronous NVAPI work, which is not something to
+    /// be doing every second behind a full-screen game. Read on the poll thread, set from the UI.
+    /// </summary>
+    public volatile bool BackgroundMode;
+
     public void StartPolling(int intervalMs = 1000)
     {
         StopPolling();
@@ -365,13 +373,8 @@ public sealed class TuningService : IDisposable
             {
                 try
                 {
-                    GpuTelemetry t;
-                    lock (_lock) { t = Backend.ReadTelemetry(GpuIndex); }
-                    Latest = t;
-                    NoteVoltageObservation(t.VoltageMv);
-                    History.Add(t);
-                    RunFanCurve(t);
-                    TelemetryUpdated?.Invoke(t);
+                    if (BackgroundMode) PollBackground();
+                    else PollForeground();
                 }
                 catch (Exception e)
                 {
@@ -380,6 +383,35 @@ public sealed class TuningService : IDisposable
                 try { await Task.Delay(intervalMs, ct); } catch (TaskCanceledException) { }
             }
         }, ct);
+    }
+
+    private void PollForeground()
+    {
+        GpuTelemetry t;
+        lock (_lock) { t = Backend.ReadTelemetry(GpuIndex); }
+        Latest = t;
+        NoteVoltageObservation(t.VoltageMv);
+        History.Add(t);
+        RunFanCurve(t);
+        TelemetryUpdated?.Invoke(t);
+    }
+
+    /// <summary>
+    /// Nothing is on screen, so a sample is only worth taking if a fan curve needs one — and then
+    /// only the temperature. The reading is stepped into the curve and dropped: it is deliberately
+    /// not stored in <see cref="Latest"/> or <see cref="History"/> and not published, because it has
+    /// one valid field and would otherwise show up in the graphs as a run of zeroes. The graphs keep
+    /// a gap for the time you were gaming, which is the truth.
+    /// </summary>
+    private void PollBackground()
+    {
+        bool curveActive;
+        lock (_lock) { curveActive = _activeCurve != null; }
+        if (!curveActive) return;
+
+        GpuTelemetry t;
+        lock (_lock) { t = Backend.ReadTemperatureOnly(GpuIndex); }
+        RunFanCurve(t);
     }
 
     public void StopPolling()

@@ -17,6 +17,19 @@ public interface IGpuBackend : IDisposable
 
     GpuCapabilities GetCapabilities(int gpuIndex);
     GpuTelemetry ReadTelemetry(int gpuIndex);
+
+    /// <summary>
+    /// Temperature-only read, for ticks where nothing is on screen and the sample exists purely to
+    /// step a fan curve. A full <see cref="ReadTelemetry"/> costs ~13 ms of synchronous driver calls
+    /// on NVIDIA, most of it in the power-topology query; running that every second behind a game is
+    /// exactly what this avoids. Only <see cref="GpuTelemetry.TemperatureC"/> is guaranteed to be
+    /// populated — never store the result or show it.
+    ///
+    /// The default falls back to the full read, which is correct but not cheap; a backend overrides
+    /// it when it has a cheaper path to temperature.
+    /// </summary>
+    GpuTelemetry ReadTemperatureOnly(int gpuIndex) => ReadTelemetry(gpuIndex);
+
     GpuTuningState ReadTuningState(int gpuIndex);
 
     void SetCoreOffset(int gpuIndex, int offsetMhz);
