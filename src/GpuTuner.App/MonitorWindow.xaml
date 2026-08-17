@@ -1,0 +1,95 @@
+<Window x:Class="GpuTuner.App.MonitorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:GpuTuner.App.Controls"
+        xmlns:conv="clr-namespace:GpuTuner.App.Converters"
+        Title="Roch GPU OC — Hardware Monitor" Height="730" Width="560" MinWidth="380" MinHeight="360"
+        WindowStartupLocation="Manual"
+        Style="{StaticResource {x:Type Window}}">
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+    <DockPanel Margin="8">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Style="{StaticResource Panel}" Padding="12,10">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="HARDWARE MONITOR" Style="{StaticResource SectionTitle}"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="GraphStack" Margin="0,0,10,0">
+
+                        <!-- Each row: title + live value on top, graph under. -->
+                        <Grid Margin="0,0,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock x:Name="TCore" Text="Core clock, MHz" Style="{StaticResource GraphTitle}"/>
+                            <TextBlock x:Name="VCore" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource CoreBrush}"/>
+                        </Grid>
+                        <c:LineGraph x:Name="GCore" Height="72" Stroke="{StaticResource CoreBrush}" AutoScale="True" MinSpan="400"/>
+
+                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Core voltage, mV" Style="{StaticResource GraphTitle}"/>
+                            <TextBlock x:Name="VVolt" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource VoltBrush}"/>
+                        </Grid>
+                        <c:LineGraph x:Name="GVolt" Height="72" Stroke="{StaticResource VoltBrush}" AutoScale="True" MinSpan="150"/>
+
+                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock x:Name="TPower" Text="Power, % TDP" Style="{StaticResource GraphTitle}"/>
+                            <TextBlock x:Name="VPower" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource PowerBrush}"/>
+                        </Grid>
+                        <c:LineGraph x:Name="GPower" Height="72" Stroke="{StaticResource PowerBrush}" Minimum="0" Maximum="120" Unit="%"/>
+                        <!-- Vendors that report watts instead of % TDP retitle this graph and switch it
+                             to auto-scale at runtime; see MainWindow.OnTelemetry. -->
+
+                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock x:Name="TTemp" Text="GPU temperature, °C" Style="{StaticResource GraphTitle}"/>
+                            <TextBlock x:Name="VTemp" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource TempBrush}"/>
+                        </Grid>
+                        <c:LineGraph x:Name="GTemp" Height="72" Stroke="{StaticResource TempBrush}" Minimum="20" Maximum="100" Unit="°"/>
+
+                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="GPU usage, %" Style="{StaticResource GraphTitle}"/>
+                            <TextBlock x:Name="VLoad" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource LoadBrush}"/>
+                        </Grid>
+                        <c:LineGraph x:Name="GLoad" Height="72" Stroke="{StaticResource LoadBrush}" Minimum="0" Maximum="100" Unit="%"/>
+
+                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Memory clock, MHz" Style="{StaticResource GraphTitle}"/>
+                            <TextBlock x:Name="VMem" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource MemBrush}"/>
+                        </Grid>
+                        <c:LineGraph x:Name="GMem" Height="72" Stroke="{StaticResource MemBrush}" AutoScale="True" MinSpan="600"/>
+
+                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock x:Name="TFan" Text="Fan speed, %" Style="{StaticResource GraphTitle}"/>
+                            <TextBlock x:Name="VFan" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource FanBrush}"/>
+                        </Grid>
+                        <c:LineGraph x:Name="GFan" Height="72" Stroke="{StaticResource FanBrush}" Minimum="0" Maximum="100" Unit="%"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <!-- Fan curve editor: only when the fan mode is Curve -->
+        <Border Grid.Row="1" Style="{StaticResource Panel}" Padding="12,10" Margin="0,10,0,0" Height="230"
+                Visibility="{Binding IsCurveFan, Converter={StaticResource BoolToVis}}">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="FAN CURVE" Style="{StaticResource SectionTitle}" Margin="0"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <TextBlock Text="Hysteresis" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBox x:Name="HystBox" Width="36" Text="3" TextChanged="CurveParam_Changed"/>
+                        <TextBlock Text="°C   Min step" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="6,0,6,0"/>
+                        <TextBox x:Name="StepBox" Width="36" Text="2" TextChanged="CurveParam_Changed"/>
+                        <TextBlock Text="%" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="4,0,12,0"/>
+                        <Button Content="Default curve" Click="DefaultCurve_Click" Padding="8,3"/>
+                    </StackPanel>
+                </Grid>
+                <c:FanCurveEditor x:Name="CurveEditor"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+    </DockPanel>
+</Window>

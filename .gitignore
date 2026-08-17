@@ -1,0 +1,18 @@
+# build output
+bin/
+obj/
+dist/
+
+# IDE / editor
+.vs/
+.idea/
+*.user
+*.suo
+*.swp
+
+# local runtime artefacts
+*.log
+whats-amd*.txt
+rochoc-diag.txt
+gputuner-diag.txt
+gputuner-info.txt

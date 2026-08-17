@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Product>Roch GPU OC</Product>
+    <Version>0.9.0</Version>
+    <InformationalVersion>0.9.0-beta</InformationalVersion>
+    <Copyright>Copyright (c) 2026</Copyright>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>rochoc</AssemblyName>
+    <RootNamespace>GpuTuner.Cli</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GpuTuner.Core\GpuTuner.Core.csproj" />
+  </ItemGroup>
+</Project>

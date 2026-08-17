@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Product>Roch GPU OC</Product>
+    <Version>0.9.0</Version>
+    <InformationalVersion>0.9.0-beta</InformationalVersion>
+    <Copyright>Copyright (c) 2026</Copyright>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>GpuTuner.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\third_party\NvAPIWrapper\NvAPIWrapper.csproj" />
+  </ItemGroup>
+</Project>

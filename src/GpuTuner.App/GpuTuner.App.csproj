@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Product>Roch GPU OC</Product>
+    <Version>0.9.0</Version>
+    <InformationalVersion>0.9.0-beta</InformationalVersion>
+    <Copyright>Copyright (c) 2026</Copyright>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms> <!-- only for the tray NotifyIcon -->
+    <Nullable>enable</Nullable>
+    <!-- Disabled on purpose: with UseWindowsForms=true the SDK would inject global usings for
+         System.Windows.Forms and System.Drawing, making Application/MessageBox/Point/Color/Brushes/
+         MouseEventArgs/Cursors ambiguous with the WPF types. Every file lists its usings explicitly. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>RochGpuOC</AssemblyName>
+    <RootNamespace>GpuTuner.App</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon></ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- lets `dotnet build` work on non-Windows CI boxes (needs the WindowsDesktop ref pack from NuGet) -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GpuTuner.Core\GpuTuner.Core.csproj" />
+  </ItemGroup>
+</Project>

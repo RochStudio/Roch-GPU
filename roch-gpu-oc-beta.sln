@@ -1,0 +1,59 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "third_party", "third_party", "{F528C486-6444-45FB-8A5A-F4404185736A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NvAPIWrapper", "third_party\NvAPIWrapper\NvAPIWrapper.csproj", "{14B14D2E-A7EB-4701-96F0-D2FD3DAD00DF}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{B6A00247-431E-4BF5-AA69-DDEDD29D18B7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GpuTuner.Core", "src\GpuTuner.Core\GpuTuner.Core.csproj", "{7F5892D6-E3BF-4EB2-8D96-5DEBDDEB5C39}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GpuTuner.Cli", "src\GpuTuner.Cli\GpuTuner.Cli.csproj", "{07439466-F13A-4C70-9D70-766309077062}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{C97EA519-E9CD-42C1-8B42-ED9D14CA8191}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GpuTuner.Core.Tests", "tests\GpuTuner.Core.Tests\GpuTuner.Core.Tests.csproj", "{6E37A2D8-C8F5-4FE8-9C99-302CECF51B46}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GpuTuner.App", "src\GpuTuner.App\GpuTuner.App.csproj", "{A1B2C3D4-0000-4000-8000-00000000A991}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1B2C3D4-0000-4000-8000-00000000A991}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-0000-4000-8000-00000000A991}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-0000-4000-8000-00000000A991}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-0000-4000-8000-00000000A991}.Release|Any CPU.Build.0 = Release|Any CPU
+		{14B14D2E-A7EB-4701-96F0-D2FD3DAD00DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{14B14D2E-A7EB-4701-96F0-D2FD3DAD00DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{14B14D2E-A7EB-4701-96F0-D2FD3DAD00DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{14B14D2E-A7EB-4701-96F0-D2FD3DAD00DF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7F5892D6-E3BF-4EB2-8D96-5DEBDDEB5C39}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7F5892D6-E3BF-4EB2-8D96-5DEBDDEB5C39}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7F5892D6-E3BF-4EB2-8D96-5DEBDDEB5C39}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7F5892D6-E3BF-4EB2-8D96-5DEBDDEB5C39}.Release|Any CPU.Build.0 = Release|Any CPU
+		{07439466-F13A-4C70-9D70-766309077062}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{07439466-F13A-4C70-9D70-766309077062}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{07439466-F13A-4C70-9D70-766309077062}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{07439466-F13A-4C70-9D70-766309077062}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E37A2D8-C8F5-4FE8-9C99-302CECF51B46}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6E37A2D8-C8F5-4FE8-9C99-302CECF51B46}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6E37A2D8-C8F5-4FE8-9C99-302CECF51B46}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6E37A2D8-C8F5-4FE8-9C99-302CECF51B46}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{A1B2C3D4-0000-4000-8000-00000000A991} = {B6A00247-431E-4BF5-AA69-DDEDD29D18B7}
+		{14B14D2E-A7EB-4701-96F0-D2FD3DAD00DF} = {F528C486-6444-45FB-8A5A-F4404185736A}
+		{7F5892D6-E3BF-4EB2-8D96-5DEBDDEB5C39} = {B6A00247-431E-4BF5-AA69-DDEDD29D18B7}
+		{07439466-F13A-4C70-9D70-766309077062} = {B6A00247-431E-4BF5-AA69-DDEDD29D18B7}
+		{6E37A2D8-C8F5-4FE8-9C99-302CECF51B46} = {C97EA519-E9CD-42C1-8B42-ED9D14CA8191}
+	EndGlobalSection
+EndGlobal
