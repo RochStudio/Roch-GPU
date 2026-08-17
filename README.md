@@ -1,5 +1,7 @@
 # Roch GPU OC — beta
 
+[![CI](https://github.com/RochStudio/roch-gpu-oc-beta/actions/workflows/ci.yml/badge.svg)](https://github.com/RochStudio/roch-gpu-oc-beta/actions/workflows/ci.yml)
+
 An Afterburner-style GPU tuning tool for Windows that drives **both NVIDIA and AMD** cards from one
 binary. Core clock, memory clock, voltage, power limit, fan control, live monitoring, and five
 Afterburner-style profile slots.
@@ -21,9 +23,10 @@ rather than showing everything greyed out.
 
 | Control | NVIDIA | AMD (RDNA+) |
 |---|---|---|
-| Core clock | offset, MHz | offset, MHz |
-| Core voltage | absolute target, mV (V/F curve cap or boost) | offset, mV (undervolt) |
-| Memory clock | offset, MHz | absolute clock, MHz |
+| Core clock | offset, MHz, in 15 MHz steps | offset, MHz |
+| Core voltage (%) | over-voltage, raises the ceiling | — |
+| Voltage cap (mV) | absolute lock, holds the core at or below it | offset, mV (undervolt) |
+| Memory clock | offset, MHz, in 25 MHz steps | absolute clock, MHz |
 | Power limit | % of TDP | % offset |
 | Temperature limit | ✓ | driver-owned, hidden |
 | Fan | fixed %, or a software curve | fixed %, or a 5-point hardware curve |
@@ -31,9 +34,32 @@ rather than showing everything greyed out.
 | Memory timing | — | ✓ (fast timing) |
 | V/F curve editor | ✓ | no editable curve on RDNA 4 |
 
+Voltage is two independent levers on NVIDIA, as in Afterburner: **Core Voltage (%)** raises how far
+the core may be driven above the top of the V/F table, and **Voltage Cap (mV)** holds it at or below
+a chosen voltage. A card can carry both — headroom for boost, a cap to hold it under load. Set the
+cap at or above the ceiling and it caps nothing.
+
+The clock offsets snap to the driver's own granularity, so the number on the slider is the number
+that reaches the card rather than one that gets quietly rounded on the way. That also means the top
+of the core range is +990 rather than +1000, which is the nearest step below the driver's limit.
+
 Plus, on both: a hardware monitor in its own window (core/memory clock, voltage, power, edge and
 hot-spot and memory temperatures, load, fan % and RPM, with a session peak for core clock), five
 profile slots, apply-at-logon via Task Scheduler, tray operation, and a CLI.
+
+### The V/F curve editor
+
+Reads the card's real table — 103 points spanning 450–1090 mV on a 4070 Ti — and plots what the card
+will actually do rather than what is stored:
+
+- **Drag a point**, or click one and use **↑/↓** to nudge it by one 5 MHz driver step (Shift for 25,
+  Ctrl also flattens everything above it, ←/→ walk the selection along the curve).
+- **Past an active voltage cap the points lie flat**, because the card cannot reach those voltages —
+  they are drawn where the card will run, and are not editable while the cap holds them.
+- **Past the last point the curve continues dashed** out to the boost ceiling. The table is fixed in
+  hardware and a boost adds no points to it, so that stretch is extrapolation, not data.
+- Ctrl+drag flattens from a point rightwards; double-click returns one point to stock; right-click
+  returns all of them.
 
 ---
 
@@ -128,10 +154,15 @@ The solution contains five projects:
 dotnet run --project tests/GpuTuner.Core.Tests -c Release
 ```
 
-Expected output is `112 passed, 0 failed`, exit code 0. The runner is dependency-free — no xunit, no
+Expected output is `164 passed, 0 failed`, exit code 0. The runner is dependency-free — no xunit, no
 NuGet restore beyond the SDK — so it builds offline and runs anywhere. It covers the V/F curve
-maths, the voltage planner, profile clamping, the fan-curve controller and apply ordering against a
-mock backend, so most of the engine can be changed without a GPU in front of you.
+maths, the voltage levers, clock-step snapping, profile clamping, the fan-curve controller, the
+background-poll paths and apply ordering against a mock backend, so most of the engine can be
+changed without a GPU in front of you.
+
+CI runs exactly this on every push. The Linux job builds the solution and runs the suite — neither
+touches a driver — and the Windows job runs `build.ps1`, checks both executables landed, and
+smoke-tests `rochoc info --mock` on a runner with no GPU at all.
 
 ### Developing without a GPU
 
@@ -222,7 +253,8 @@ monitor session is the GC holding on to segments it has not returned to the OS y
 A full sample costs what it does because of one call: NVAPI's power-topology query is 8.8 ms of it on
 its own, and `PerformanceControl.CurrentActiveLimit` accounts for 117 KB of the 198 KB. A fan curve
 needs neither — only the temperature — so with the monitor closed it reads the thermal sensor and
-nothing else, about 580× cheaper.
+nothing else, about 580× cheaper. Those figures are **NVIDIA**: the cheap path is a backend override,
+and a backend without one falls back to the full read (see [Known limitations](#known-limitations)).
 
 That background sample is stepped into the curve and dropped: never stored, never graphed, because
 only its temperature field is valid. The graphs therefore show a gap for the time the monitor was
@@ -285,8 +317,9 @@ setup.ps1                  as above, plus SDK install and launch (driven by SETU
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
 src/GpuTuner.App           WPF GUI (RochGpuOC.exe)
 src/GpuTuner.Cli           rochoc.exe, same engine headless
-tests/GpuTuner.Core.Tests  dependency-free test runner (112 checks, no hardware needed)
+tests/GpuTuner.Core.Tests  dependency-free test runner (164 checks, no hardware needed)
 tools/amd                  read-only PowerShell probes used to map the AMD driver surface
+.github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
 ```
 
@@ -301,6 +334,12 @@ GUI alone into `gui-build.log`, and `DIAG.bat` self-elevates and dumps `rochoc-d
 
 - The AMD core-clock offset is a **ceiling**, not a shift. If the card is power-limited it will
   change nothing — check the limiter line under the GPU name before concluding it's broken.
+- The cheap background poll is **NVIDIA-only**. `ReadTemperatureOnly` falls back to a full telemetry
+  read on any backend that does not override it, so on AMD a running fan curve with the monitor
+  closed still costs a full sample per tick. Measured on NVIDIA only; the AMD figure is unknown.
+- The 15/25 MHz clock snapping applies to **offsets**. A card reporting an absolute memory clock
+  (AMD) is left unsnapped, because its stock clock is not on any such grid and rounding it would
+  overclock the card just from reading its state. That path has had no hardware to test against.
 - RDNA 4 exposes no editable V/F curve and no temperature limit; both are hidden rather than faked.
 - Multi-GPU is implemented but untested — GPU 0 is used unless `--gpu` says otherwise.
 - The V/F curve editor is NVIDIA-only.
