@@ -22,6 +22,11 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- lets `dotnet build` work on non-Windows CI boxes (needs the WindowsDesktop ref pack from NuGet) -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Deliberately no GC tuning here. ConcurrentGarbageCollection=false, ServerGarbageCollection
+         =false and EventSourceSupport=false were all measured on a fresh start and moved the idle
+         footprint by under 2 MB, inside run-to-run noise: the ~60 MB is WPF, not the GC. Don't add
+         them back without a measurement showing otherwise. -->
+
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\GpuTuner.Core\GpuTuner.Core.csproj" />

@@ -206,6 +206,19 @@ Measured on an RTX 4070 Ti, driver 591.86, 1000 ms interval:
 | Monitor closed, fan curve running | — | 0.02 ms, 3.7 KB |
 | Monitor closed, no fan curve | **0 ms** | no driver call |
 
+The 0 ms is three consecutive 30-second samples of a settled process, not a rounding of something
+small. Memory sits still with it:
+
+| | Working set | Private |
+|---|---|---|
+| Idle, monitor closed | 118 MB | 60 MB |
+| After a monitor session | ~158 MB | ~85 MB, drifting back down |
+| `rochoc` CLI, same engine | 38 MB | 14 MB |
+
+The engine is the 14 MB; the rest is WPF, and it does not grow — a three-minute soak with the monitor
+open and the graphs live ended 4 MB *lower* than it started, with handle count flat. The rise after a
+monitor session is the GC holding on to segments it has not returned to the OS yet, not a leak.
+
 A full sample costs what it does because of one call: NVAPI's power-topology query is 8.8 ms of it on
 its own, and `PerformanceControl.CurrentActiveLimit` accounts for 117 KB of the 198 KB. A fan curve
 needs neither — only the temperature — so with the monitor closed it reads the thermal sensor and
