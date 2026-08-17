@@ -292,6 +292,46 @@ using (var svc = new TuningService(counting))
     capped.Apply(new TuningProfile { TargetVoltageMv = curveTop, PowerLimitPercent = 100, TempLimitC = 83 });
     Check("back to stock clears the lock", capped.Backend.ReadVoltageLockMv(0) == 0);
 
+    // ---- boost and cap are independent levers (Afterburner's split), not one derived from the other
+    {
+        // Boost alone: percentage goes straight through, nothing is capped.
+        var b = NewSvc();
+        b.Apply(new TuningProfile { VoltageBoostPercent = 50, PowerLimitPercent = 100, TempLimitC = 83 });
+        Check("boost alone sets the percentage", b.Backend.ReadTuningState(0).VoltageBoostPercent == 50);
+        Check("boost alone leaves no cap", b.Backend.ReadVoltageLockMv(0) == 0);
+
+        // Cap alone: lock goes in, boost stays at stock.
+        var c = NewSvc();
+        c.Apply(new TuningProfile { TargetVoltageMv = 900, PowerLimitPercent = 100, TempLimitC = 83 });
+        Check("cap alone locks at 900", c.Backend.ReadVoltageLockMv(0) == 900);
+        Check("cap alone does not boost", c.Backend.ReadTuningState(0).VoltageBoostPercent == 0);
+
+        // Both at once: a card can carry headroom and still be held under load. Neither is inferred
+        // from the other, so both must survive the same Apply.
+        var both = NewSvc();
+        both.Apply(new TuningProfile { VoltageBoostPercent = 40, TargetVoltageMv = 950, PowerLimitPercent = 100, TempLimitC = 83 });
+        Check("both: boost kept", both.Backend.ReadTuningState(0).VoltageBoostPercent == 40);
+        Check("both: cap kept", both.Backend.ReadVoltageLockMv(0) == 950);
+
+        // An explicit boost is never overwritten by the legacy inference, even with a high target.
+        var expl = NewSvc();
+        expl.Apply(new TuningProfile { VoltageBoostPercent = 25, TargetVoltageMv = maxMv, PowerLimitPercent = 100, TempLimitC = 83 });
+        Check("explicit boost wins over a high target", expl.Backend.ReadTuningState(0).VoltageBoostPercent == 25);
+
+        // Legacy profile: boost was encoded in a target above the ceiling, and must still apply.
+        var legacy = NewSvc();
+        legacy.Apply(new TuningProfile { TargetVoltageMv = maxMv, PowerLimitPercent = 100, TempLimitC = 83 });
+        Check("legacy target above ceiling still boosts", legacy.Backend.ReadTuningState(0).VoltageBoostPercent == 100);
+        Check("legacy boost sets no cap", legacy.Backend.ReadVoltageLockMv(0) == 0);
+
+        // Reading back: a pure boost must not come back looking like a cap above the ceiling.
+        var read = NewSvc();
+        read.Apply(new TuningProfile { VoltageBoostPercent = 60, PowerLimitPercent = 100, TempLimitC = 83 });
+        var readBack = read.ReadCurrentAsProfile();
+        Check("read back: boost preserved", readBack.VoltageBoostPercent == 60);
+        Check("read back: no phantom cap", readBack.TargetVoltageMv == 0);
+    }
+
     // An unreadable V/F curve must not silently disable both levers.
     Check("unknown curve falls back to the slider top",
           VoltagePlan.Compute(950, maxMv, maxMv) == (0, 950 - maxMv));

@@ -53,6 +53,10 @@ public partial class MainWindow : Window
         // Called on the polling thread. The graphs live in MonitorWindow, which subscribes itself.
         Dispatcher.BeginInvoke(() =>
         {
+            // A sample can already be queued when polling pauses — the first poll fires before the
+            // constructor has finished wiring this up. Dropping it here keeps a stale reading off
+            // the limiter line, which is the one thing on this window fed by telemetry.
+            if (_svc.BackgroundMode) return;
             _vm.Telemetry = t;
             if (_tray != null) _tray.Text = $"Roch GPU OC — {t.TemperatureC:0}°C, {t.CoreClockMhz:0} MHz, fan {t.FanPercent:0}%";
         });

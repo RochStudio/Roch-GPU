@@ -157,20 +157,35 @@ public sealed class TuningService : IDisposable
                 boostPct = 0;
                 Log?.Invoke($"Voltage offset: {curveOffsetMv:+#;-#;0} mV");
             }
-            else if (p.TargetVoltageMv > 0)
+            else
             {
+                // Two independent levers, the way Afterburner exposes them:
+                //   VoltageBoostPercent raises the ceiling above the top of the V/F table
+                //   TargetVoltageMv caps the core at or below a chosen absolute voltage
+                // They pull in opposite directions, but a card can legitimately carry both — a boost
+                // for headroom with a cap holding it under load — so neither is derived from the other.
+                //
                 // A ceiling of 0 means the curve read failed. Falling through with it would make every
                 // target look like "at or above stock" and write nothing, so treat the top of the
                 // slider's range as the ceiling instead and let the cap through.
                 int ceiling = StockCeilingMv > 0 ? StockCeilingMv : Capabilities.MaxVoltageMv;
-                (boostPct, curveOffsetMv) = VoltagePlan.Compute(p.TargetVoltageMv, ceiling, Capabilities.MaxVoltageMv);
+
+                // Profiles written before the boost had its own control encoded it in the target
+                // voltage, so a target above the ceiling meant "boost this far". Honour that when the
+                // profile carries no boost of its own, or loading an old profile silently drops it.
+                boostPct = p.VoltageBoostPercent;
+                if (boostPct == 0 && p.TargetVoltageMv > ceiling)
+                {
+                    (boostPct, _) = VoltagePlan.Compute(p.TargetVoltageMv, ceiling, Capabilities.MaxVoltageMv);
+                    if (boostPct > 0) Log?.Invoke($"Legacy profile: target {p.TargetVoltageMv} mV above ceiling → boost {boostPct}%");
+                }
+
                 // Below the ceiling the cap is enforced by the absolute lock, not by an offset that
                 // would be measured from whichever "stock" figure we happened to pick.
-                lockMv = p.TargetVoltageMv < ceiling ? p.TargetVoltageMv : 0;
+                lockMv = p.TargetVoltageMv > 0 && p.TargetVoltageMv < ceiling ? p.TargetVoltageMv : 0;
                 curveOffsetMv = 0;
-                Log?.Invoke($"Voltage plan: target {p.TargetVoltageMv} mV vs stock ceiling {ceiling} mV " +
-                            $"(curve top {Capabilities.StockMaxVoltageMv}, seen {ObservedMaxVoltageMv}) " +
-                            $"→ lock {lockMv} mV, boost {boostPct}%");
+                Log?.Invoke($"Voltage: boost {boostPct}%, cap {lockMv} mV vs stock ceiling {ceiling} mV " +
+                            $"(curve top {Capabilities.StockMaxVoltageMv}, seen {ObservedMaxVoltageMv})");
             }
 
             if (Capabilities.CanSetVoltageBoost) Try("Voltage boost", () => Backend.SetVoltageBoost(GpuIndex, boostPct));
@@ -345,8 +360,14 @@ public sealed class TuningService : IDisposable
             VoltageOffsetMv = s.VoltageOffsetMv,
             ZeroRpm = s.ZeroRpm,
             MemoryTimingLevel = s.MemoryTimingLevel,
-            TargetVoltageMv = VoltagePlan.ToTargetMv(s.VoltageBoostPercent, s.VoltageOffsetMv,
-                                                     Capabilities.StockMaxVoltageMv, Capabilities.MaxVoltageMv),
+            // The cap is whatever lock is actually on the card, not something inferred from the boost:
+            // those are separate levers now, and deriving one from the other made a pure boost read
+            // back as a cap sitting above the ceiling. -1 means the backend can't report a lock, in
+            // which case fall back to the old inference so the slider still lands somewhere sane.
+            TargetVoltageMv = Backend.ReadVoltageLockMv(GpuIndex) is var lk && lk >= 0
+                ? lk
+                : VoltagePlan.ToTargetMv(s.VoltageBoostPercent, s.VoltageOffsetMv,
+                                         Capabilities.StockMaxVoltageMv, Capabilities.MaxVoltageMv),
             FanMode = s.FanManual ? FanMode.Fixed : FanMode.Auto,
             FixedFanPercent = s.FanPercent
         };

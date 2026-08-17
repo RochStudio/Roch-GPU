@@ -83,6 +83,12 @@ public sealed class MainViewModel : ObservableObject
     public bool IsVoltageAbsolute => Caps.VoltageStyle == VoltageControlStyle.Absolute && Caps.CanSetVoltage;
     /// <summary>AMD: a single signed offset applied to the whole curve.</summary>
     public bool IsVoltageOffset => Caps.VoltageStyle == VoltageControlStyle.Offset;
+    /// <summary>
+    /// NVIDIA's over-voltage percentage, Afterburner's "Core Voltage (%)". It raises the ceiling the
+    /// card may reach above the top of the V/F table; it is a separate lever from the cap, which
+    /// holds the core at or below a chosen mV.
+    /// </summary>
+    public bool HasVoltageBoost => IsVoltageAbsolute && Caps.CanSetVoltageBoost;
     public bool HasCurveEditor => Caps.CanSetVoltageCurve;
     public bool HasTempLimit => Caps.CanSetTempLimit;
     public bool HasZeroRpm => Caps.CanSetZeroRpm;
@@ -95,6 +101,23 @@ public sealed class MainViewModel : ObservableObject
 
     public IReadOnlyList<string> MemoryTimingOptions => Caps.MemoryTimingOptions;
     public string VoltageOffsetRangeText => $"{Caps.VoltageOffsetMinMv} … {Caps.VoltageOffsetMaxMv} mV (0 = stock)";
+    public string VoltageBoostRangeText =>
+        $"{Caps.VoltageBoostMinPercent} … {Caps.VoltageBoostMaxPercent} % (0 = stock ceiling). " +
+        "Raises how far the core may be driven above the top of the V/F table; it does not add curve points.";
+
+    /// <summary>What the boost buys, in the mV the rest of the UI is expressed in.</summary>
+    public string VoltageBoostEffectText
+    {
+        get
+        {
+            int ceiling = StockCeilingMv, max = Caps.MaxVoltageMv;
+            if (VoltageBoost <= 0)
+                return ceiling > 0 ? $"Stock ceiling ({ceiling} mV)." : "Stock ceiling.";
+            if (ceiling <= 0 || max <= ceiling) return $"+{VoltageBoost} % of the card's boost headroom.";
+            int mv = ceiling + (int)Math.Round(VoltageBoost / 100.0 * (max - ceiling));
+            return $"+{VoltageBoost} % — lets the core reach {mv} mV (stock {ceiling} mV).";
+        }
+    }
     public string PowerRangeText => $"{Caps.PowerLimitMinPercent} … {Caps.PowerLimitMaxPercent} % (default {Caps.PowerLimitDefaultPercent})";
     public string TempRangeText => $"{Caps.TempLimitMinC} … {Caps.TempLimitMaxC} °C (default {Caps.TempLimitDefaultC})";
 
@@ -108,10 +131,10 @@ public sealed class MainViewModel : ObservableObject
     public int MemoryOffset { get => _mem; set { if (SetClamped(ref _mem, value, Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(MemoryOffset)); } } }
     public int PowerLimit { get => _power; set { if (SetClamped(ref _power, value, Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent)) { Dirty(); RaiseVal(nameof(PowerLimit)); } } }
     public int TempLimit { get => _temp; set { if (SetClamped(ref _temp, value, Caps.TempLimitMinC, Caps.TempLimitMaxC)) { Dirty(); RaiseVal(nameof(TempLimit)); } } }
-    public int VoltageBoost { get => _volt; set { if (SetClamped(ref _volt, value, Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent)) { Dirty(); RaiseVal(nameof(VoltageBoost)); } } }
+    public int VoltageBoost { get => _volt; set { if (SetClamped(ref _volt, value, Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent)) { Dirty(); RaiseVal(nameof(VoltageBoost)); OnPropertyChanged(nameof(VoltageBoostEffectText)); } } }
     public int VoltageOffset { get => _uv; set { if (SetClamped(ref _uv, value, Caps.VoltageOffsetMinMv, Caps.VoltageOffsetMaxMv)) { Dirty(); RaiseVal(nameof(VoltageOffset)); OnPropertyChanged(nameof(VoltageCapText)); } } }
-    /// <summary>Absolute core-voltage target in mV — the single slider that replaced the separate
-    /// undervolt-offset and voltage-boost controls.</summary>
+    /// <summary>Absolute ceiling in mV the core is held at — the "voltage cap" slider. Independent of
+    /// <see cref="VoltageBoost"/>, which raises the top of the range this caps within.</summary>
     public int TargetVoltage { get => _vTarget; set { if (SetClamped(ref _vTarget, value, Caps.MinVoltageMv, Math.Max(Caps.MinVoltageMv, Caps.MaxVoltageMv))) { Dirty(); RaiseVal(nameof(TargetVoltage)); OnPropertyChanged(nameof(VoltageCapText)); } } }
     public int FixedFan { get => _fanFixed; set { if (SetClamped(ref _fanFixed, value, Caps.FanMinPercent, Caps.FanMaxPercent)) { Dirty(); RaiseVal(nameof(FixedFan)); } } }
 
@@ -142,6 +165,7 @@ public sealed class MainViewModel : ObservableObject
         switch (name)
         {
             case "volt": TargetVoltage += 5 * dir; break;
+            case "voltboost": VoltageBoost += dir; break;   // percent, so one step is one unit
             case "voltoffset": VoltageOffset += 5 * dir; break;
             case "core": CoreOffset += 5 * dir; break;
             case "mem": MemoryOffset += 5 * dir; break;
@@ -172,6 +196,7 @@ public sealed class MainViewModel : ObservableObject
     public string PowerLimitInput { get => _power.ToString(); set { if (TryParseSigned(value, out var v)) PowerLimit = v; RaiseVal(nameof(PowerLimit)); } }
     public string TempLimitInput { get => _temp.ToString(); set { if (TryParseSigned(value, out var v)) TempLimit = v; RaiseVal(nameof(TempLimit)); } }    public string VoltageOffsetInput { get => _uv.ToString("+#;-#;0"); set { if (TryParseSigned(value, out var v)) VoltageOffset = v; RaiseVal(nameof(VoltageOffset)); OnPropertyChanged(nameof(VoltageCapText)); } }
     public string TargetVoltageInput { get => _vTarget.ToString(); set { if (TryParseSigned(value, out var v)) TargetVoltage = v; RaiseVal(nameof(TargetVoltage)); OnPropertyChanged(nameof(VoltageCapText)); } }
+    public string VoltageBoostInput { get => _volt.ToString(); set { if (TryParseSigned(value, out var v)) VoltageBoost = v; RaiseVal(nameof(VoltageBoost)); OnPropertyChanged(nameof(VoltageBoostEffectText)); } }
     public string FixedFanInput { get => _fanFixed.ToString(); set { if (TryParseSigned(value, out var v)) FixedFan = v; RaiseVal(nameof(FixedFan)); } }
 
     /// <summary>Parse a user-typed offset: leading +/- allowed, whitespace trimmed, trailing units ignored.</summary>
@@ -222,7 +247,8 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>What this card really tops out at — the curve's last point is a step below it.</summary>
     public int StockCeilingMv => _svc.StockCeilingMv;
     public string TargetVoltageRangeText =>
-        $"{Caps.MinVoltageMv} … {Caps.MaxVoltageMv} mV. This card tops out at {StockCeilingMv} mV "
+        $"{Caps.MinVoltageMv} … {Caps.MaxVoltageMv} mV. Holds the core at or below this voltage; "
+        + $"set it at or above the ceiling to cap nothing. This card tops out at {StockCeilingMv} mV "
         + $"(the V/F curve's last point is {Caps.StockMaxVoltageMv} mV; the VID sits a step above it).";
     public string VoltageCapText
     {
@@ -233,8 +259,9 @@ public sealed class MainViewModel : ObservableObject
                     ? "voltage control unavailable on this driver"
                     : "voltage control unavailable — " + Caps.CurveUnavailableReason;
             int ceiling = StockCeilingMv;
-            if (TargetVoltage > ceiling) return $"boosting {TargetVoltage - ceiling} mV above stock ({ceiling} mV)";
-            if (TargetVoltage == ceiling) return $"stock ceiling ({ceiling} mV)";
+            // At or above the ceiling this slider isn't capping anything — raising the ceiling is the
+            // boost control's job, not this one's.
+            if (TargetVoltage >= ceiling) return $"no cap — free to the ceiling ({ceiling} mV)";
             // Say which lever is holding it once applied — the private lock is ignored on some
             // drivers and the clock cap takes over, which changes what you'll see in a monitor.
             string how = _svc.VoltageLockMechanism;
@@ -615,5 +642,6 @@ public sealed class MainViewModel : ObservableObject
                                   nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(FixedFan) })
             RaiseVal(p);
         OnPropertyChanged(nameof(VoltageCapText));
+        OnPropertyChanged(nameof(VoltageBoostEffectText));
     }
 }

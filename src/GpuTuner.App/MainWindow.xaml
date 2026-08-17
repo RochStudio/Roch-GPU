@@ -240,11 +240,34 @@
                                     Visibility="{Binding HasCurveEditor, Converter={StaticResource BoolToVis}}"
                                     ToolTip="Open the voltage/frequency curve (Afterburner Ctrl+F equivalent)"/>
 
-                            <!-- 1a. Core voltage as an absolute target (NVIDIA: driven by the V/F curve) -->
-                            <StackPanel Visibility="{Binding IsVoltageAbsolute, Converter={StaticResource BoolToVis}}">
+                            <!-- 1a. Over-voltage percentage (Afterburner's "Core Voltage (%)"). Raises the
+                                 ceiling above the top of the V/F table; separate lever from the cap below. -->
+                            <StackPanel Visibility="{Binding HasVoltageBoost, Converter={StaticResource BoolToVis}}">
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="Core Voltage (mV)" Style="{StaticResource RowLabel}"/>
+                                    <TextBlock Text="Core Voltage (%)" Style="{StaticResource RowLabel}"/>
+                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                             ToolTip="{Binding VoltageBoostRangeText}"
+                                             Text="{Binding VoltageBoostInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                                <Grid Margin="0,1,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                                  Command="{Binding NudgeCommand}" CommandParameter="voltboost:-1"/>
+                                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageBoostMinPercent}" Maximum="{Binding Caps.VoltageBoostMaxPercent}"
+                                            Value="{Binding VoltageBoost, Mode=TwoWay}" TickFrequency="1"/>
+                                    <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                                  Command="{Binding NudgeCommand}" CommandParameter="voltboost:1"/>
+                                </Grid>
+                                <TextBlock Text="{Binding VoltageBoostEffectText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
+                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding VoltageBoostRangeText}"/>
+                            </StackPanel>
+
+                            <!-- 1b. Absolute voltage cap (NVIDIA: enforced by the voltage lock) -->
+                            <StackPanel Margin="0,4,0,0" Visibility="{Binding IsVoltageAbsolute, Converter={StaticResource BoolToVis}}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="Voltage Cap (mV)" Style="{StaticResource RowLabel}"/>
                                     <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
                                              ToolTip="{Binding TargetVoltageRangeText}"
                                              Text="{Binding TargetVoltageInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
@@ -262,7 +285,7 @@
                                            TextTrimming="CharacterEllipsis" ToolTip="{Binding VoltageCapText}"/>
                             </StackPanel>
 
-                            <!-- 1b. Core voltage as a signed offset (AMD: applied to the whole curve) -->
+                            <!-- 1c. Core voltage as a signed offset (AMD: applied to the whole curve) -->
                             <StackPanel Margin="0,4,0,0" Visibility="{Binding IsVoltageOffset, Converter={StaticResource BoolToVis}}">
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
