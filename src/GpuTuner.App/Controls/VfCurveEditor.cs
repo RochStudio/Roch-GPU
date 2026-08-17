@@ -15,6 +15,8 @@ namespace GpuTuner.App.Controls;
 ///   drag a point            move that point's frequency (voltage is fixed by the card)
 ///   Ctrl + drag             move the point AND flatten everything to its right (the undervolt)
 ///   Shift + drag            move every point from here rightwards by the same amount
+///   click a point           select it, then Up/Down nudge it by one 5 MHz driver step
+///                           (Shift for 25 MHz, Ctrl to flatten above it, Left/Right to walk the curve)
 ///   double-click a point    return just that point to stock
 ///   right-click             return every point to stock
 ///
@@ -22,11 +24,16 @@ namespace GpuTuner.App.Controls;
 /// </summary>
 public sealed class VfCurveEditor : FrameworkElement
 {
-    private const double PadL = 46, PadR = 14, PadT = 14, PadB = 26;
+    // Bottom and left are wide enough for a tick label *and* an axis title under/beside it.
+    private const double PadL = 58, PadR = 18, PadT = 18, PadB = 42;
     private const double HitRadius = 10;
+
+    /// <summary>One press of Up/Down; matches the driver's 5 MHz granularity (see FreqFromY).</summary>
+    private const int NudgeMhz = 5, NudgeCoarseMhz = 25;
 
     private List<VfCurveSample> _points = new();   // Index/VoltageMv/StockMhz fixed; LiveMhz is edited
     private int _dragIndex = -1;
+    private int _selectedIndex = -1;               // survives the drag, so the arrow keys have a target
     private int _dragStartMhz;
     private int[]? _dragStartAll;                   // snapshot of LiveMhz for shift-drag
     private (int vMin, int vMax, int fMin, int fMax)? _frozenAxes;  // held still while dragging
@@ -43,6 +50,7 @@ public sealed class VfCurveEditor : FrameworkElement
     {
         _points = pts.OrderBy(p => p.VoltageMv).ToList();
         _dragIndex = -1;
+        _selectedIndex = -1;      // indices refer to the old list; a reload invalidates the selection
         _dragStartAll = null;
         _frozenAxes = null;
         InvalidateVisual();
@@ -95,9 +103,13 @@ public sealed class VfCurveEditor : FrameworkElement
     private static readonly Brush StockBrush = Freeze(new SolidColorBrush(Color.FromArgb(90, 200, 210, 225)));
     private static readonly Brush CurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x76, 0xB9, 0x00)));
     private static readonly Brush PointFill = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x16, 0x1A)));
+    private static readonly Brush PointBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x3C, 0x3C)));
+    private static readonly Brush SelectBrush = Freeze(new SolidColorBrush(Colors.White));
     private static readonly Brush LiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x4B)));
-    private static readonly Brush CapBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x7A, 0x7A)));
-    private static readonly Brush CapShade = Freeze(new SolidColorBrush(Color.FromArgb(26, 0xFF, 0x7A, 0x7A)));
+    // The cap marker is white rather than red: red now belongs to the curve points, and two different
+    // reds a shade apart read as one thing that has gone wrong somewhere.
+    private static readonly Brush CapBrush = Freeze(new SolidColorBrush(Colors.White));
+    private static readonly Brush CapShade = Freeze(new SolidColorBrush(Color.FromArgb(26, 255, 255, 255)));
     private static readonly Typeface Face = new("Segoe UI");
     private static Brush Freeze(Brush b) { b.Freeze(); return b; }
 
@@ -110,11 +122,11 @@ public sealed class VfCurveEditor : FrameworkElement
 
     // ---- axes: voltage on X (from the points), frequency on Y (padded round numbers)
     /// <summary>
-    /// Fixed axes matching Afterburner's curve editor: 700–1250 mV by 600–3400 MHz. A fixed frame
-    /// keeps the curve's shape comparable between cards and runs, and stops the plot rescaling
-    /// under the cursor mid-drag. Widened only if a card's curve genuinely falls outside it.
+    /// Fixed axes: 700–1200 mV by 600–3400 MHz. A fixed frame keeps the curve's shape comparable
+    /// between cards and runs, and stops the plot rescaling under the cursor mid-drag. Widened only
+    /// if a card's curve genuinely falls outside it.
     /// </summary>
-    private const int AxisVMin = 700, AxisVMax = 1250, AxisFMin = 600, AxisFMax = 3400;
+    private const int AxisVMin = 700, AxisVMax = 1200, AxisFMin = 600, AxisFMax = 3400;
 
     private (int vMin, int vMax, int fMin, int fMax) Bounds()
     {
@@ -189,10 +201,16 @@ public sealed class VfCurveEditor : FrameworkElement
             dc.DrawText(ft, new Point(x - ft.Width / 2, h - PadB + 5));
         }
 
-        var unit = new FormattedText("mV", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, LabelBrush, ppd);
-        dc.DrawText(unit, new Point(w - PadR + 2, h - PadB + 5));      // clear of the last tick label
-        var yUnit = new FormattedText("MHz", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, LabelBrush, ppd);
-        dc.DrawText(yUnit, new Point(4, PadT - 13));
+        // Axis titles, centred on their axis. The units used to be dropped into the margins beside
+        // the outermost tick label, where "mV" landed on top of the last voltage number.
+        var xTitle = new FormattedText("Voltage (mV)", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, LabelBrush, ppd);
+        dc.DrawText(xTitle, new Point(PadL + (PlotW - xTitle.Width) / 2, h - PadB + 22));
+
+        var yTitle = new FormattedText("Core clock (MHz)", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, LabelBrush, ppd);
+        double yMid = PadT + PlotH / 2;
+        dc.PushTransform(new RotateTransform(-90, 15, yMid));
+        dc.DrawText(yTitle, new Point(15 - yTitle.Width / 2, yMid - yTitle.Height / 2));
+        dc.Pop();
 
         // Everything from here on is curve geometry: clip it to the plot so points outside the
         // frame (idle points below 700 mV, a live marker past the curve's top) can't spill into
@@ -225,19 +243,25 @@ public sealed class VfCurveEditor : FrameworkElement
         dc.DrawGeometry(null, pen, geo);
 
         // points
-        var ptPen = new Pen(CurveBrush, 2); ptPen.Freeze();
+        var ptPen = new Pen(PointBrush, 2); ptPen.Freeze();
+        var selPen = new Pen(SelectBrush, 2); selPen.Freeze();
         for (int i = 0; i < _points.Count; i++)
         {
             var p = _points[i];
             var s = ToScreen(p.VoltageMv, p.LiveMhz);
             bool modified = p.LiveMhz != p.StockMhz;
-            dc.DrawEllipse(i == _dragIndex || modified ? CurveBrush : PointFill, ptPen, s, 4.5, 4.5);
+            bool active = i == _dragIndex || i == _selectedIndex;
+            // The selected point gets a white ring and a wider radius: it has to stay findable among
+            // eighty-odd identical red dots while the arrow keys are walking it up and down.
+            dc.DrawEllipse(modified || active ? PointBrush : PointFill,
+                           active ? selPen : ptPen, s, active ? 6 : 4.5, active ? 6 : 4.5);
         }
 
-        // readout for the dragged point
-        if (_dragIndex >= 0 && _dragIndex < _points.Count)
+        // readout for whichever point is being worked on — dragged, or selected for the arrow keys
+        int readout = _dragIndex >= 0 ? _dragIndex : _selectedIndex;
+        if (readout >= 0 && readout < _points.Count)
         {
-            var p = _points[_dragIndex];
+            var p = _points[readout];
             var s = ToScreen(p.VoltageMv, p.LiveMhz);
             int delta = p.LiveMhz - p.StockMhz;
             var ft = new FormattedText($"{p.VoltageMv} mV → {p.LiveMhz} MHz  ({delta:+#;-#;0})",
@@ -262,9 +286,12 @@ public sealed class VfCurveEditor : FrameworkElement
                 var flatPen = new Pen(CapBrush, 2) { DashStyle = DashStyles.Dash }; flatPen.Freeze();
                 double capY = ToScreen(_capMv, atCap.LiveMhz).Y;
                 dc.DrawLine(flatPen, new Point(capX, capY), new Point(w - PadR, capY));
+                // Label the cap at the top of its line, not next to the flat segment. The selected
+                // point's readout sits on the curve and now stays put after the mouse is released,
+                // so anything drawn at curve height collides with it.
                 var cft = new FormattedText($"capped {_capMv} mV → {atCap.LiveMhz} MHz",
                     CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, CapBrush, ppd);
-                dc.DrawText(cft, new Point(Math.Min(capX + 6, w - PadR - cft.Width - 2), Math.Max(PadT + 2, capY - 16)));
+                dc.DrawText(cft, new Point(Math.Min(capX + 6, w - PadR - cft.Width - 2), PadT + 4));
             }
         }
 
@@ -300,7 +327,15 @@ public sealed class VfCurveEditor : FrameworkElement
         Focus();
         var pos = e.GetPosition(this);
         int hit = HitTest(pos);
-        if (hit < 0) return;
+        if (hit < 0)
+        {
+            // Clicking the empty plot drops the selection, so the arrow keys never move a point the
+            // user has stopped thinking about.
+            if (_selectedIndex >= 0) { _selectedIndex = -1; InvalidateVisual(); }
+            return;
+        }
+
+        _selectedIndex = hit;
 
         if (e.ClickCount == 2)
         {
@@ -369,6 +404,48 @@ public sealed class VfCurveEditor : FrameworkElement
         _dragStartAll = null;
         _frozenAxes = null;
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Keyboard editing for the selected point. Up/Down nudge it by one 5 MHz driver step (Shift for
+    /// 25, Ctrl also flattens everything above it, mirroring Ctrl+drag); Left/Right walk the
+    /// selection along the curve. Handled is set on every arrow so WPF doesn't treat them as focus
+    /// navigation and jump to the next control mid-edit.
+    /// </summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (_points.Count == 0) return;
+        var (vMin, vMax, fMin, fMax) = Bounds();
+
+        if (e.Key is Key.Left or Key.Right)
+        {
+            // Only walk points that are actually inside the frame — selecting an invisible idle
+            // point below 700 mV would look like the keys had stopped working.
+            int first = _points.FindIndex(p => p.VoltageMv >= vMin);
+            int last = _points.FindLastIndex(p => p.VoltageMv <= vMax);
+            if (first < 0 || last < first) return;
+
+            int dir = e.Key == Key.Right ? 1 : -1;
+            _selectedIndex = _selectedIndex < 0
+                ? (dir > 0 ? first : last)
+                : Math.Clamp(_selectedIndex + dir, first, last);
+            e.Handled = true;
+            InvalidateVisual();
+            return;
+        }
+
+        if (e.Key is not (Key.Up or Key.Down) || _selectedIndex < 0 || _selectedIndex >= _points.Count) return;
+
+        int step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? NudgeCoarseMhz : NudgeMhz;
+        var pt = _points[_selectedIndex];
+        int next = Math.Clamp(pt.LiveMhz + (e.Key == Key.Up ? step : -step), fMin, fMax);
+        e.Handled = true;
+        if (next == pt.LiveMhz) return;            // already against the top or bottom of the frame
+
+        _points[_selectedIndex] = pt with { LiveMhz = next };
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0) FlattenFromIndex(_selectedIndex);
+        Raise();
     }
 
     protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)

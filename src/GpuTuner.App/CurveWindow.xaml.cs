@@ -54,7 +54,7 @@ public partial class CurveWindow : Window
                 Say("This card/driver did not return a V/F curve — nothing to edit.", true);
             else
                 Say($"{pts.Count} curve points loaded ({pts.Min(p => p.VoltageMv)}–{pts.Max(p => p.VoltageMv)} mV). " +
-                    "Drag to edit, then Apply to GPU.");
+                    "Drag a point, or click one and use ↑/↓ (Shift = 25 MHz, ←/→ to step along). Then Apply to GPU.");
         }
         catch (Exception ex) { Say("Could not read the curve: " + ex.Message, true); }
     }
