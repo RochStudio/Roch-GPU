@@ -192,29 +192,32 @@ terminal. `info`, `monitor`, `list-profiles` and anything with `--mock` do not.
 
 ## What it costs while you game
 
-A monitor that polls the driver every second is competing with your game for the same driver, so the
-tool stops doing it when there is nothing to look at. Minimise to the tray and the poll drops to the
-least work that still keeps a fan curve running — and to no driver call at all if no curve is active.
+Polling the driver every second means competing with your game for that same driver, so the tool only
+does it while the **hardware monitor window is open**. Close the monitor and it stops — not a slower
+poll, no driver call at all. The rule is deliberately tied to the monitor rather than to the tray,
+because the monitor is the only thing that displays telemetry; the main window can sit open on your
+second screen costing nothing.
 
 Measured on an RTX 4070 Ti, driver 591.86, 1000 ms interval:
 
 | State | CPU per 30 s | Per poll |
 |---|---|---|
-| Window or monitor open | 344 ms | 12.97 ms, 198 KB |
-| Tray, fan curve running | — | 0.02 ms, 3.7 KB |
-| Tray, no fan curve | 0 ms | no driver call |
+| Hardware monitor open | 328 ms | 12.97 ms, 198 KB |
+| Monitor closed, fan curve running | — | 0.02 ms, 3.7 KB |
+| Monitor closed, no fan curve | **0 ms** | no driver call |
 
-The full sample costs what it does because of one call: NVAPI's power-topology query is 8.8 ms of it
-on its own, and `PerformanceControl.CurrentActiveLimit` accounts for 117 KB of the 198 KB. Neither is
-worth paying for a window nobody is looking at, so the background path reads the thermal sensor and
-nothing else — 0.02 ms, about 580× cheaper.
+A full sample costs what it does because of one call: NVAPI's power-topology query is 8.8 ms of it on
+its own, and `PerformanceControl.CurrentActiveLimit` accounts for 117 KB of the 198 KB. A fan curve
+needs neither — only the temperature — so with the monitor closed it reads the thermal sensor and
+nothing else, about 580× cheaper.
 
-A background sample is stepped into the fan curve and dropped: it is never stored or graphed, because
-only its temperature field is valid. The graphs therefore show a gap for the time you were in the
-tray rather than a run of zeroes.
+That background sample is stepped into the curve and dropped: never stored, never graphed, because
+only its temperature field is valid. The graphs therefore show a gap for the time the monitor was
+closed rather than a run of zeroes, and the limiter line under the GPU name says it is not sampling
+rather than reporting a stale reading.
 
-If you want telemetry *while* playing, keep the monitor window open — that is the 12.97 ms row, by
-choice. Raising **Poll interval** in settings scales the whole thing down proportionally.
+So: tune with the monitor open, close it before you launch the game, and the fan curve keeps running.
+Raising **Poll interval** in settings scales the monitor-open row down proportionally.
 
 ## How it works
 

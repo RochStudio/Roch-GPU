@@ -31,6 +31,7 @@ public partial class MainWindow : Window
 
         WindowTheme.ApplyOnOpen(this);   // Windows draws the title bar, and it follows the OS theme, not ours
         SetupTray();
+        UpdatePollDetail();              // monitor starts closed, so the poll starts paused
         Closing += MainWindow_Closing;
         StateChanged += (_, _) => { if (WindowState == WindowState.Minimized) MinimizeToTray(); };
 
@@ -170,15 +171,11 @@ public partial class MainWindow : Window
 
     private void Tray_Click(object sender, RoutedEventArgs e) => MinimizeToTray();
 
-    private bool _inTray;
-
     public void MinimizeToTray()
     {
         if (_tray == null) { WindowState = WindowState.Minimized; return; }
         Hide();
         ShowInTaskbar = false;
-        _inTray = true;
-        UpdatePollDetail();
     }
 
     private void RestoreFromTray()
@@ -187,16 +184,28 @@ public partial class MainWindow : Window
         ShowInTaskbar = true;
         WindowState = WindowState.Normal;
         Activate();
-        _inTray = false;
-        UpdatePollDetail();
     }
 
     /// <summary>
-    /// Drop the poll to its cheap path whenever nothing of ours is on screen. A full sample is ~13 ms
-    /// of synchronous driver calls; sitting in the tray during a game is precisely when that is worth
-    /// not paying. The monitor window counts as on-screen even if the main window is hidden.
+    /// The hardware monitor is the only thing that displays telemetry, so it is the only thing that
+    /// justifies sampling it. With it closed the poll makes no driver call at all — a full sample is
+    /// ~13 ms of synchronous NVAPI work, and paying that behind a game buys nothing when there is no
+    /// graph to draw it on. A running fan curve still gets its temperature, at 0.02 ms.
+    ///
+    /// Tray state is deliberately not part of this condition: the main window shows no live telemetry
+    /// beyond the limiter line, which is cleared below rather than left showing a stale reading.
     /// </summary>
-    private void UpdatePollDetail() => _svc.BackgroundMode = _inTray && _monitorWindow == null;
+    private void UpdatePollDetail()
+    {
+        bool paused = _monitorWindow == null;
+        _svc.BackgroundMode = paused;
+        if (!paused) return;
+
+        // Nothing will arrive to refresh these now, so don't leave the last sample on screen
+        // pretending to still be current.
+        _vm.Telemetry = null;
+        if (_tray != null) _tray.Text = "Roch GPU OC";
+    }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {

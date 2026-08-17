@@ -263,8 +263,12 @@ public sealed class MainViewModel : ObservableObject
             }
         }
     }
-    public string LimitReasonText => _t == null || string.IsNullOrEmpty(_t.LimitReason) || _t.LimitReason == "None"
-        ? "No active limiter" : $"Limited by {_t.LimitReason.ToLowerInvariant()}";
+    // No sample means the monitor is closed and nothing is being polled — say so, rather than
+    // reporting "no limiter", which is a claim we haven't measured.
+    public string LimitReasonText => _t == null
+        ? "Limiter — open the monitor to sample"
+        : string.IsNullOrEmpty(_t.LimitReason) || _t.LimitReason == "None"
+            ? "No active limiter" : $"Limited by {_t.LimitReason.ToLowerInvariant()}";
     public bool LimitIsActive => _t != null && !string.IsNullOrEmpty(_t.LimitReason) && _t.LimitReason != "None";
 
     // ------------------------------------------------------------------ status
