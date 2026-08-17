@@ -465,13 +465,18 @@ public sealed class TuningService : IDisposable
     /// <summary>
     /// Safety: on exit (or crash handler) hand fans back to the driver so a fixed low fan speed
     /// can't persist after the app that was supposed to manage it is gone.
+    ///
+    /// That reasoning only holds for a curve *this* app runs. Where the curve lives in the driver
+    /// the hardware keeps running it whether this process exists or not, so there is nothing unsafe
+    /// to hand back — and resetting it here silently threw away the user's fan settings on every
+    /// exit, including ones a startup profile had just applied seconds earlier.
     /// </summary>
     public void ReleaseFanControl()
     {
         lock (_lock)
         {
             _activeCurve = null;
-            if (Capabilities.CanSetFanSpeed)
+            if (Capabilities.CanSetFanSpeed && !Capabilities.FanCurveIsHardware)
             {
                 try { Backend.SetFanAuto(GpuIndex); Log?.Invoke("Fans returned to auto"); } catch { }
             }

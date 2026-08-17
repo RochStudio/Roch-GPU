@@ -155,6 +155,13 @@ public sealed record GpuTuningState
     public bool FanManual { get; init; }
     public int FanPercent { get; init; }
 
+    /// <summary>
+    /// Fan mode as read back out of the hardware, for a backend that can tell the three apart.
+    /// Null when the backend cannot, in which case <see cref="FanManual"/> is the only signal — a
+    /// hardware curve is indistinguishable from auto through that flag alone.
+    /// </summary>
+    public FanMode? DetectedFanMode { get; init; }
+
     /// <summary>AMD: fans stop entirely below the driver's idle threshold.</summary>
     public bool ZeroRpm { get; init; } = true;
     /// <summary>AMD: index into <see cref="GpuCapabilities.MemoryTimingOptions"/>.</summary>

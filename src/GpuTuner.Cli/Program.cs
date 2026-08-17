@@ -86,11 +86,27 @@ static class Cli
         Console.WriteLine($"Power limit   : {(c.CanSetPowerLimit ? $"{c.PowerLimitMinPercent}..{c.PowerLimitMaxPercent} % (default {c.PowerLimitDefaultPercent})" : "not supported")}");
         Console.WriteLine($"Temp limit    : {(c.CanSetTempLimit ? $"{c.TempLimitMinC}..{c.TempLimitMaxC} °C (default {c.TempLimitDefaultC})" : "not supported")}");
         Console.WriteLine($"Voltage boost : {(c.CanSetVoltageBoost ? $"{c.VoltageBoostMinPercent}..{c.VoltageBoostMaxPercent} %" : "not supported")}");
-        Console.WriteLine($"Undervolt     : {(c.CanSetVoltageCurve ? $"{c.VoltageOffsetMinMv}..0 mV (stock max {c.StockMaxVoltageMv} mV)" : "not supported")}");
+        // Two different undervolt mechanisms reach the same slider: NVIDIA flattens the V/F curve,
+        // AMD offsets the whole curve and has no editable one. Gating on CanSetVoltageCurve alone
+        // reported "not supported" on a card that was actively undervolted (see the uv field below).
+        bool canUndervolt = c.CanSetVoltageCurve || c.VoltageStyle == VoltageControlStyle.Offset;
+        string undervolt = !canUndervolt ? "not supported"
+            : c.CanSetVoltageCurve ? $"{c.VoltageOffsetMinMv}..0 mV (stock max {c.StockMaxVoltageMv} mV)"
+            : $"{c.VoltageOffsetMinMv}..{c.VoltageOffsetMaxMv} mV (whole-curve offset)";
+        Console.WriteLine($"Undervolt     : {undervolt}");
         Console.WriteLine($"Fans          : {(c.CanSetFanSpeed ? $"{c.FanCount} fan(s), {c.FanMinPercent}..{c.FanMaxPercent} %" : "not supported")}");
         var s = svc.Backend.ReadTuningState(svc.GpuIndex);
         Console.WriteLine();
-        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {s.TempLimitC}°C, vboost {s.VoltageBoostPercent}%, uv {s.VoltageOffsetMv} mV, fan {(s.FanManual ? s.FanPercent + "% manual" : "auto")}");
+        // A backend that can read the three fan modes apart says so; the rest only expose a manual
+        // flag, through which a hardware curve is indistinguishable from auto.
+        string fan = s.DetectedFanMode switch
+        {
+            FanMode.Fixed => $"{s.FanPercent}% fixed",
+            FanMode.Curve => "hardware curve",
+            FanMode.Auto => "auto",
+            _ => s.FanManual ? $"{s.FanPercent}% manual" : "auto"
+        };
+        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {s.TempLimitC}°C, vboost {s.VoltageBoostPercent}%, uv {s.VoltageOffsetMv} mV, fan {fan}");
         var t = svc.Backend.ReadTelemetry(svc.GpuIndex);
         Console.WriteLine(Fmt(t));
         return 0;

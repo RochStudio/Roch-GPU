@@ -1,3 +1,4 @@
+using GpuTuner.Core.Backends.Amd;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
@@ -448,6 +449,61 @@ using (var svc = new TuningService(counting))
     var stock = TuningProfile.Stock(svc.Capabilities, "Test");
     Check($"stock memory = rated clock ({stock.MemoryOffsetMhz})", stock.MemoryOffsetMhz == 2518);
     Check("stock zero rpm follows the card default", stock.ZeroRpm);
+}
+
+// ---- AMD fan mode inference
+// The OD8 table is the only fan mechanism on this driver, so ReadTuningState has to work the mode
+// back out of it. Pure and array-based, so it runs on the Linux CI job with no driver present.
+{
+    int[] defT = { 30, 50, 64, 79, 88 }, defS = { 30, 42, 54, 66, 90 };
+
+    var auto = AdlBackend.InferFanMode(defT, defS, defT, defS);
+    Check("untouched table reads as auto", auto.Mode == FanMode.Auto && auto.Percent == 0);
+
+    // What SetFanSpeed writes: five equal duties spread across the temperature window.
+    var fixedFan = AdlBackend.InferFanMode(
+        new[] { 25, 43, 62, 81, 100 }, new[] { 50, 50, 50, 50, 50 }, defT, defS);
+    Check("flat table reads as fixed 50%", fixedFan.Mode == FanMode.Fixed && fixedFan.Percent == 50);
+
+    var rising = AdlBackend.InferFanMode(
+        new[] { 25, 43, 62, 81, 100 }, new[] { 30, 40, 55, 70, 100 }, defT, defS);
+    Check("rising table reads as a curve", rising.Mode == FanMode.Curve);
+
+    // Default duties at non-default temperatures is still a user table, not auto.
+    var movedTemps = AdlBackend.InferFanMode(new[] { 25, 45, 60, 75, 95 }, defS, defT, defS);
+    Check("shifted temperatures are not auto", movedTemps.Mode == FanMode.Curve);
+
+    // A card exposing no fan points at all must not be reported as manual.
+    var none = AdlBackend.InferFanMode(Array.Empty<int>(), Array.Empty<int>(), defT, defS);
+    Check("no fan points reads as auto", none.Mode == FanMode.Auto);
+
+    // Regression: this path used to be hard-coded to "not manual", so a fixed duty read back as auto.
+    Check("fixed duty is not reported as auto", fixedFan.Mode != FanMode.Auto);
+}
+
+// ---- ReleaseFanControl respects who owns the curve
+// A software curve dies with the process, so it must be handed back. A driver-owned one does not,
+// and resetting it on exit discarded whatever the user (or a startup profile) had just set.
+{
+    var hw = new OffsetStyleBackend();
+    using (var svcHw = new TuningService(hw))
+    {
+        svcHw.Initialize();
+        Check("test backend really is hardware-curve", svcHw.Capabilities.FanCurveIsHardware);
+        svcHw.ReleaseFanControl();
+        Check("driver-owned fan table survives exit", !hw.Calls.Contains("SetFanAuto"));
+    }
+
+    var soft = new MockBackend();
+    using (var svcSoft = new TuningService(soft))
+    {
+        svcSoft.Initialize();
+        Check("mock backend enforces curves in software", !svcSoft.Capabilities.FanCurveIsHardware);
+        soft.SetFanSpeed(0, -1, 70);
+        Check("mock fan is manual once a duty is set", soft.ReadTuningState(0).FanManual);
+        svcSoft.ReleaseFanControl();
+        Check("software fan control is still handed back on exit", !soft.ReadTuningState(0).FanManual);
+    }
 }
 
 Console.WriteLine($"{pass} passed, {fail} failed");

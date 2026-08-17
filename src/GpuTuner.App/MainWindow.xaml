@@ -219,7 +219,8 @@
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <Button x:Name="MonitorToggle" Content="Monitor" Click="ToggleMonitor_Click"
                                             Padding="7,2" FontSize="11" Margin="0,0,4,0" ToolTip="Open the hardware monitor in its own window"/>
-                                    <Button Content="Tray" Click="Tray_Click" Padding="7,2" FontSize="11" Margin="0,0,4,0"/>
+                                    <!-- No Tray button: the title bar's minimise already goes to the tray, via the
+                                         StateChanged handler in MainWindow.xaml.cs. -->
                                     <Button Content="Log" Click="OpenLog_Click" Padding="7,2" FontSize="11"/>
                                 </StackPanel>
                             </Grid>

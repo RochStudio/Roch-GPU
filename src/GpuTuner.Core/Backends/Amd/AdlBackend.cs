@@ -446,6 +446,7 @@ public sealed class AdlBackend : IGpuBackend
     public GpuTuningState ReadTuningState(int gpuIndex)
     {
         var v = ReadCurrent(gpuIndex);
+        var fan = ReadFanMode(gpuIndex, v);
         return new GpuTuningState
         {
             CoreOffsetMhz = v[(int)Od8Id.GfxClkFMax],
@@ -455,9 +456,71 @@ public sealed class AdlBackend : IGpuBackend
             VoltageOffsetMv = v[(int)Od8Id.OdVoltage],
             ZeroRpm = v[(int)Od8Id.FanZeroRpmControl] != 0,
             MemoryTimingLevel = v[(int)Od8Id.AcTiming],
-            FanManual = false,
-            FanPercent = 0
+            DetectedFanMode = fan.Mode,
+            // Reported as manual only for a fixed duty. A hardware curve is the driver's to run, and
+            // callers that only see this flag treat manual as "a single percentage is in force".
+            FanManual = fan.Mode == FanMode.Fixed,
+            FanPercent = fan.Percent
         };
+    }
+
+    private static readonly Od8Id[] FanCurveTempIds =
+    {
+        Od8Id.FanCurveTemperature1, Od8Id.FanCurveTemperature2, Od8Id.FanCurveTemperature3,
+        Od8Id.FanCurveTemperature4, Od8Id.FanCurveTemperature5
+    };
+
+    private static readonly Od8Id[] FanCurveSpeedIds =
+    {
+        Od8Id.FanCurveSpeed1, Od8Id.FanCurveSpeed2, Od8Id.FanCurveSpeed3,
+        Od8Id.FanCurveSpeed4, Od8Id.FanCurveSpeed5
+    };
+
+    /// <summary>Pull the live fan table and its defaults, skipping points this card doesn't expose.</summary>
+    private (FanMode Mode, int Percent) ReadFanMode(int gpuIndex, int[] cur)
+    {
+        List<int> temps = new(), tempDefaults = new(), speeds = new(), speedDefaults = new();
+        for (int i = 0; i < FanCurveSpeedIds.Length; i++)
+        {
+            var sr = Range(gpuIndex, FanCurveSpeedIds[i]);
+            if (!sr.Supported) continue;
+            speeds.Add(cur[(int)FanCurveSpeedIds[i]]);
+            speedDefaults.Add(sr.Default);
+
+            var tr = Range(gpuIndex, FanCurveTempIds[i]);
+            if (!tr.Supported) continue;
+            temps.Add(cur[(int)FanCurveTempIds[i]]);
+            tempDefaults.Add(tr.Default);
+        }
+        return InferFanMode(temps.ToArray(), speeds.ToArray(), tempDefaults.ToArray(), speedDefaults.ToArray());
+    }
+
+    /// <summary>
+    /// There is no "manual fan" flag on this driver — the five-point hardware curve is the only fan
+    /// mechanism, so the mode has to be inferred from the table itself:
+    ///
+    /// <list type="bullet">
+    /// <item>the driver's own default table means nothing has overridden it — auto;</item>
+    /// <item>five equal duties is what <see cref="SetFanSpeed"/> writes for a fixed speed;</item>
+    /// <item>anything else is a curve.</item>
+    /// </list>
+    ///
+    /// A hand-drawn flat curve therefore reads back as fixed, which is precisely what it is once it
+    /// reaches the hardware. Static and array-based so it can be tested without a driver.
+    /// </summary>
+    public static (FanMode Mode, int Percent) InferFanMode(
+        int[] temps, int[] speeds, int[] tempDefaults, int[] speedDefaults)
+    {
+        if (speeds.Length == 0) return (FanMode.Auto, 0);
+
+        bool untouched = speeds.Length == speedDefaults.Length && temps.Length == tempDefaults.Length;
+        for (int i = 0; untouched && i < speeds.Length; i++) untouched = speeds[i] == speedDefaults[i];
+        for (int i = 0; untouched && i < temps.Length; i++) untouched = temps[i] == tempDefaults[i];
+        if (untouched) return (FanMode.Auto, 0);
+
+        foreach (var s in speeds)
+            if (s != speeds[0]) return (FanMode.Curve, 0);
+        return (FanMode.Fixed, speeds[0]);
     }
 
     // ------------------------------------------------------------------ setters

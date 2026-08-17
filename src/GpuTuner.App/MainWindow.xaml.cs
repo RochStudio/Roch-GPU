@@ -17,7 +17,25 @@ public partial class MainWindow : Window
     private readonly TuningService _svc;
     private readonly MainViewModel _vm;
     private WinForms.NotifyIcon? _tray;
+    private System.Drawing.Icon? _trayIcon;
     private bool _reallyClose;
+
+    /// <summary>
+    /// The app icon at whatever size the shell wants for the notification area. The .ico carries a
+    /// hand-tuned 16px frame — no grid, no selected point, just the curve — so it is worth asking for
+    /// the small size and letting the icon pick that frame, rather than letting NotifyIcon downscale
+    /// the 256px one into mush. Returns null if the resource is missing, so the caller can fall back.
+    /// </summary>
+    private static System.Drawing.Icon? LoadEmbeddedIcon()
+    {
+        try
+        {
+            using var s = System.Reflection.Assembly.GetExecutingAssembly()
+                                .GetManifestResourceStream("RochGpuOC.ico");
+            return s == null ? null : new System.Drawing.Icon(s, WinForms.SystemInformation.SmallIconSize);
+        }
+        catch { return null; }
+    }
 
     public MainWindow(TuningService svc, bool startMinimized)
     {
@@ -120,9 +138,12 @@ public partial class MainWindow : Window
     {
         try
         {
+            _trayIcon = LoadEmbeddedIcon();
             _tray = new WinForms.NotifyIcon
             {
-                Icon = System.Drawing.SystemIcons.Application,
+                // Falls back to the generic Windows icon rather than failing the tray entirely, which
+                // is what SetupTray's catch would otherwise do to the Show/Exit menu.
+                Icon = _trayIcon ?? System.Drawing.SystemIcons.Application,
                 Text = "Roch GPU OC",
                 Visible = true
             };
@@ -173,8 +194,10 @@ public partial class MainWindow : Window
         UpdatePollDetail();
     }
 
-    private void Tray_Click(object sender, RoutedEventArgs e) => MinimizeToTray();
-
+    /// <summary>
+    /// Reached from the title bar's minimise (WindowState change) and from the "keep the fan curve
+    /// running" prompt on close. There is no button for it: minimising is the gesture.
+    /// </summary>
     public void MinimizeToTray()
     {
         if (_tray == null) { WindowState = WindowState.Minimized; return; }
@@ -215,7 +238,11 @@ public partial class MainWindow : Window
     {
         // Closing the window while a curve/fixed fan is active would silently hand fans back to auto
         // (App.OnExit does that). Ask, so nobody loses their fan curve by accident.
-        if (!_reallyClose && _tray != null && (_vm.IsCurveFan || _vm.IsFixedFan))
+        //
+        // Only where this app is the thing enforcing it. A driver-owned curve survives exit on its
+        // own, so the prompt would be offering to protect something that was never at risk.
+        if (!_reallyClose && _tray != null && !_svc.Capabilities.FanCurveIsHardware
+            && (_vm.IsCurveFan || _vm.IsFixedFan))
         {
             var r = MessageBox.Show(
                 "Fan control is active. Minimize to tray to keep it running?\n\nYes = minimize to tray\nNo = exit (fans return to automatic)",
@@ -226,6 +253,7 @@ public partial class MainWindow : Window
         _svc.TelemetryUpdated -= OnTelemetry;
         if (_monitorWindow != null) { _monitorWindow.Owner = null; _monitorWindow.Close(); _monitorWindow = null; }
         if (_tray != null) { _tray.Visible = false; _tray.Dispose(); _tray = null; }
+        _trayIcon?.Dispose(); _trayIcon = null;   // owned here; SystemIcons fallbacks are shared and must not be
         Application.Current.Shutdown();
     }
 }

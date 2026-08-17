@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="Roch GPU OC" width="560">
+
 # Roch GPU OC — beta
 
 [![CI](https://github.com/RochStudio/roch-gpu-oc-beta/actions/workflows/ci.yml/badge.svg)](https://github.com/RochStudio/roch-gpu-oc-beta/actions/workflows/ci.yml)
@@ -10,7 +12,7 @@ No kernel driver. Everything goes through the vendors' own user-mode libraries �
 NVIDIA, `atiadlxx.dll` on AMD — the same route Afterburner, NVIDIA Inspector and AMD's own Adrenalin
 software take.
 
-> **Beta.** Tested on an RTX 4070 Ti (driver 591.86) and an RX 9070 XT (Adrenalin 25.x). Other cards
+> **Beta.** Tested on an RTX 4070 Ti (driver 591.86) and an RX 9070 XT (Adrenalin 25.x–26.x). Other cards
 > should work — the tool asks the driver what it supports rather than assuming — but they are
 > untested. Read the [warning](#a-word-of-warning) before using it.
 
@@ -253,13 +255,33 @@ monitor session is the GC holding on to segments it has not returned to the OS y
 A full sample costs what it does because of one call: NVAPI's power-topology query is 8.8 ms of it on
 its own, and `PerformanceControl.CurrentActiveLimit` accounts for 117 KB of the 198 KB. A fan curve
 needs neither — only the temperature — so with the monitor closed it reads the thermal sensor and
-nothing else, about 580× cheaper. Those figures are **NVIDIA**: the cheap path is a backend override,
-and a backend without one falls back to the full read (see [Known limitations](#known-limitations)).
+nothing else, about 580× cheaper.
 
 That background sample is stepped into the curve and dropped: never stored, never graphed, because
 only its temperature field is valid. The graphs therefore show a gap for the time the monitor was
 closed rather than a run of zeroes, and the limiter line under the GPU name says it is not sampling
 rather than reporting a stale reading.
+
+Measured on an RX 9070 XT, driver 26.3.1, 1000 ms interval:
+
+| State | CPU per 30 s | Per poll |
+|---|---|---|
+| Full telemetry sample | 31–47 ms | 1.0–1.6 ms |
+| Monitor closed | **0 ms** | no driver call |
+
+AMD is roughly **10× cheaper per sample** than NVIDIA, because ADL's PMLog read hands back every
+sensor in one call and there is no equivalent of the power-topology query to pay for. The
+monitor-closed row is zero for a stronger reason than on NVIDIA: the AMD fan curve lives in the
+driver, so no software curve is ever active and the background poll returns before it calls anything
+at all — there is no AMD equivalent of the temperature-only sample described above, because nothing
+needs one. Nothing this app can be asked to do will make it touch the driver with the monitor closed.
+
+The AMD per-sample figure is the driver cost, taken from `rochoc monitor`, which runs the same
+`PollForeground` path as the GUI; the monitor window adds its graph drawing on top of it. The 0 ms row
+is the GUI itself — three consecutive 30-second samples with handle count and working set flat.
+
+Memory on the same machine: 122 MB working set and 73 MB private idle with the monitor closed, and
+29 MB / 7 MB for the CLI. Both sat still across the run, handle count included.
 
 So: tune with the monitor open, close it before you launch the game, and the fan curve keeps running.
 Raising **Poll interval** in settings scales the monitor-open row down proportionally.
@@ -312,6 +334,7 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
 
 ```
 roch-gpu-oc-beta.sln       solution
+assets/                    logo: icon.png (the Roch mark, shared with Roch Viewer), logo.svg (banner), RochGpuOC.ico
 build.ps1                  build + test + publish to dist\
 setup.ps1                  as above, plus SDK install and launch (driven by SETUP.bat)
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
@@ -334,9 +357,11 @@ GUI alone into `gui-build.log`, and `DIAG.bat` self-elevates and dumps `rochoc-d
 
 - The AMD core-clock offset is a **ceiling**, not a shift. If the card is power-limited it will
   change nothing — check the limiter line under the GPU name before concluding it's broken.
-- The cheap background poll is **NVIDIA-only**. `ReadTemperatureOnly` falls back to a full telemetry
-  read on any backend that does not override it, so on AMD a running fan curve with the monitor
-  closed still costs a full sample per tick. Measured on NVIDIA only; the AMD figure is unknown.
+- `ReadTemperatureOnly` — the cheap temperature-only read — is overridden on **NVIDIA only**; any other
+  backend falls back to a full telemetry read. This costs nothing on either shipping backend: NVIDIA
+  has the override, and AMD never reaches it, because a hardware fan curve leaves no software curve
+  running for the background poll to feed. It is a cost only for a future backend that pairs a
+  software fan curve with no override.
 - The 15/25 MHz clock snapping applies to **offsets**. A card reporting an absolute memory clock
   (AMD) is left unsnapped, because its stock clock is not on any such grid and rounding it would
   overclock the card just from reading its state. That path has had no hardware to test against.
