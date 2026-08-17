@@ -106,6 +106,16 @@ using (var svc = new TuningService(new MockBackend()))
     Check("reset", svc.Backend.ReadTuningState(0).CoreOffsetMhz == 0);
 }
 
+// ---- Curve span: the V/F curve runs through BOTH struct regions, not just the "GPU" one.
+// Regression: the struct-based reader stopped at the 80-entry GPU array and reported a 4070 Ti's
+// curve as 80 points ending at 945 mV, while the raw reader saw all 103 ending at 1090. Anything
+// measured against the short curve — the stock ceiling, an undervolt target — came out wrong.
+{
+    Check("curve spans both regions", NvApiPrivate.TotalPoints(80) == 103);
+    Check("span scales with the GPU region", NvApiPrivate.TotalPoints(128) == 151);
+    Check("trailing array defaults to the second", NvApiPrivate.TrailingArray == 1);
+}
+
 // ---- ClockStep: the core offset snaps to the driver's 15 MHz grid
 {
     const int s = ClockStep.CoreMhz;

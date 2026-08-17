@@ -197,9 +197,16 @@ internal static class NvApiPrivate
         try { if (_getVfpCurve(handle.MemoryAddress, ref s) != 0) return Array.Empty<(uint, int)>(); }
         catch { return Array.Empty<(uint, int)>(); }
 
-        var r = new (uint, int)[CurveEntries];
+        // Read straight through both regions, exactly as ReadCurveRaw does. The curve does not stop
+        // at the "GPU" array — on a 4070 Ti it is 103 points and spills into the 23-entry array
+        // NvAPIWrapper labels "memory". Stopping at 80 truncated this card's curve at 945 mV instead
+        // of 1090, and anything computed from it (an undervolt target, the stock ceiling) came out
+        // measured against the wrong top. See TotalPoints.
+        var r = new (uint, int)[TotalPoints(CurveEntries)];
         for (int i = 0; i < CurveEntries; i++)
             r[i] = (s.GpuEntries[i * CurveStride + 2], (int)s.GpuEntries[i * CurveStride + 1]);
+        for (int i = 0; i < MemCurveEntries; i++)
+            r[CurveEntries + i] = (s.MemEntries[i * CurveStride + 2], (int)s.MemEntries[i * CurveStride + 1]);
         return r;
     }
 
@@ -212,8 +219,12 @@ internal static class NvApiPrivate
         try { if (_getBoostTable(handle.MemoryAddress, ref s) != 0) return Array.Empty<int>(); }
         catch { return Array.Empty<int>(); }
 
-        var r = new int[DeltaEntries];
+        // Same span as the curve: the points past the GPU array take their delta from one of the two
+        // trailing 23-int arrays, picked by TrailingArray — the offsets here mirror DeltaOffset().
+        var r = new int[TotalPoints(DeltaEntries)];
         for (int i = 0; i < DeltaEntries; i++) r[i] = s.GpuDeltas[i * DeltaStride + 5];
+        for (int i = 0; i < MemCurveEntries; i++)
+            r[DeltaEntries + i] = TrailingArray == 1 ? s.MemoryDeltas[i] : unchecked((int)s.MemoryFilled[i]);
         return r;
     }
 

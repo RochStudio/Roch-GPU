@@ -627,7 +627,11 @@ public sealed class NvApiBackend : IGpuBackend
             return raw.Where(p => p.voltUv > 0 && p.freqKhz > 0)
                       .Select(p => new VfPoint(p.voltUv, p.freqKhz)).ToList();
 
-        return GPUApi.GetVFPCurve(g.Handle).GPUCurveEntries
+        // Last resort, through NvAPIWrapper. Both regions again: its "MemoryCurveEntries" carries the
+        // tail of the GPU curve on cards with more than 80 points, so reading only the first array
+        // would hand back a curve that stops 145 mV short on a 4070 Ti.
+        var wrapped = GPUApi.GetVFPCurve(g.Handle);
+        return wrapped.GPUCurveEntries.Concat(wrapped.MemoryCurveEntries)
             .Where(e => e.VoltageInMicroV > 0 && e.FrequencyInkHz > 0)
             .Select(e => new VfPoint(e.VoltageInMicroV, (int)e.FrequencyInkHz))
             .ToList();

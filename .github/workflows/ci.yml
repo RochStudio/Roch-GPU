@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The engine and its tests are plain net8.0 with no NuGet dependencies and no GPU calls, so they
+  # run anywhere. Linux is the cheap, fast gate that catches the common breakage.
+  build-and-test:
+    name: Build and test (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # GpuTuner.App is WPF. It only compiles off Windows because the csproj sets
+      # EnableWindowsTargeting; if that is ever dropped, this step is what notices.
+      - name: Build
+        run: dotnet build roch-gpu-oc-beta.sln -c Release --nologo
+
+      # The runner is a dependency-free console app: exit code 0 and "N passed, 0 failed".
+      - name: Test
+        run: dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build --nologo
+
+  # Windows is where it actually ships, so prove the thing publishes and produces both executables
+  # in one folder — the CLI-then-GUI order is load-bearing on case-insensitive NTFS and has silently
+  # eaten an executable before.
+  publish-windows:
+    name: Publish (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build, test and publish
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Check both executables landed
+        shell: pwsh
+        run: |
+          $missing = @('dist/RochGpuOC.exe', 'dist/rochoc.exe') | Where-Object { -not (Test-Path $_) }
+          if ($missing) { throw "missing after publish: $($missing -join ', ')" }
+          Get-ChildItem dist/*.exe | Select-Object Name, Length
+
+      # The CLI's --mock backend touches no driver, so the published binary can be smoke-tested on a
+      # runner with no GPU at all.
+      - name: Smoke-test the CLI against the mock GPU
+        shell: pwsh
+        run: |
+          $out = & ./dist/rochoc.exe info --mock 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "rochoc info --mock exited $LASTEXITCODE" }
+          if ($out -notmatch 'Simulated') { throw "mock backend did not report a simulated GPU" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: roch-gpu-oc-dist
+          path: dist/
+          retention-days: 14

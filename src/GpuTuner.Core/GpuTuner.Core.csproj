@@ -13,4 +13,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\third_party\NvAPIWrapper\NvAPIWrapper.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The vendor-private layout constants (NvApiPrivate) are internal on purpose, but they encode
+         hard-won facts about the driver's struct layout that are worth pinning down in tests. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>GpuTuner.Core.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>
