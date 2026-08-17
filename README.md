@@ -35,20 +35,133 @@ Plus, on both: a hardware monitor in its own window (core/memory clock, voltage,
 hot-spot and memory temperatures, load, fan % and RPM, with a session peak for core clock), five
 profile slots, apply-at-logon via Task Scheduler, tray operation, and a CLI.
 
-## Install
+---
 
-Needs **Windows 10/11 x64**, the **.NET 8 Desktop Runtime**, and the vendor driver you already have.
-Run as administrator — writing clocks requires it, and the app asks via its manifest.
+## Building from source
+
+There is no prebuilt release yet — building it yourself is the way to run it. On a machine with the
+.NET 8 SDK already present this takes well under a minute.
+
+### 1. Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| **Windows 10/11 x64** | To *run* the tool. It can be *built* on Linux/macOS — see [Building off Windows](#building-off-windows). |
+| **.NET 8 SDK** | `winget install Microsoft.DotNet.SDK.8` — verify with `dotnet --list-sdks` (any `8.*`). |
+| **Vendor GPU driver** | The one you already have. NVIDIA ships `nvapi64.dll` and AMD ships `atiadlxx.dll` with the driver; neither is bundled here. |
+| **Administrator rights** | To *run* only, not to build. Writing clocks requires elevation, and both executables request it via `app.manifest`. |
+
+The SDK includes the runtime, so a machine that builds the tool can also run it. Running a build
+made elsewhere needs only the [.NET 8 **Desktop** Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
+(the Desktop variant, not the plain one — the GUI is WPF).
+
+### 2. Clone and build
 
 ```powershell
-git clone https://github.com/<you>/roch-gpu-oc-beta.git
+git clone https://github.com/RochStudio/roch-gpu-oc-beta.git
 cd roch-gpu-oc-beta
 powershell -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+`build.ps1` compiles the solution, runs the test suite, and publishes the GUI and the CLI side by
+side into `dist\`. It stops on the first failure.
+
+Then, from an **elevated** terminal:
+
+```powershell
 .\dist\RochGpuOC.exe
 ```
 
-Building needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-(`winget install Microsoft.DotNet.SDK.8`).
+The `-ExecutionPolicy Bypass` is needed because the script is unsigned; it applies to that one
+invocation only and does not change your machine's policy.
+
+### 3. What lands in `dist\`
+
+| File | What it is |
+|---|---|
+| `RochGpuOC.exe` | The WPF GUI. Requests elevation on launch. |
+| `rochoc.exe` | The CLI — same engine, no window. See [Command line](#command-line). |
+| `GpuTuner.Core.dll` | The engine both front-ends share. |
+| `NvAPIWrapper.dll` | Vendored NVAPI binding. |
+
+Both executables are **framework-dependent** `win-x64` builds (`--self-contained false`), so the
+target machine needs the .NET 8 Desktop Runtime. `dist\` is gitignored.
+
+### Building by hand
+
+If you would rather not run the script, this is exactly what it does:
+
+```powershell
+dotnet build roch-gpu-oc-beta.sln -c Release
+dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build
+dotnet publish src/GpuTuner.Cli/GpuTuner.Cli.csproj -c Release -r win-x64 --self-contained false -o dist
+dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -r win-x64 --self-contained false -o dist
+```
+
+**Publish the CLI before the GUI.** Both publish into the same folder, and on case-insensitive NTFS
+the second publish will otherwise clean up the first one's output. This ordering is not cosmetic —
+reversing it produces a `dist\` missing one of the two executables.
+
+### Building in an IDE
+
+Open `roch-gpu-oc-beta.sln` in Visual Studio 2022 (17.8+, with the **.NET desktop development**
+workload) or JetBrains Rider. Set `GpuTuner.App` as the startup project. To exercise the tuning paths
+you must start the IDE itself as administrator, otherwise every write fails at the driver.
+
+The solution contains five projects:
+
+| Project | Target | Output |
+|---|---|---|
+| `src/GpuTuner.Core` | `net8.0` | `GpuTuner.Core.dll` |
+| `src/GpuTuner.App` | `net8.0-windows` (WPF) | `RochGpuOC.exe` |
+| `src/GpuTuner.Cli` | `net8.0` | `rochoc.exe` |
+| `tests/GpuTuner.Core.Tests` | `net8.0` | test runner |
+| `third_party/NvAPIWrapper` | `net8.0` | `NvAPIWrapper.dll` |
+
+### Running the tests
+
+```powershell
+dotnet run --project tests/GpuTuner.Core.Tests -c Release
+```
+
+Expected output is `112 passed, 0 failed`, exit code 0. The runner is dependency-free — no xunit, no
+NuGet restore beyond the SDK — so it builds offline and runs anywhere. It covers the V/F curve
+maths, the voltage planner, profile clamping, the fan-curve controller and apply ordering against a
+mock backend, so most of the engine can be changed without a GPU in front of you.
+
+### Developing without a GPU
+
+Add `--mock` to any CLI command to run against a simulated RTX 4070 SUPER. No driver call is made and
+nothing touches real hardware:
+
+```powershell
+.\dist\rochoc.exe info --mock
+.\dist\rochoc.exe monitor --mock
+```
+
+This is the fastest way to check that a build is sound on a machine with no supported card, and it
+needs no elevation.
+
+### Building off Windows
+
+`GpuTuner.App` sets `EnableWindowsTargeting`, so `dotnet build` succeeds on Linux and macOS CI
+agents — the WPF reference pack comes from NuGet. The result cannot run there; it is a compile check
+only. `dotnet publish -r win-x64` also works cross-platform.
+
+### If the build fails
+
+| Symptom | Cause |
+|---|---|
+| `The current .NET SDK does not support targeting .NET 8.0` | SDK older than 8.0. Check `dotnet --list-sdks`. |
+| `NETSDK1100: … requires the Windows Desktop` | Building `GpuTuner.App` off Windows without `EnableWindowsTargeting`. Build the `.sln`, not the bare `.csproj`. |
+| `RochGpuOC.exe` missing from `dist\` | The two publishes ran in the wrong order — see [Building by hand](#building-by-hand). |
+| `...\dist\... is denied` | The GUI is still running. Close it (including the tray icon) and rebuild. |
+| Builds fine, every write silently does nothing | Not elevated. Run the terminal, or the IDE, as administrator. |
+
+`.\dist\rochoc.exe diag` is the first thing to run when the *tool* builds but misbehaves — it prints
+exactly what the driver reported, which is usually the answer.
+
+---
 
 ## Command line
 
@@ -56,15 +169,22 @@ Building needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0
 
 ```
 rochoc info                          what was detected, and every limit the driver reports
-rochoc monitor                       live telemetry in the terminal
+rochoc monitor [--interval 1000]     live telemetry in the terminal, until Ctrl+C
 rochoc apply --core 120 --mem 800 --power 110 --temp 85 --fan 60
-rochoc apply-profile "Slot 1"
+rochoc apply-profile "Slot 1"        apply a profile saved in the GUI
+rochoc list-profiles                 names of the saved profiles
 rochoc reset                         everything back to driver defaults
-rochoc diag > diag.txt               full dump: capabilities, raw tables, sensors
+rochoc diag                          full dump: capabilities, raw tables, sensors
+rochoc startup --enable <profile> | --disable | --status
 ```
 
-`diag` is the first thing to run when something doesn't behave — it prints exactly what the driver
-reported, which is usually the answer.
+Global options: `--gpu <n>` selects the card (default 0), `--mock` uses the simulated GPU, and
+`--help` prints the same list. `diag` also writes `rochoc-diag.txt` beside the working directory.
+
+Anything that writes to the card — `apply`, `apply-profile`, `reset`, `startup` — needs an elevated
+terminal. `info`, `monitor`, `list-profiles` and anything with `--mock` do not.
+
+---
 
 ## How it works
 
@@ -90,6 +210,8 @@ Everything that can be verified is verified: writes are read back, and the statu
 card reports something different from what was asked. Several vendor calls return success and then do
 nothing, so "the call succeeded" is not treated as evidence.
 
+---
+
 ## A word of warning
 
 This writes voltage, clock and power settings to your GPU.
@@ -106,21 +228,27 @@ This writes voltage, clock and power settings to your GPU.
 
 Provided as-is, with no warranty. You are responsible for what you do to your own hardware.
 
+---
+
 ## Repository layout
 
 ```
-roch-gpu-oc-beta.sln     solution
-src/GpuTuner.Core        engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
-src/GpuTuner.App         WPF GUI (RochGpuOC.exe)
-src/GpuTuner.Cli         rochoc.exe, same engine headless
+roch-gpu-oc-beta.sln       solution
+build.ps1                  build + test + publish to dist\  (the supported build path)
+src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
+src/GpuTuner.App           WPF GUI (RochGpuOC.exe)
+src/GpuTuner.Cli           rochoc.exe, same engine headless
 tests/GpuTuner.Core.Tests  dependency-free test runner (112 checks, no hardware needed)
-tools/amd                read-only PowerShell probes used to map the AMD driver surface
-third_party/NvAPIWrapper vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
+tools/amd                  read-only PowerShell probes used to map the AMD driver surface
+third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
 ```
 
-Run the tests with `dotnet run --project tests/GpuTuner.Core.Tests -c Release`. They cover the curve
-maths, the voltage planner, profile clamping, the fan-curve controller and the apply ordering against
-a mock backend, so most of the engine can be changed without a GPU in front of you.
+The `.bat` files in the root are development conveniences, not part of the build:
+`REBUILD-AND-RUN.bat` wipes `bin`/`obj`/`dist` and republishes when an incremental build goes wrong,
+`BUILD-GUI.bat` builds the GUI alone into `gui-build.log`, and `DIAG.bat` self-elevates and dumps
+`rochoc-diag.txt`. Use `build.ps1` for an ordinary build.
+
+---
 
 ## Known limitations
 
@@ -130,6 +258,9 @@ a mock backend, so most of the engine can be changed without a GPU in front of y
 - Multi-GPU is implemented but untested — GPU 0 is used unless `--gpu` says otherwise.
 - The V/F curve editor is NVIDIA-only.
 - vBIOS flashing is deliberately out of scope.
+- No signed release binaries yet; build from source.
+
+---
 
 ## Credits
 
