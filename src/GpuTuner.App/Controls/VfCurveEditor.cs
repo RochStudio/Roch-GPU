@@ -282,6 +282,20 @@ public sealed class VfCurveEditor : FrameworkElement
         var pen = new Pen(CurveBrush, 2) { LineJoin = PenLineJoin.Round };
         dc.DrawGeometry(null, pen, geo);
 
+        // Past its last point the table has no more curve to follow, so the card holds that clock up
+        // to whatever ceiling the boost allows. Afterburner runs its curve out to the edge of the axis
+        // for the same reason. Drawn dashed and in the ceiling's colour because it is extrapolation,
+        // not table data — there are no points out here to edit.
+        int lastIdx = _points.Count - 1;
+        int lastMv = _points[lastIdx].VoltageMv;
+        if (_ceilingMv > lastMv && lastMv >= vMin)
+        {
+            double ey = ToScreen(lastMv, DisplayMhz(lastIdx)).Y;
+            var extPen = new Pen(CeilingBrush, 2) { DashStyle = DashStyles.Dash }; extPen.Freeze();
+            dc.DrawLine(extPen, new Point(ToScreen(lastMv, fMin).X, ey),
+                                new Point(ToScreen(Math.Min(_ceilingMv, vMax), fMin).X, ey));
+        }
+
         // points
         var ptPen = new Pen(CurveBrush, 2); ptPen.Freeze();
         var selPen = new Pen(SelectBrush, 2); selPen.Freeze();
