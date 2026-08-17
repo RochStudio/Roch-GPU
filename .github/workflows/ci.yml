@@ -16,9 +16,9 @@ jobs:
     name: Build and test (ubuntu)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -38,9 +38,9 @@ jobs:
     name: Publish (windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -65,7 +65,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "rochoc info --mock exited $LASTEXITCODE" }
           if ($out -notmatch 'Simulated') { throw "mock backend did not report a simulated GPU" }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: roch-gpu-oc-dist
           path: dist/
