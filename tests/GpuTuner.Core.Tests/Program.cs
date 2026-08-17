@@ -136,6 +136,23 @@ using (var svc = new TuningService(new MockBackend()))
     Eq("on-grid max is reachable", 990, ClockStep.SnapWithin(990, s, -1000, 990));
     // Degenerate ranges must not spin or invert.
     Eq("inverted range returns the input", 42, ClockStep.SnapWithin(42, s, 100, -100));
+
+    // ---- memory offset: same idea, 25 MHz grid
+    const int m = ClockStep.MemoryMhz;
+    Check("memory step is 25", m == 25);
+    Eq("memory exact multiple", 800, ClockStep.SnapWithin(800, m, -1000, 4000));
+    Eq("memory rounds down", 800, ClockStep.SnapWithin(810, m, -1000, 4000));
+    Eq("memory rounds up", 825, ClockStep.SnapWithin(815, m, -1000, 4000));
+    Eq("memory zero stays stock", 0, ClockStep.SnapWithin(10, m, -1000, 4000));
+    Eq("memory negative symmetric", -825, ClockStep.SnapWithin(-815, m, -1000, 4000));
+    Eq("memory top stays on the grid", 4000, ClockStep.SnapWithin(3999, m, -1000, 4000));
+    Eq("memory bottom stays on the grid", -1000, ClockStep.SnapWithin(-999, m, -1000, 4000));
+    // A range whose ends are NOT multiples of 25 must still come back on-grid.
+    Eq("off-grid max steps back", 975, ClockStep.SnapWithin(990, m, -990, 990));
+
+    // An absolute memory clock (AMD) must pass through untouched: its stock value is whatever the
+    // driver reports, and rounding it onto a grid would overclock the card just from reading state.
+    Eq("absolute clock is never snapped", 2518, ClockStep.SnapWithin(2518, 1, 0, 4000));
 }
 
 // ---- BackgroundMode: what the poll costs when nothing is on screen

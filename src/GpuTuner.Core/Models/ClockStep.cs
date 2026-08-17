@@ -13,6 +13,14 @@ public static class ClockStep
     public const int CoreMhz = 15;
 
     /// <summary>
+    /// Memory clock offset granularity, MHz. Applies to an <em>offset</em> only. A card that reports
+    /// an absolute memory clock (AMD, <see cref="GpuCapabilities.MemoryClockIsAbsolute"/>) must not be
+    /// snapped: its stock clock is whatever the driver says, 2518 MHz and suchlike, and rounding that
+    /// onto a grid would overclock the card as a side effect of reading its state.
+    /// </summary>
+    public const int MemoryMhz = 25;
+
+    /// <summary>
     /// Nearest multiple of <paramref name="step"/>, anchored on zero. Anchoring matters: snapping to a
     /// grid that starts at the slider's minimum (-1000 MHz, not a multiple of 15) would put stock out
     /// of reach. Halfway rounds away from zero so -22 and +22 land symmetrically.

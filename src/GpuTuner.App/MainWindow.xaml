@@ -339,7 +339,9 @@
                                 <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="mem:-1"/>
                                 <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.MemoryOffsetMinMhz}" Maximum="{Binding Caps.MemoryOffsetMaxMhz}"
-                                    Value="{Binding MemoryOffset, Mode=TwoWay}" TickFrequency="10" IsEnabled="{Binding Caps.CanSetMemoryOffset}"/>
+                                    Value="{Binding MemoryOffset, Mode=TwoWay}" TickFrequency="{Binding MemoryStepMhz}"
+                                    SmallChange="{Binding MemoryStepMhz}" LargeChange="{Binding MemoryStepMhz}"
+                                    IsEnabled="{Binding Caps.CanSetMemoryOffset}"/>
                                 <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="mem:1"/>
                             </Grid>

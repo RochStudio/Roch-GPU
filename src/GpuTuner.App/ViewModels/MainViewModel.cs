@@ -131,7 +131,17 @@ public sealed class MainViewModel : ObservableObject
     private const int CoreStepMhz = ClockStep.CoreMhz;
 
     public int CoreOffset { get => _core; set { if (SetClamped(ref _core, ClockStep.SnapWithin(value, CoreStepMhz, Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz), Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(CoreOffset)); } } }
-    public int MemoryOffset { get => _mem; set { if (SetClamped(ref _mem, value, Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(MemoryOffset)); } } }
+    /// <summary>
+    /// Grid the memory value snaps to. An NVIDIA offset goes in 25 MHz steps; an absolute AMD memory
+    /// clock is deliberately left alone (1 = no snapping), because its stock value sits wherever the
+    /// driver puts it — 2518 MHz would round to 2525 and overclock the card just from reading it.
+    /// </summary>
+    private int MemorySnapMhz => Caps.MemoryClockIsAbsolute ? 1 : ClockStep.MemoryMhz;
+
+    /// <summary>How far one nudge or slider step moves memory. Bound by the slider too.</summary>
+    public int MemoryStepMhz => Caps.MemoryClockIsAbsolute ? 5 : ClockStep.MemoryMhz;
+
+    public int MemoryOffset { get => _mem; set { if (SetClamped(ref _mem, ClockStep.SnapWithin(value, MemorySnapMhz, Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz), Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(MemoryOffset)); } } }
     public int PowerLimit { get => _power; set { if (SetClamped(ref _power, value, Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent)) { Dirty(); RaiseVal(nameof(PowerLimit)); } } }
     public int TempLimit { get => _temp; set { if (SetClamped(ref _temp, value, Caps.TempLimitMinC, Caps.TempLimitMaxC)) { Dirty(); RaiseVal(nameof(TempLimit)); } } }
     public int VoltageBoost { get => _volt; set { if (SetClamped(ref _volt, value, Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent)) { Dirty(); RaiseVal(nameof(VoltageBoost)); OnPropertyChanged(nameof(VoltageBoostEffectText)); } } }
@@ -164,15 +174,15 @@ public sealed class MainViewModel : ObservableObject
         string name = spec[..colon];
         if (!int.TryParse(spec[(colon + 1)..], out int dir) || dir == 0) return;
 
-        // Step sizes match how coarse each control is: the core clock in the driver's own 15 MHz
-        // steps, other clocks in 5s, percentages in 1s.
+        // Step sizes match how coarse each control is: the clocks in the driver's own granularity
+        // (core 15 MHz, memory offset 25), voltage in 5s, percentages in 1s.
         switch (name)
         {
             case "volt": TargetVoltage += 5 * dir; break;
             case "voltboost": VoltageBoost += dir; break;   // percent, so one step is one unit
             case "voltoffset": VoltageOffset += 5 * dir; break;
             case "core": CoreOffset += CoreStepMhz * dir; break;
-            case "mem": MemoryOffset += 5 * dir; break;
+            case "mem": MemoryOffset += MemoryStepMhz * dir; break;
             case "power": PowerLimit += dir; break;
             case "temp": TempLimit += dir; break;
             case "fan": FixedFan += dir; break;
