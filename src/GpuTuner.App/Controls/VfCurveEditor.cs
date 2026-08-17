@@ -91,7 +91,37 @@ public sealed class VfCurveEditor : FrameworkElement
     /// is the only way the plot can show what the card will actually do.
     /// </summary>
     private int _capMv;
-    public void SetVoltageCap(int capMv) { _capMv = capMv; InvalidateVisual(); }
+    public void SetVoltageCap(int capMv)
+    {
+        _capMv = capMv;
+        // A cap that has just swallowed the selected point would leave a white ring on a dot the
+        // arrow keys can no longer move.
+        if (_selectedIndex >= 0 && IsCapped(_selectedIndex)) _selectedIndex = -1;
+        InvalidateVisual();
+    }
+
+    /// <summary>Frequency of the last point at or below the cap — the level the card flattens to.</summary>
+    private int CapFlatMhz()
+    {
+        if (_capMv <= 0) return 0;
+        int i = _points.FindLastIndex(p => p.VoltageMv <= _capMv);
+        return i >= 0 ? _points[i].LiveMhz : 0;
+    }
+
+    /// <summary>
+    /// True for points the cap has made unreachable. Their stored frequency still exists and is still
+    /// what gets written, but the card will never run there, so they are drawn flat and not edited.
+    /// </summary>
+    private bool IsCapped(int i) =>
+        _capMv > 0 && i >= 0 && i < _points.Count && _points[i].VoltageMv > _capMv && CapFlatMhz() > 0;
+
+    /// <summary>
+    /// The frequency to *draw* point i at. Past an active cap the card behaves as though the curve
+    /// were flat from the cap onward, which is what Afterburner plots and what the card actually
+    /// does — so plot that, rather than stored points climbing to clocks nothing will ever reach.
+    /// LiveMhz is left alone: it is what gets written, and it reappears the moment the cap lifts.
+    /// </summary>
+    private int DisplayMhz(int i) => IsCapped(i) ? CapFlatMhz() : _points[i].LiveMhz;
     public void SetLive(double voltageMv, double clockMhz)
     {
         _liveVoltMv = voltageMv; _liveClockMhz = clockMhz;
@@ -234,9 +264,9 @@ public sealed class VfCurveEditor : FrameworkElement
         var geo = new StreamGeometry();
         using (var ctx = geo.Open())
         {
-            ctx.BeginFigure(ToScreen(_points[0].VoltageMv, _points[0].LiveMhz), false, false);
+            ctx.BeginFigure(ToScreen(_points[0].VoltageMv, DisplayMhz(0)), false, false);
             for (int i = 1; i < _points.Count; i++)
-                ctx.LineTo(ToScreen(_points[i].VoltageMv, _points[i].LiveMhz), true, false);
+                ctx.LineTo(ToScreen(_points[i].VoltageMv, DisplayMhz(i)), true, false);
         }
         geo.Freeze();
         var pen = new Pen(CurveBrush, 2) { LineJoin = PenLineJoin.Round };
@@ -248,8 +278,8 @@ public sealed class VfCurveEditor : FrameworkElement
         for (int i = 0; i < _points.Count; i++)
         {
             var p = _points[i];
-            var s = ToScreen(p.VoltageMv, p.LiveMhz);
-            bool modified = p.LiveMhz != p.StockMhz;
+            var s = ToScreen(p.VoltageMv, DisplayMhz(i));
+            bool modified = !IsCapped(i) && p.LiveMhz != p.StockMhz;
             bool active = i == _dragIndex || i == _selectedIndex;
             // The selected point gets a white ring and a wider radius: it has to stay findable among
             // eighty-odd identical red dots while the arrow keys are walking it up and down.
@@ -315,7 +345,10 @@ public sealed class VfCurveEditor : FrameworkElement
         int best = -1; double bestD = HitRadius;
         for (int i = 0; i < _points.Count; i++)
         {
-            double d = (ToScreen(_points[i].VoltageMv, _points[i].LiveMhz) - s).Length;
+            // Capped points are drawn flat and can't change what the card does, so they aren't grabbable.
+            // Hit-test the drawn position, never the stored one, or the dots move out from under the cursor.
+            if (IsCapped(i)) continue;
+            double d = (ToScreen(_points[i].VoltageMv, DisplayMhz(i)) - s).Length;
             if (d <= bestD) { bestD = d; best = i; }
         }
         return best;
@@ -423,7 +456,7 @@ public sealed class VfCurveEditor : FrameworkElement
             // Only walk points that are actually inside the frame — selecting an invisible idle
             // point below 700 mV would look like the keys had stopped working.
             int first = _points.FindIndex(p => p.VoltageMv >= vMin);
-            int last = _points.FindLastIndex(p => p.VoltageMv <= vMax);
+            int last = _points.FindLastIndex(p => p.VoltageMv <= vMax && (_capMv <= 0 || p.VoltageMv <= _capMv));
             if (first < 0 || last < first) return;
 
             int dir = e.Key == Key.Right ? 1 : -1;

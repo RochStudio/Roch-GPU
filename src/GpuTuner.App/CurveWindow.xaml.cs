@@ -107,8 +107,11 @@ public partial class CurveWindow : Window
     {
         try
         {
-            return _svc.Backend is GpuTuner.Core.Backends.Nvidia.NvApiBackend nv
-                ? nv.ReadVoltageLockMv(_svc.GpuIndex) : 0;
+            // Ask through the interface rather than casting to the NVIDIA backend: ReadVoltageLockMv
+            // already returns -1 for "can't report", which is the same answer the cast was producing
+            // for everything else, and going through it lets the mock draw a cap too.
+            int mv = _svc.Backend.ReadVoltageLockMv(_svc.GpuIndex);
+            return mv > 0 ? mv : 0;
         }
         catch { return 0; }
     }
