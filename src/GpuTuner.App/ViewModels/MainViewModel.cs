@@ -127,7 +127,10 @@ public sealed class MainViewModel : ObservableObject
 
     // Each numeric property clamps to the driver range on set, so typing "+9999" or dragging past the end is safe,
     // and raises both the "…Text" label and the "…Input" text-box mirror so slider and box stay in sync.
-    public int CoreOffset { get => _core; set { if (SetClamped(ref _core, value, Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(CoreOffset)); } } }
+    /// <summary>Core offsets snap to the driver's own 15 MHz grid — see <see cref="ClockStep"/>.</summary>
+    private const int CoreStepMhz = ClockStep.CoreMhz;
+
+    public int CoreOffset { get => _core; set { if (SetClamped(ref _core, ClockStep.SnapWithin(value, CoreStepMhz, Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz), Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(CoreOffset)); } } }
     public int MemoryOffset { get => _mem; set { if (SetClamped(ref _mem, value, Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(MemoryOffset)); } } }
     public int PowerLimit { get => _power; set { if (SetClamped(ref _power, value, Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent)) { Dirty(); RaiseVal(nameof(PowerLimit)); } } }
     public int TempLimit { get => _temp; set { if (SetClamped(ref _temp, value, Caps.TempLimitMinC, Caps.TempLimitMaxC)) { Dirty(); RaiseVal(nameof(TempLimit)); } } }
@@ -161,13 +164,14 @@ public sealed class MainViewModel : ObservableObject
         string name = spec[..colon];
         if (!int.TryParse(spec[(colon + 1)..], out int dir) || dir == 0) return;
 
-        // Step sizes match how coarse each control is: clocks move in 5s, percentages in 1s.
+        // Step sizes match how coarse each control is: the core clock in the driver's own 15 MHz
+        // steps, other clocks in 5s, percentages in 1s.
         switch (name)
         {
             case "volt": TargetVoltage += 5 * dir; break;
             case "voltboost": VoltageBoost += dir; break;   // percent, so one step is one unit
             case "voltoffset": VoltageOffset += 5 * dir; break;
-            case "core": CoreOffset += 5 * dir; break;
+            case "core": CoreOffset += CoreStepMhz * dir; break;
             case "mem": MemoryOffset += 5 * dir; break;
             case "power": PowerLimit += dir; break;
             case "temp": TempLimit += dir; break;

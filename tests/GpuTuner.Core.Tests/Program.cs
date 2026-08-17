@@ -106,6 +106,38 @@ using (var svc = new TuningService(new MockBackend()))
     Check("reset", svc.Backend.ReadTuningState(0).CoreOffsetMhz == 0);
 }
 
+// ---- ClockStep: the core offset snaps to the driver's 15 MHz grid
+{
+    const int s = ClockStep.CoreMhz;
+    Check("core step is 15", s == 15);
+    Eq("exact multiple is untouched", 150, ClockStep.Snap(150, s));
+    Eq("rounds down below halfway", 15, ClockStep.Snap(20, s));
+    Eq("rounds up past halfway", 30, ClockStep.Snap(23, s));
+    // Anchored on zero, not on the slider minimum: stock has to stay reachable.
+    Eq("zero stays zero", 0, ClockStep.Snap(0, s));
+    Eq("small values collapse to stock", 0, ClockStep.Snap(7, s));
+    // Negatives snap the same way as positives rather than drifting one step down.
+    Eq("negative exact", -150, ClockStep.Snap(-150, s));
+    Eq("negative rounds toward zero below halfway", 0, ClockStep.Snap(-7, s));
+    Eq("negative rounds away past halfway", -15, ClockStep.Snap(-8, s));
+    Eq("negative symmetric with positive", -30, ClockStep.Snap(-23, s));
+    // A step of 1 (or nonsense) must not mangle the value.
+    Eq("step 1 is a no-op", 137, ClockStep.Snap(137, 1));
+
+    // SnapWithin: the driver's own limits are not multiples of 15, so a plain clamp would hand back
+    // an off-grid endpoint (998 -> 1005 -> clamp 1000). Step back to the nearest in-range multiple.
+    Eq("top of range stays on the grid", 990, ClockStep.SnapWithin(998, s, -1000, 1000));
+    Eq("above the top clamps on-grid", 990, ClockStep.SnapWithin(5000, s, -1000, 1000));
+    Eq("bottom of range stays on the grid", -990, ClockStep.SnapWithin(-998, s, -1000, 1000));
+    Eq("below the bottom clamps on-grid", -990, ClockStep.SnapWithin(-5000, s, -1000, 1000));
+    Eq("mid-range behaves like Snap", 135, ClockStep.SnapWithin(137, s, -1000, 1000));
+    Eq("zero survives", 0, ClockStep.SnapWithin(0, s, -1000, 1000));
+    // A limit that is itself on the grid must be reachable.
+    Eq("on-grid max is reachable", 990, ClockStep.SnapWithin(990, s, -1000, 990));
+    // Degenerate ranges must not spin or invert.
+    Eq("inverted range returns the input", 42, ClockStep.SnapWithin(42, s, 100, -100));
+}
+
 // ---- BackgroundMode: what the poll costs when nothing is on screen
 using (var counting = new CountingBackend())
 using (var svc = new TuningService(counting))

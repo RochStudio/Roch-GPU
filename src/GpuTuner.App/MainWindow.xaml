@@ -320,7 +320,8 @@
                                 <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="core:-1"/>
                                 <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.CoreOffsetMinMhz}" Maximum="{Binding Caps.CoreOffsetMaxMhz}"
-                                    Value="{Binding CoreOffset, Mode=TwoWay}" TickFrequency="5" IsEnabled="{Binding Caps.CanSetCoreOffset}"/>
+                                    Value="{Binding CoreOffset, Mode=TwoWay}" TickFrequency="15"
+                                    SmallChange="15" LargeChange="15" IsEnabled="{Binding Caps.CanSetCoreOffset}"/>
                                 <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="core:1"/>
                             </Grid>
