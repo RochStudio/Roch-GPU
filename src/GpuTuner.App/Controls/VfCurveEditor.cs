@@ -101,9 +101,9 @@ public sealed class VfCurveEditor : FrameworkElement
     private static readonly Brush GridBrush = Freeze(new SolidColorBrush(Color.FromArgb(34, 255, 255, 255)));
     private static readonly Brush LabelBrush = Freeze(new SolidColorBrush(Color.FromArgb(170, 255, 255, 255)));
     private static readonly Brush StockBrush = Freeze(new SolidColorBrush(Color.FromArgb(90, 200, 210, 225)));
-    private static readonly Brush CurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x76, 0xB9, 0x00)));
+    /// <summary>The edited curve: its line and its points are one object, so they are one colour.</summary>
+    private static readonly Brush CurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x3C, 0x3C)));
     private static readonly Brush PointFill = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x16, 0x1A)));
-    private static readonly Brush PointBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x3C, 0x3C)));
     private static readonly Brush SelectBrush = Freeze(new SolidColorBrush(Colors.White));
     private static readonly Brush LiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x4B)));
     // The cap marker is white rather than red: red now belongs to the curve points, and two different
@@ -243,7 +243,7 @@ public sealed class VfCurveEditor : FrameworkElement
         dc.DrawGeometry(null, pen, geo);
 
         // points
-        var ptPen = new Pen(PointBrush, 2); ptPen.Freeze();
+        var ptPen = new Pen(CurveBrush, 2); ptPen.Freeze();
         var selPen = new Pen(SelectBrush, 2); selPen.Freeze();
         for (int i = 0; i < _points.Count; i++)
         {
@@ -253,7 +253,7 @@ public sealed class VfCurveEditor : FrameworkElement
             bool active = i == _dragIndex || i == _selectedIndex;
             // The selected point gets a white ring and a wider radius: it has to stay findable among
             // eighty-odd identical red dots while the arrow keys are walking it up and down.
-            dc.DrawEllipse(modified || active ? PointBrush : PointFill,
+            dc.DrawEllipse(modified || active ? CurveBrush : PointFill,
                            active ? selPen : ptPen, s, active ? 6 : 4.5, active ? 6 : 4.5);
         }
 
