@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
-Write-Host "=== GpuTuner setup ===" -ForegroundColor Green
+Write-Host "=== Roch GPU OC setup ===" -ForegroundColor Green
 
 # --- Step 1: .NET 8 SDK
 $hasSdk = $false
@@ -16,16 +16,30 @@ if (-not $hasSdk) {
 
 # --- Step 2: build + test + publish
 Write-Host "`nBuilding..." -ForegroundColor Yellow
-dotnet build GpuTuner.sln -c Release
-if ($LASTEXITCODE -ne 0) { throw "Build failed - copy the errors above and send them to Claude." }
-dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build
-dotnet publish src/GpuTuner.Cli/GpuTuner.Cli.csproj -c Release -r win-x64 --self-contained false -o dist
-dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -r win-x64 --self-contained false -o dist
+dotnet build roch-gpu-oc-beta.sln -c Release
+if ($LASTEXITCODE -ne 0) { throw "Build failed - see the errors above." }
 
-# --- Step 3: run
-Write-Host "`n=== gputuner info ===" -ForegroundColor Green
-& .\dist\gputuner-cli.exe info
-& .\dist\gputuner-cli.exe info *> "$PSScriptRoot\gputuner-info.txt"
-Write-Host "`nLaunching GpuTuner GUI..." -ForegroundColor Green
-Start-Process (Join-Path $PSScriptRoot "dist\GpuTuner.exe")
-Write-Host "Done. If the build failed, send Claude the text above (also saved: build output is in this window)."
+dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build
+if ($LASTEXITCODE -ne 0) { throw "Tests failed - see the failures above." }
+
+# CLI first, GUI last: both publish into dist\, and on case-insensitive NTFS
+# the second publish will clean up the first one's output if the order is reversed.
+dotnet publish src/GpuTuner.Cli/GpuTuner.Cli.csproj -c Release -r win-x64 --self-contained false -o dist
+if ($LASTEXITCODE -ne 0) { throw "CLI publish failed - see the errors above." }
+
+dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -r win-x64 --self-contained false -o dist
+if ($LASTEXITCODE -ne 0) { throw "GUI publish failed - is RochGpuOC.exe still running? Close it (check the tray) and re-run." }
+
+foreach ($exe in "dist\rochoc.exe", "dist\RochGpuOC.exe") {
+    if (-not (Test-Path $exe)) { throw "$exe missing after publish - the publish order may have clobbered it." }
+}
+
+# --- Step 3: report what was detected, then launch
+Write-Host "`n=== rochoc info ===" -ForegroundColor Green
+$info = & .\dist\rochoc.exe info
+$info | Write-Host
+$info | Out-File -FilePath (Join-Path $PSScriptRoot "gputuner-info.txt") -Encoding utf8
+
+Write-Host "`nLaunching Roch GPU OC..." -ForegroundColor Green
+Start-Process (Join-Path $PSScriptRoot "dist\RochGpuOC.exe")
+Write-Host "Done. CLI: dist\rochoc.exe info   Diagnostics: dist\rochoc.exe diag"

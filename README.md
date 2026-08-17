@@ -66,6 +66,10 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 `build.ps1` compiles the solution, runs the test suite, and publishes the GUI and the CLI side by
 side into `dist\`. It stops on the first failure.
 
+If you don't have the SDK yet, `SETUP.bat` does the whole thing in one double-click: it self-elevates,
+installs the .NET 8 SDK via winget if it's missing, builds, tests, publishes, writes what it detected
+to `gputuner-info.txt`, and launches the GUI.
+
 Then, from an **elevated** terminal:
 
 ```powershell
@@ -234,7 +238,8 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
 
 ```
 roch-gpu-oc-beta.sln       solution
-build.ps1                  build + test + publish to dist\  (the supported build path)
+build.ps1                  build + test + publish to dist\
+setup.ps1                  as above, plus SDK install and launch (driven by SETUP.bat)
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
 src/GpuTuner.App           WPF GUI (RochGpuOC.exe)
 src/GpuTuner.Cli           rochoc.exe, same engine headless
@@ -243,10 +248,10 @@ tools/amd                  read-only PowerShell probes used to map the AMD drive
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
 ```
 
-The `.bat` files in the root are development conveniences, not part of the build:
-`REBUILD-AND-RUN.bat` wipes `bin`/`obj`/`dist` and republishes when an incremental build goes wrong,
-`BUILD-GUI.bat` builds the GUI alone into `gui-build.log`, and `DIAG.bat` self-elevates and dumps
-`rochoc-diag.txt`. Use `build.ps1` for an ordinary build.
+The remaining `.bat` files are development conveniences: `REBUILD-AND-RUN.bat` wipes
+`bin`/`obj`/`dist` and republishes when an incremental build goes wrong, `BUILD-GUI.bat` builds the
+GUI alone into `gui-build.log`, and `DIAG.bat` self-elevates and dumps `rochoc-diag.txt`. Use
+`build.ps1` for an ordinary build.
 
 ---
 
