@@ -122,6 +122,15 @@ public sealed class VfCurveEditor : FrameworkElement
     /// LiveMhz is left alone: it is what gets written, and it reappears the moment the cap lifts.
     /// </summary>
     private int DisplayMhz(int i) => IsCapped(i) ? CapFlatMhz() : _points[i].LiveMhz;
+
+    /// <summary>
+    /// Highest voltage the card is allowed to reach, once a boost is applied. The V/F table itself is
+    /// fixed in hardware and stops at its last point (1090 mV on a 4070 Ti); a boost raises this
+    /// ceiling above that without adding points, which otherwise just looks like the curve is missing
+    /// data. 0 when it adds nothing beyond the table.
+    /// </summary>
+    private int _ceilingMv;
+    public void SetVoltageCeiling(int mv) { _ceilingMv = mv; InvalidateVisual(); }
     public void SetLive(double voltageMv, double clockMhz)
     {
         _liveVoltMv = voltageMv; _liveClockMhz = clockMhz;
@@ -138,6 +147,7 @@ public sealed class VfCurveEditor : FrameworkElement
     private static readonly Brush LiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x4B)));
     // The cap marker is white rather than red: red now belongs to the curve points, and two different
     // reds a shade apart read as one thing that has gone wrong somewhere.
+    private static readonly Brush CeilingBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x7F, 0xB0, 0xE8)));
     private static readonly Brush CapBrush = Freeze(new SolidColorBrush(Colors.White));
     private static readonly Brush CapShade = Freeze(new SolidColorBrush(Color.FromArgb(26, 255, 255, 255)));
     private static readonly Typeface Face = new("Segoe UI");
@@ -323,6 +333,22 @@ public sealed class VfCurveEditor : FrameworkElement
                     CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, CapBrush, ppd);
                 dc.DrawText(cft, new Point(Math.Min(capX + 6, w - PadR - cft.Width - 2), PadT + 4));
             }
+        }
+
+        // Boost ceiling. The table ends at its last point; a voltage boost lets the card run past that
+        // without the driver handing us any more points, so mark where the headroom actually ends
+        // rather than leaving an unexplained empty stretch of axis.
+        int lastPointMv = _points[^1].VoltageMv;
+        if (_ceilingMv > lastPointMv && _ceilingMv >= vMin && _ceilingMv <= vMax)
+        {
+            double cx = ToScreen(_ceilingMv, fMin).X;
+            var cp = new Pen(CeilingBrush, 1.5) { DashStyle = DashStyles.Dot }; cp.Freeze();
+            dc.DrawLine(cp, new Point(cx, PadT), new Point(cx, h - PadB));
+            var t = new FormattedText($"boost ceiling {_ceilingMv} mV — table ends at {lastPointMv}",
+                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, CeilingBrush, ppd);
+            // Label to the left of its line when there isn't room on the right.
+            double tx = cx + 6 + t.Width < w - PadR ? cx + 6 : cx - 6 - t.Width;
+            dc.DrawText(t, new Point(tx, PadT + 20));
         }
 
         // Live operating point. Only marked when it actually sits inside the frame — clamping it to

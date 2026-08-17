@@ -40,6 +40,7 @@ public partial class CurveWindow : Window
         {
             Editor.SetLive(t.VoltageMv, t.CoreClockMhz);
             Editor.SetVoltageCap(ReadCapMv());
+            Editor.SetVoltageCeiling(ReadCeilingMv());
         });
     }
 
@@ -50,11 +51,22 @@ public partial class CurveWindow : Window
             var pts = _svc.ReadVfCurve();
             Editor.SetPoints(pts);
             Editor.SetVoltageCap(ReadCapMv());
+            int ceiling = ReadCeilingMv();
+            Editor.SetVoltageCeiling(ceiling);
             if (pts.Count == 0)
+            {
                 Say("This card/driver did not return a V/F curve — nothing to edit.", true);
-            else
-                Say($"{pts.Count} curve points loaded ({pts.Min(p => p.VoltageMv)}–{pts.Max(p => p.VoltageMv)} mV). " +
-                    "Drag a point, or click one and use ↑/↓ (Shift = 25 MHz, ←/→ to step along). Then Apply to GPU.");
+                return;
+            }
+
+            int top = pts.Max(p => p.VoltageMv);
+            // The table's top is a hardware fact, so say where it is when a boost has pushed the
+            // ceiling past it — otherwise the curve just looks like it stops short for no reason.
+            string boost = ceiling > top
+                ? $" The table stops at {top} mV; the boost lets the card run to {ceiling} mV, but adds no points."
+                : "";
+            Say($"{pts.Count} curve points loaded ({pts.Min(p => p.VoltageMv)}–{top} mV).{boost} " +
+                "Drag a point, or click one and use ↑/↓ (Shift = 25 MHz, ←/→ to step along). Then Apply to GPU.");
         }
         catch (Exception ex) { Say("Could not read the curve: " + ex.Message, true); }
     }
@@ -112,6 +124,22 @@ public partial class CurveWindow : Window
             // for everything else, and going through it lets the mock draw a cap too.
             int mv = _svc.Backend.ReadVoltageLockMv(_svc.GpuIndex);
             return mv > 0 ? mv : 0;
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>
+    /// The highest voltage the card may reach with the applied boost, which is not the same as the
+    /// top of the V/F table — the table is fixed in hardware and a boost adds no points to it.
+    /// </summary>
+    private int ReadCeilingMv()
+    {
+        try
+        {
+            var st = _svc.Backend.ReadTuningState(_svc.GpuIndex);
+            var caps = _svc.Capabilities;
+            return VoltagePlan.ToTargetMv(st.VoltageBoostPercent, st.VoltageOffsetMv,
+                                          caps.StockMaxVoltageMv, caps.MaxVoltageMv);
         }
         catch { return 0; }
     }
