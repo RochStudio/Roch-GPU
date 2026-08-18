@@ -1,4 +1,4 @@
-using GpuTuner.Core.Backends.Amd;
+﻿using GpuTuner.Core.Backends.Amd;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
@@ -115,6 +115,16 @@ using (var svc = new TuningService(new MockBackend()))
     Check("curve spans both regions", NvApiPrivate.TotalPoints(80) == 103);
     Check("span scales with the GPU region", NvApiPrivate.TotalPoints(128) == 151);
     Check("trailing array defaults to the second", NvApiPrivate.TrailingArray == 1);
+}
+
+// ---- Every real backend must implement the cheap background read itself.
+// IGpuBackend.ReadTemperatureOnly has a default that falls back to a full telemetry sample, which is
+// correct but is the whole cost the background poll exists to avoid. A backend that quietly inherits
+// it pays that cost on every tick of a fan curve with nothing on screen, and nothing else notices.
+{
+    foreach (var t in new[] { typeof(NvApiBackend), typeof(GpuTuner.Core.Backends.Amd.AdlBackend) })
+        Check($"{t.Name} declares its own ReadTemperatureOnly",
+              t.GetMethod("ReadTemperatureOnly", new[] { typeof(int) })?.DeclaringType == t);
 }
 
 // ---- ClockStep: the core offset snaps to the driver's 15 MHz grid

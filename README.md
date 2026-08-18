@@ -1,4 +1,4 @@
-<img src="assets/logo.svg" alt="Roch GPU OC" width="560">
+﻿<img src="assets/logo.svg" alt="Roch GPU OC" width="560">
 
 # Roch GPU OC — beta
 
@@ -255,7 +255,8 @@ monitor session is the GC holding on to segments it has not returned to the OS y
 A full sample costs what it does because of one call: NVAPI's power-topology query is 8.8 ms of it on
 its own, and `PerformanceControl.CurrentActiveLimit` accounts for 117 KB of the 198 KB. A fan curve
 needs neither — only the temperature — so with the monitor closed it reads the thermal sensor and
-nothing else, about 580× cheaper.
+nothing else, about 580× cheaper. That figure is **NVIDIA**: AMD returns every sensor from a
+single call, so its equivalent path saves the parsing but not the call.
 
 That background sample is stepped into the curve and dropped: never stored, never graphed, because
 only its temperature field is valid. The graphs therefore show a gap for the time the monitor was
@@ -357,11 +358,13 @@ GUI alone into `gui-build.log`, and `DIAG.bat` self-elevates and dumps `rochoc-d
 
 - The AMD core-clock offset is a **ceiling**, not a shift. If the card is power-limited it will
   change nothing — check the limiter line under the GPU name before concluding it's broken.
-- `ReadTemperatureOnly` — the cheap temperature-only read — is overridden on **NVIDIA only**; any other
-  backend falls back to a full telemetry read. This costs nothing on either shipping backend: NVIDIA
-  has the override, and AMD never reaches it, because a hardware fan curve leaves no software curve
-  running for the background poll to feed. It is a cost only for a future backend that pairs a
-  software fan curve with no override.
+- `ReadTemperatureOnly` — the cheap temperature-only read — is now implemented by both shipping
+  backends, so nothing relies on the interface default that falls back to a full telemetry read.
+  On AMD it is belt-and-braces rather than a saving: a hardware fan curve leaves no software curve
+  for the background poll to feed, so the poll returns before calling anything at all. The saving is
+  also structurally smaller there — ADL hands back every sensor from one `QueryPMLogData` call, so a
+  curve that did need feeding would still make it, where NVAPI's cost is a per-sensor-group call and
+  skipping the 8.8 ms power-topology query is most of the win.
 - The 15/25 MHz clock snapping applies to **offsets**. A card reporting an absolute memory clock
   (AMD) is left unsnapped, because its stock clock is not on any such grid and rounding it would
   overclock the card just from reading its state. That path has had no hardware to test against.

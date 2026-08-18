@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using GpuTuner.Core.Models;
 
 namespace GpuTuner.Core.Backends.Amd;
@@ -390,21 +390,44 @@ public sealed class AdlBackend : IGpuBackend
 
     // ------------------------------------------------------------------ telemetry
 
+    /// <summary>Size of the PMLog payload: int size; { int supported; int value; }[256].</summary>
+    private const int PmLogBytes = 4 + 256 * 8;
+
+    /// <summary>One sensor out of a filled PMLog buffer, NaN when the driver marks it unsupported.</summary>
+    private static double PmValue(IntPtr buf, PmLog id)
+    {
+        int o = 4 + (int)id * 8;
+        return Marshal.ReadInt32(buf, o) != 0 ? Marshal.ReadInt32(buf, o + 4) : double.NaN;
+    }
+
+    /// <summary>
+    /// Temperature-only sample for background ticks that exist purely to step a fan curve.
+    ///
+    /// Worth being straight about what this saves on AMD: the driver returns every sensor from a
+    /// single QueryPMLogData call, so unlike NVIDIA — where skipping the 8.8 ms power-topology query
+    /// is most of the win — the call itself is the cost here and a running curve still needs it.
+    /// What it does avoid is building a whole sample for one number: the throttle string, the per-fan
+    /// arrays and a dozen fields nobody will look at. Modest, but it also stops this backend silently
+    /// taking the full path through the interface default.
+    /// </summary>
+    public GpuTelemetry ReadTemperatureOnly(int gpuIndex) => WithBuffer(PmLogBytes, buf =>
+    {
+        if (AdlNative.ADL2_New_QueryPMLogData_Get(Live(), Adapter(gpuIndex), buf) != AdlNative.AdlOk)
+            return new GpuTelemetry();
+        double edge = PmValue(buf, PmLog.TemperatureEdge);
+        return new GpuTelemetry { TemperatureC = double.IsNaN(edge) ? 0 : edge };
+    }, new GpuTelemetry());
+
     public GpuTelemetry ReadTelemetry(int gpuIndex)
     {
-        const int size = 4 + 256 * 8;                 // int size; { int supported; int value; }[256]
-        IntPtr buf = Marshal.AllocHGlobal(size);
+        IntPtr buf = Marshal.AllocHGlobal(PmLogBytes);
         try
         {
-            for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+            for (int i = 0; i < PmLogBytes; i += 4) Marshal.WriteInt32(buf, i, 0);
             if (AdlNative.ADL2_New_QueryPMLogData_Get(Live(), Adapter(gpuIndex), buf) != AdlNative.AdlOk)
                 return new GpuTelemetry();
 
-            double S(PmLog id)
-            {
-                int o = 4 + (int)id * 8;
-                return Marshal.ReadInt32(buf, o) != 0 ? Marshal.ReadInt32(buf, o + 4) : double.NaN;
-            }
+            double S(PmLog id) => PmValue(buf, id);
             static double OrZero(double v) => double.IsNaN(v) ? 0 : v;
 
             double fanPct = S(PmLog.FanPercent);
