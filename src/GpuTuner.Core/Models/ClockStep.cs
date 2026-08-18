@@ -1,4 +1,4 @@
-namespace GpuTuner.Core.Models;
+﻿namespace GpuTuner.Core.Models;
 
 /// <summary>
 /// Granularity the driver actually applies clock offsets at.
@@ -19,6 +19,28 @@ public static class ClockStep
     /// onto a grid would overclock the card as a side effect of reading its state.
     /// </summary>
     public const int MemoryMhz = 25;
+
+    /// <summary>
+    /// Practical offset range for the sliders, in MHz, intersected with whatever the driver reports.
+    ///
+    /// Ada reports ±1000 MHz core and -1000..+4000 memory, which is the driver describing the width
+    /// of its delta field rather than anything a card will do: +1000 core is not a setting, it is a
+    /// hang. Narrowing the slider to the range people actually tune in makes the useful part of the
+    /// travel usable, and the numbers are on the 15/25 MHz grids so the ends stay reachable.
+    ///
+    /// These only ever narrow. A card whose driver reports less keeps its own smaller range.
+    /// </summary>
+    public const int CoreOffsetPracticalMinMhz = -300, CoreOffsetPracticalMaxMhz = 750;
+    public const int MemoryOffsetPracticalMinMhz = -250, MemoryOffsetPracticalMaxMhz = 4000;
+
+    /// <summary>Intersect a driver-reported range with a practical one; never widens.</summary>
+    public static (int min, int max) Narrow(int driverMin, int driverMax, int practicalMin, int practicalMax)
+    {
+        int min = System.Math.Max(driverMin, practicalMin);
+        int max = System.Math.Min(driverMax, practicalMax);
+        // A driver range that misses the practical window entirely is left alone rather than inverted.
+        return min <= max ? (min, max) : (driverMin, driverMax);
+    }
 
     /// <summary>
     /// Nearest multiple of <paramref name="step"/>, anchored on zero. Anchoring matters: snapping to a

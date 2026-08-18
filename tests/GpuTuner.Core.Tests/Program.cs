@@ -127,6 +127,32 @@ using (var svc = new TuningService(new MockBackend()))
               t.GetMethod("ReadTemperatureOnly", new[] { typeof(int) })?.DeclaringType == t);
 }
 
+// ---- Practical clock ranges narrow the driver's, and never widen it
+{
+    // Ada reports the width of its delta field, not a tunable range.
+    var c = ClockStep.Narrow(-1000, 1000, ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreOffsetPracticalMaxMhz);
+    Check("core narrowed to -300..+750", c == (-300, 750));
+    var m = ClockStep.Narrow(-1000, 4000, ClockStep.MemoryOffsetPracticalMinMhz, ClockStep.MemoryOffsetPracticalMaxMhz);
+    Check("memory narrowed to -250..+4000", m == (-250, 4000));
+
+    // A card that already reports less keeps its own range - this must never widen anything.
+    Check("narrower driver range wins", ClockStep.Narrow(-100, 200, -300, 750) == (-100, 200));
+    Check("one-sided narrowing", ClockStep.Narrow(-1000, 200, -300, 750) == (-300, 200));
+
+    // The ends must land on the snapping grid, or the slider cannot reach its own limit.
+    Eq("core min is on the 15 grid", ClockStep.CoreOffsetPracticalMinMhz,
+       ClockStep.SnapWithin(ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreMhz, -300, 750));
+    Eq("core max is on the 15 grid", ClockStep.CoreOffsetPracticalMaxMhz,
+       ClockStep.SnapWithin(ClockStep.CoreOffsetPracticalMaxMhz, ClockStep.CoreMhz, -300, 750));
+    Eq("memory min is on the 25 grid", ClockStep.MemoryOffsetPracticalMinMhz,
+       ClockStep.SnapWithin(ClockStep.MemoryOffsetPracticalMinMhz, ClockStep.MemoryMhz, -250, 4000));
+    Eq("memory max is on the 25 grid", ClockStep.MemoryOffsetPracticalMaxMhz,
+       ClockStep.SnapWithin(ClockStep.MemoryOffsetPracticalMaxMhz, ClockStep.MemoryMhz, -250, 4000));
+
+    // A driver range with no overlap at all is left alone rather than inverted.
+    Check("disjoint range left alone", ClockStep.Narrow(2000, 3000, -300, 750) == (2000, 3000));
+}
+
 // ---- ClockStep: the core offset snaps to the driver's 15 MHz grid
 {
     const int s = ClockStep.CoreMhz;

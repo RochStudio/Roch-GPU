@@ -1,4 +1,4 @@
-using GpuTuner.Core.Models;
+﻿using GpuTuner.Core.Models;
 using NvAPIWrapper;
 using NvAPIWrapper.GPU;
 using NvAPIWrapper.Native;
@@ -188,6 +188,11 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIANotSupportedException) { curveReason = "entry point not exposed by this driver"; }
         catch (Exception ex) { curveReason = ex.GetType().Name + ": " + ex.Message; }
 
+        var coreRange = ClockStep.Narrow(coreMin, coreMax,
+            ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreOffsetPracticalMaxMhz);
+        var memRange = ClockStep.Narrow(memMin, memMax,
+            ClockStep.MemoryOffsetPracticalMinMhz, ClockStep.MemoryOffsetPracticalMaxMhz);
+
         var caps = new GpuCapabilities
         {
             CanSetCoreOffset = canCore, CanSetMemoryOffset = canMem,
@@ -201,8 +206,9 @@ public sealed class NvApiBackend : IGpuBackend
             VoltageOffsetMaxMv = 0,
             MinVoltageMv = 850,
             MaxVoltageMv = stockMaxMv > 0 ? stockMaxMv + VoltageBoostHeadroomMv : 0,
-            CoreOffsetMinMhz = coreMin, CoreOffsetMaxMhz = coreMax,
-            MemoryOffsetMinMhz = memMin, MemoryOffsetMaxMhz = memMax,
+            // Driver-reported travel, narrowed to what is actually tunable — see ClockStep.
+            CoreOffsetMinMhz = coreRange.min, CoreOffsetMaxMhz = coreRange.max,
+            MemoryOffsetMinMhz = memRange.min, MemoryOffsetMaxMhz = memRange.max,
             PowerLimitMinPercent = pMin, PowerLimitMaxPercent = pMax, PowerLimitDefaultPercent = pDef,
             TempLimitMinC = tMin, TempLimitMaxC = tMax, TempLimitDefaultC = tDef,
             VoltageBoostMinPercent = 0, VoltageBoostMaxPercent = 100,
