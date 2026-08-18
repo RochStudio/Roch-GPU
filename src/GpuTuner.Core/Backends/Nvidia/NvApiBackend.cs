@@ -1255,6 +1255,57 @@ public sealed class NvApiBackend : IGpuBackend
                                   $"range=[{c.FrequencyDeltaInkHz.DeltaRange.Minimum / 1000}..{c.FrequencyDeltaInkHz.DeltaRange.Maximum / 1000}]");
         });
 
+        // Every clock domain the driver will admit to, including the ones NvAPIWrapper drops on the
+        // floor. NV_GPU_CLOCK_FREQUENCIES carries 32 domain slots and the wrapper only names four
+        // (0 Graphics, 4 Memory, 7 Processor, 8 Video), so an undocumented domain — XBAR is the one
+        // people ask about on Blackwell — would sit in a slot nobody normally looks at.
+        //
+        // Read-only. On a 4070 Ti this reports slots 0 and 4 and nothing else, which is how we know
+        // Ada exposes no XBAR through NVAPI; run it on a 50-series card to see whether that changes.
+        Section("Clock domains (all 32 slots, not just the named ones)", () =>
+        {
+            // Resolve on the runtime type: the property is typed IClockFrequencies and the wrapper
+            // hands back V2 (or V3 on a newer driver), each declaring its own _Clocks array.
+            void Dump(string label, object freqs)
+            {
+                var field = freqs.GetType().GetField("_Clocks",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (field?.GetValue(freqs) is not ClockDomainInfo[] slots)
+                {
+                    sb.AppendLine($"  {label,-8} <could not read the raw slot array>");
+                    return;
+                }
+                var live = Enumerable.Range(0, slots.Length)
+                                     .Where(i => slots[i].IsPresent || slots[i].Frequency != 0).ToArray();
+                sb.AppendLine($"  {label,-8} {live.Length} of {slots.Length} slots populated: [{string.Join(", ", live)}]");
+                foreach (int i in live)
+                {
+                    string name = i switch
+                    {
+                        0 => "Graphics", 4 => "Memory", 7 => "Processor", 8 => "Video",
+                        _ => "UNDOCUMENTED  <-- not a public domain"
+                    };
+                    sb.AppendLine($"      slot {i,2}  {slots[i].Frequency / 1000.0,9:N1} MHz  {name}");
+                }
+            }
+
+            Dump("current", g.CurrentClockFrequencies);
+            Dump("base", g.BaseClockFrequencies);
+            Dump("boost", g.BoostClockFrequencies);
+
+            // The other surface that enumerates domains: a tunable domain the wrapper has no name for
+            // shows up here as a raw id rather than an enum member.
+            var ps = GPUApi.GetPerformanceStates20(g.Handle);
+            sb.AppendLine($"  pstate domains (editable={ps.IsEditable}):");
+            foreach (var kv in ps.Clocks)
+                foreach (var c in kv.Value)
+                {
+                    bool named = Enum.IsDefined(typeof(PublicClockDomain), c.DomainId);
+                    sb.AppendLine($"      {kv.Key,-20} domainId={(int)c.DomainId,-3} " +
+                                  $"{(named ? c.DomainId.ToString() : "UNDOCUMENTED"),-14} editable={c.IsEditable}");
+                }
+        });
+
         Section("V/F curve — private call probe", () =>
         {
             var (cb, tb) = NvApiPrivate.StructSizes();
