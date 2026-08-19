@@ -196,25 +196,42 @@ public sealed class NvApiBackend : IGpuBackend
         // floor, and the ceiling already includes whatever offset is applied, so stock is the
         // difference. A card without the rail family simply reports nothing and the control hides.
         bool canRail = false; int railMin = 0, railMax = 0, railStock = 0;
+        int railFloorMin = 0, railFloorMax = 0, railFloorStock = 0;
         bool canMsvdd = false; int msMin = 0, msMax = 0, msStock = 0;
+        int msFloorMin = 0, msFloorMax = 0, msFloorStock = 0;
         try
         {
             foreach (var rail in NvApiPrivate.ReadVoltRails(g.Handle))
             {
                 if (rail.MaxUv == 0) continue;
-                // The reported ceiling already carries any offset in force, so stock is the difference.
-                int stock = ((int)rail.MaxUv - rail.MaxOffsetUv) / 1000;
+                // Two different numbers, and conflating them was a bug worth naming. The reported
+                // ceiling is what the rail is CONFIGURED at; subtracting the offset gives the base
+                // the hardware counts from. MSVDD ships with a -50 mV offset already applied, so its
+                // configured ceiling is 985 mV against a 1035 mV base — the same base as NVVDD.
+                // Calling the base "stock" made the UI claim 1035, and made Reset write offset 0,
+                // which raised the rail 50 mV ABOVE where the card left the factory.
+                int configured = (int)rail.MaxUv / 1000;
+                int hwBase = ((int)rail.MaxUv - rail.MaxOffsetUv) / 1000;
                 int min = (int)rail.MinUv / 1000;
-                int max = stock + VoltageRailHeadroomMv;
+                int max = hwBase + VoltageRailHeadroomMv;
+                // The floor reads the same way: the reported minimum already carries its own offset,
+                // so the hardware's base floor is the difference. Travel is capped at the same
+                // headroom as the ceiling — enough for stability work, and short of pinning the rail
+                // near its top where the card would sit at high voltage even at idle.
+                int floorConfigured = min;
+                int floorBase = ((int)rail.MinUv - rail.MinOffsetUv) / 1000;
+                int floorMax = floorBase + VoltageRailHeadroomMv;
                 if (rail.Index == NvApiPrivate.RailNvvdd)
                 {
-                    railStock = stock; railMin = min; railMax = max;
-                    canRail = stock > 0 && max > min;
+                    railStock = configured; railMin = min; railMax = max;
+                    railFloorStock = floorConfigured; railFloorMin = floorBase; railFloorMax = floorMax;
+                    canRail = hwBase > 0 && max > min;
                 }
                 else if (rail.Index == NvApiPrivate.RailMsvdd)
                 {
-                    msStock = stock; msMin = min; msMax = max;
-                    canMsvdd = stock > 0 && max > min;
+                    msStock = configured; msMin = min; msMax = max;
+                    msFloorStock = floorConfigured; msFloorMin = floorBase; msFloorMax = floorMax;
+                    canMsvdd = hwBase > 0 && max > min;
                 }
             }
         }
@@ -264,8 +281,10 @@ public sealed class NvApiBackend : IGpuBackend
             FanMinPercent = fMin, FanMaxPercent = fMax, FanCount = fanCount,
             CanSetVoltageRail = canRail,
             VoltageRailMinMv = railMin, VoltageRailMaxMv = railMax, VoltageRailStockMaxMv = railStock,
+            VoltageRailFloorMinMv = railFloorMin, VoltageRailFloorMaxMv = railFloorMax, VoltageRailStockFloorMv = railFloorStock,
             CanSetMsvddRail = canMsvdd,
             MsvddRailMinMv = msMin, MsvddRailMaxMv = msMax, MsvddRailStockMaxMv = msStock,
+            MsvddRailFloorMinMv = msFloorMin, MsvddRailFloorMaxMv = msFloorMax, MsvddRailStockFloorMv = msFloorStock,
             CanSetXbarOffset = canXbar, XbarOffsetMinMhz = xbarMin, XbarOffsetMaxMhz = xbarMax
         };
         _capsCache[gpuIndex] = caps;
@@ -497,13 +516,13 @@ public sealed class NvApiBackend : IGpuBackend
 
         // One pass for both rails. Reading them separately cost three extra driver calls and ~16 KB
         // of marshalling per tuning-state read, on a path the GUI hits after every Apply.
-        int railMaxMv = 0, msvddMaxMv = 0;
+        int railMaxMv = 0, msvddMaxMv = 0, railFloorMv = 0, msvddFloorMv = 0;
         try
         {
             foreach (var rail in NvApiPrivate.ReadVoltRails(g.Handle))
             {
-                if (rail.Index == NvApiPrivate.RailNvvdd) railMaxMv = (int)rail.MaxUv / 1000;
-                else if (rail.Index == NvApiPrivate.RailMsvdd) msvddMaxMv = (int)rail.MaxUv / 1000;
+                if (rail.Index == NvApiPrivate.RailNvvdd) { railMaxMv = (int)rail.MaxUv / 1000; railFloorMv = (int)rail.MinUv / 1000; }
+                else if (rail.Index == NvApiPrivate.RailMsvdd) { msvddMaxMv = (int)rail.MaxUv / 1000; msvddFloorMv = (int)rail.MinUv / 1000; }
             }
         }
         catch (NVIDIAApiException) { }
@@ -517,7 +536,9 @@ public sealed class NvApiBackend : IGpuBackend
         return new GpuTuningState
         {
             CoreOffsetMhz = core, MemoryOffsetMhz = mem,
-            VoltageRailMaxMv = railMaxMv, MsvddRailMaxMv = msvddMaxMv, XbarOffsetMhz = xbarMhz,
+            VoltageRailMaxMv = railMaxMv, MsvddRailMaxMv = msvddMaxMv,
+            VoltageRailFloorMv = railFloorMv, MsvddRailFloorMv = msvddFloorMv,
+            XbarOffsetMhz = xbarMhz,
             PowerLimitPercent = power, TempLimitC = temp,
             VoltageBoostPercent = voltBoost, VoltageOffsetMv = voltOffset,
             FanManual = fanManual, FanPercent = fanPct
@@ -536,6 +557,28 @@ public sealed class NvApiBackend : IGpuBackend
 
     public void SetMsvddRailMax(int gpuIndex, int millivolts) =>
         SetRailMax(gpuIndex, NvApiPrivate.RailMsvdd, millivolts, "MSVDD");
+
+    public void SetVoltageRailFloor(int gpuIndex, int millivolts) =>
+        SetRailFloor(gpuIndex, NvApiPrivate.RailNvvdd, millivolts, "core (NVVDD)");
+
+    public void SetMsvddRailFloor(int gpuIndex, int millivolts) =>
+        SetRailFloor(gpuIndex, NvApiPrivate.RailMsvdd, millivolts, "MSVDD");
+
+    /// <summary>As <see cref="SetRailMax"/>, for the floor the rail may drop to.</summary>
+    private void SetRailFloor(int gpuIndex, int railIndex, int millivolts, string name)
+    {
+        var g = Gpu(gpuIndex);
+        int baseUv = 0;
+        foreach (var rail in NvApiPrivate.ReadVoltRails(g.Handle))
+            if (rail.Index == railIndex) { baseUv = (int)rail.MinUv - rail.MinOffsetUv; break; }
+        if (baseUv <= 0) throw new GpuBackendException($"This card does not expose a {name} voltage rail.");
+
+        int offsetUv = millivolts <= 0 ? 0 : millivolts * 1000 - baseUv;
+        int status = NvApiPrivate.WriteVoltRailMinOffset(g.Handle, railIndex, offsetUv);
+        if (status != 0)
+            throw new GpuBackendException(
+                $"Failed to set the {name} rail floor to {millivolts} mV (offset {offsetUv / 1000:+#;-#;0} mV): status {status}.");
+    }
 
     private void SetRailMax(int gpuIndex, int railIndex, int millivolts, string name)
     {
@@ -1297,10 +1340,9 @@ public sealed class NvApiBackend : IGpuBackend
     {
         // The rail ceiling survives a driver-level reset, so clear it explicitly or a raised
         // ceiling would outlive the Reset button that appears to undo everything.
-        // Both rails, and both matter: a rail offset survives a reboot, so anything left behind here
-        // outlives the Reset button that appears to undo everything.
-        try { SetVoltageRailMax(gpuIndex, 0); } catch (GpuBackendException) { }
-        try { SetMsvddRailMax(gpuIndex, 0); } catch (GpuBackendException) { }
+        // The crossbar offset has a real default of zero. The voltage rails do not: the driver
+        // reports no factory value, and this layer cannot tell an untouched rail from one a previous
+        // run raised. TuningService restores those from the figure recorded on first sight.
         try { SetXbarOffset(gpuIndex, 0); } catch (GpuBackendException) { }
 
         var caps = GetCapabilities(gpuIndex);

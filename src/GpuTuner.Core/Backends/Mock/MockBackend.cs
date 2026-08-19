@@ -15,6 +15,7 @@ public sealed class MockBackend : IGpuBackend
     };
 
     private int _core, _mem, _power = 100, _temp = 83, _fan = 30, _voltBoost, _voltOffset;
+    private int _railMax = 1035, _msvddMax = 985, _railFloor, _msvddFloor, _xbar;
     private bool _fanManual;
     private double _load = 5, _simTemp = 40;
 
@@ -33,7 +34,15 @@ public sealed class MockBackend : IGpuBackend
         PowerLimitMinPercent = 50, PowerLimitMaxPercent = 115, PowerLimitDefaultPercent = 100,
         TempLimitMinC = 65, TempLimitMaxC = 88, TempLimitDefaultC = 83,
         VoltageBoostMinPercent = 0, VoltageBoostMaxPercent = 100,
-        FanMinPercent = 0, FanMaxPercent = 100, FanCount = 2
+        FanMinPercent = 0, FanMaxPercent = 100, FanCount = 2,
+        // The gated levers, with a stock MSVDD ceiling below its NVVDD twin the way a real Blackwell
+        // card ships, so the disarm path is tested against two different defaults rather than one.
+        CanSetVoltageRail = true, CanSetMsvddRail = true, CanSetXbarOffset = true,
+        VoltageRailMinMv = 800, VoltageRailMaxMv = 1150, VoltageRailStockMaxMv = 1035,
+        MsvddRailMinMv = 800, MsvddRailMaxMv = 1150, MsvddRailStockMaxMv = 985,
+        VoltageRailFloorMinMv = 800, VoltageRailFloorMaxMv = 915, VoltageRailStockFloorMv = 800,
+        MsvddRailFloorMinMv = 800, MsvddRailFloorMaxMv = 915, MsvddRailStockFloorMv = 800,
+        XbarOffsetMinMhz = -300, XbarOffsetMaxMhz = 750
     };
 
     public GpuTelemetry ReadTelemetry(int gpuIndex)
@@ -71,8 +80,17 @@ public sealed class MockBackend : IGpuBackend
     {
         CoreOffsetMhz = _core, MemoryOffsetMhz = _mem, PowerLimitPercent = _power,
         TempLimitC = _temp, VoltageBoostPercent = _voltBoost, VoltageOffsetMv = _voltOffset,
-        FanManual = _fanManual, FanPercent = _fan
+        FanManual = _fanManual, FanPercent = _fan,
+        VoltageRailMaxMv = _railMax, MsvddRailMaxMv = _msvddMax,
+        VoltageRailFloorMv = _railFloor, MsvddRailFloorMv = _msvddFloor,
+        XbarOffsetMhz = _xbar
     };
+
+    public void SetVoltageRailMax(int gpuIndex, int millivolts) { Calls.Add(nameof(SetVoltageRailMax)); _railMax = millivolts; }
+    public void SetMsvddRailMax(int gpuIndex, int millivolts) { Calls.Add(nameof(SetMsvddRailMax)); _msvddMax = millivolts; }
+    public void SetVoltageRailFloor(int gpuIndex, int millivolts) { _railFloor = millivolts; }
+    public void SetMsvddRailFloor(int gpuIndex, int millivolts) { _msvddFloor = millivolts; }
+    public void SetXbarOffset(int gpuIndex, int offsetMhz) { Calls.Add(nameof(SetXbarOffset)); _xbar = offsetMhz; }
 
     public void SetCoreOffset(int gpuIndex, int offsetMhz) { Calls.Add(nameof(SetCoreOffset)); _core = offsetMhz; }
     public void SetMemoryOffset(int gpuIndex, int offsetMhz) { Calls.Add(nameof(SetMemoryOffset)); _mem = offsetMhz; }

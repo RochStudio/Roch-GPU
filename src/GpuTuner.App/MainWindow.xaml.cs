@@ -95,6 +95,21 @@ public partial class MainWindow : Window
     }
     private CurveWindow? _curveWindow;
 
+    private void Xoc_Click(object sender, RoutedEventArgs e)
+    {
+        // Same one-instance, non-modal handling as the curve editor: the graphs keep running behind it.
+        if (_xocWindow != null)
+        {
+            if (_xocWindow.WindowState == WindowState.Minimized) _xocWindow.WindowState = WindowState.Normal;
+            _xocWindow.Activate();
+            return;
+        }
+        _xocWindow = new XocWindow(_vm) { Owner = this };
+        _xocWindow.Closed += (_, _) => _xocWindow = null;
+        _xocWindow.Show();
+    }
+    private XocWindow? _xocWindow;
+
     // ------------------------------------------------------------------ custom title bar
     //
     // WindowStyle=None means we own the caption. Windows will only ever grey a maximize button out,

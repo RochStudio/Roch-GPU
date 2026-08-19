@@ -1,0 +1,130 @@
+﻿<Window x:Class="GpuTuner.App.XocWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:GpuTuner.App.Controls"
+        xmlns:conv="clr-namespace:GpuTuner.App.Converters"
+        Title="Extreme OC" Height="470" Width="380" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Style="{StaticResource {x:Type Window}}">
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:BoolToBrushConverter x:Key="StatusBrush" TrueBrush="{StaticResource DangerBrush}" FalseBrush="{StaticResource MutedBrush}"/>
+    </Window.Resources>
+
+    <DockPanel Margin="12">
+
+        <!-- The gate. Enable and Disable write the card straight away, the way mVolt+ does, so this
+             panel is an action rather than another pending edit for the main window's Apply. -->
+        <Border DockPanel.Dock="Top" Style="{StaticResource Panel}" Padding="12,10" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="EXTREME OC" Style="{StaticResource SectionTitle}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Button Content="Enable" Command="{Binding EnableXocCommand}" IsEnabled="{Binding XocDisabled}"
+                            Style="{StaticResource PrimaryButton}" Padding="10,5" Margin="0,0,4,0"
+                            ToolTip="Write the rail ranges and crossbar offset below to the card now"/>
+                    <Button Grid.Column="1" Content="Disable" Command="{Binding DisableXocCommand}" IsEnabled="{Binding XocEnabled}"
+                            Style="{StaticResource DangerButton}" Padding="10,5" Margin="4,0,0,0"
+                            ToolTip="Put the rails and crossbar back to the driver's own values now"/>
+                </Grid>
+                <TextBlock Text="{Binding XocStatusText}" Style="{StaticResource Muted}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="10,7" Margin="0,8,0,0">
+            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
+                       Text="Rail ceilings raise the voltage the whole card runs at and the crossbar is an undocumented clock domain, so move both in small steps and test between each one. Nothing here survives a reboot."/>
+        </Border>
+
+        <Border Style="{StaticResource Panel}" Padding="12,10">
+            <!-- Dead while the gate is shut: a slider that moves but is never written would be the
+                 window claiming a setting the card has not got. -->
+            <StackPanel IsEnabled="{Binding XocEnabled}">
+                <!-- 1b2. NVVDD rail: floor and ceiling on one track -->
+                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasVoltageRail, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="NVVDD Range (mV)" Style="{StaticResource RowLabel}"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
+                                 ToolTip="{Binding VoltageRailMaxRangeText}"
+                                 Text="{Binding VoltageRailFloorInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
+                                 ToolTip="{Binding VoltageRailMaxRangeText}"
+                                 Text="{Binding VoltageRailMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                    <c:RangeSlider Margin="0,2,0,0"
+                                   Minimum="{Binding Caps.VoltageRailFloorMinMv}" Maximum="{Binding Caps.VoltageRailMaxMv}" Step="5"
+                                   LowerValue="{Binding VoltageRailFloor, Mode=TwoWay}"
+                                   UpperValue="{Binding VoltageRailMax, Mode=TwoWay}"/>
+                    <TextBlock Text="{Binding VoltageRailRangeText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding VoltageRailMaxRangeText}"/>
+                </StackPanel>
+
+                <!-- 1b2b. MSVDD rail: floor and ceiling on one track -->
+                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasMsvddRail, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="MSVDD Range (mV)" Style="{StaticResource RowLabel}"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
+                                 ToolTip="{Binding MsvddRailMaxRangeText}"
+                                 Text="{Binding MsvddRailFloorInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
+                                 ToolTip="{Binding MsvddRailMaxRangeText}"
+                                 Text="{Binding MsvddRailMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                    <c:RangeSlider Margin="0,2,0,0"
+                                   Minimum="{Binding Caps.MsvddRailFloorMinMv}" Maximum="{Binding Caps.MsvddRailMaxMv}" Step="5"
+                                   LowerValue="{Binding MsvddRailFloor, Mode=TwoWay}"
+                                   UpperValue="{Binding MsvddRailMax, Mode=TwoWay}"/>
+                    <TextBlock Text="{Binding MsvddRangeText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding MsvddRailMaxRangeText}"/>
+                </StackPanel>
+
+                <!-- 1b3. Crossbar clock offset â€” private domain, not in PStates20 -->
+                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasXbar, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="XBAR Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                 ToolTip="{Binding XbarOffsetRangeText}"
+                                 Text="{Binding XbarOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                    <Grid Margin="0,1,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                      Command="{Binding NudgeCommand}" CommandParameter="xbar:-1"/>
+                        <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.XbarOffsetMinMhz}" Maximum="{Binding Caps.XbarOffsetMaxMhz}"
+                                Value="{Binding XbarOffset, Mode=TwoWay}" TickFrequency="15"/>
+                        <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                      Command="{Binding NudgeCommand}" CommandParameter="xbar:1"/>
+                    </Grid>
+                    <TextBlock Text="{Binding XbarOffsetText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding XbarOffsetRangeText}"/>
+                </StackPanel>
+
+                <!-- 1c. Core voltage as a signed offset (AMD: applied to the whole curve) -->
+                <StackPanel Margin="0,4,0,0" Visibility="{Binding IsVoltageOffset, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Voltage Offset (mV)" Style="{StaticResource RowLabel}"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                 ToolTip="{Binding VoltageOffsetRangeText}"
+                                 Text="{Binding VoltageOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                    <Grid Margin="0,1,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                  Command="{Binding NudgeCommand}" CommandParameter="voltoffset:-1"/>
+                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageOffsetMinMv}" Maximum="{Binding Caps.VoltageOffsetMaxMv}"
+                            Value="{Binding VoltageOffset, Mode=TwoWay}" TickFrequency="5"/>
+                    <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                  Command="{Binding NudgeCommand}" CommandParameter="voltoffset:1"/>
+                </Grid>
+                    <TextBlock Text="Undervolt: 0 is stock, more negative drops the whole curve."
+                               Style="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </DockPanel>
+</Window>
+

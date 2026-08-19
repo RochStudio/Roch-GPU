@@ -535,6 +535,38 @@ internal static class NvApiPrivate
     }
 
     /// <summary>
+    /// Apply a signed microvolt offset to a rail's minimum, raising or lowering the floor it is
+    /// allowed to drop to. Only one field, unlike the maximum: verified on hardware by moving
+    /// NVVDD's floor 800 -> 850 mV and back, with MSVDD's floor unmoved throughout.
+    /// </summary>
+    public static int WriteVoltRailMinOffset(PhysicalGPUHandle handle, int railIndex, int offsetUv)
+    {
+        uint mask = ReadRailMask(handle);
+        if (mask == 0 || (mask & (1u << railIndex)) == 0) return -1;
+        var fnSet = Resolve(FnVoltRailsSetControl);
+        if (fnSet == null) return -1;
+
+        int slot = 0;
+        for (int r = 0; r < railIndex; r++) if ((mask & (1u << r)) != 0) slot++;
+
+        var buf = Marshal.AllocHGlobal(VoltRailsControlSize);
+        try
+        {
+            for (int i = 0; i < VoltRailsControlSize; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, VoltRailsControlSize | (VoltRailsVersion << 16));
+            Marshal.WriteInt32(buf, RailMaskOffset, unchecked((int)mask));
+            var get = Resolve(FnVoltRailsGetControl);
+            if (get != null) { try { get(handle.MemoryAddress, buf); } catch { } }
+            Marshal.WriteInt32(buf, 0, VoltRailsControlSize | (VoltRailsVersion << 16));
+            Marshal.WriteInt32(buf, RailMaskOffset, unchecked((int)mask));
+            Marshal.WriteInt32(buf, ControlEntries + slot * ControlStride + ControlMinOffset, offsetUv);
+            try { return fnSet(handle.MemoryAddress, buf); }
+            catch { return -2; }
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    /// <summary>
     /// Apply a signed microvolt offset to a rail's maximum, primary and alternate together — the
     /// alternate is what actually binds, so moving one without the other changes the reported
     /// ceiling and nothing else. Read-modify-write: the current control block is fetched and only

@@ -133,6 +133,20 @@ public sealed class TuningService : IDisposable
         if (mv > ObservedMaxBoostedVoltageMv) ObservedMaxBoostedVoltageMv = mv;
     }
 
+    /// <summary>
+    /// Rail ceilings to restore on Reset, in mV; 0 when unknown. Seeded from what was recorded the
+    /// first time this GPU was seen — see <see cref="AppSettings.NvvddDefaultMaxByGpu"/> for why this
+    /// cannot simply be read back from the driver.
+    /// </summary>
+    public int NvvddDefaultMaxMv { get; private set; }
+    public int MsvddDefaultMaxMv { get; private set; }
+
+    public void SeedRailDefaults(int nvvddMv, int msvddMv)
+    {
+        if (nvvddMv > 0) NvvddDefaultMaxMv = nvvddMv;
+        if (msvddMv > 0) MsvddDefaultMaxMv = msvddMv;
+    }
+
     /// <summary>Boost level an observation must be taken at to measure the full headroom.</summary>
     private const int FullBoostPercent = 100;
 
@@ -320,13 +334,9 @@ public sealed class TuningService : IDisposable
             }
 
             if (Capabilities.CanSetVoltageBoost) Try("Voltage boost", () => Backend.SetVoltageBoost(GpuIndex, boostPct));
-            // Rail ceiling is independent of both boost and cap: it moves the roof, they work under it.
-            if (Capabilities.CanSetVoltageRail && p.VoltageRailMaxMv > 0)
-                Try("Core rail ceiling", () => Backend.SetVoltageRailMax(GpuIndex, p.VoltageRailMaxMv));
-            if (Capabilities.CanSetMsvddRail && p.MsvddRailMaxMv > 0)
-                Try("MSVDD ceiling", () => Backend.SetMsvddRailMax(GpuIndex, p.MsvddRailMaxMv));
-            if (Capabilities.CanSetXbarOffset)
-                Try("Crossbar offset", () => Backend.SetXbarOffset(GpuIndex, p.XbarOffsetMhz));
+            // Armed or not, the hardware ends up where the gate says it should be: disarmed means
+            // "back to the driver's own values", not "whatever the last run happened to leave".
+            WriteXoc(p, Try);
 
             // The undervolt is enforced by the voltage lock, which is independent of the p-state clock
             // offset — so unlike the old delta-table approach these no longer share storage and both
@@ -487,12 +497,20 @@ public sealed class TuningService : IDisposable
             Note("temperature limit", asked.TempLimitC, applied.TempLimitC, "°C");
         Note("voltage boost", asked.VoltageBoostPercent, applied.VoltageBoostPercent, "%");
         Note("undervolt", asked.VoltageOffsetMv, applied.VoltageOffsetMv, " mV");
-        if (asked.VoltageRailMaxMv > 0)
-            Note("core rail ceiling", asked.VoltageRailMaxMv, applied.VoltageRailMaxMv, " mV");
-        if (asked.MsvddRailMaxMv > 0)
-            Note("MSVDD ceiling", asked.MsvddRailMaxMv, applied.MsvddRailMaxMv, " mV");
-        if (Capabilities.CanSetXbarOffset)
-            Note("crossbar offset", asked.XbarOffsetMhz, applied.XbarOffsetMhz, " MHz");
+        // Only worth reporting when the gate is open; disarmed, none of these were written.
+        if (asked.XocEnabled)
+        {
+            if (asked.VoltageRailMaxMv > 0)
+                Note("core rail ceiling", asked.VoltageRailMaxMv, applied.VoltageRailMaxMv, " mV");
+            if (asked.MsvddRailMaxMv > 0)
+                Note("MSVDD ceiling", asked.MsvddRailMaxMv, applied.MsvddRailMaxMv, " mV");
+            if (asked.VoltageRailFloorMv > 0)
+                Note("core rail floor", asked.VoltageRailFloorMv, applied.VoltageRailFloorMv, " mV");
+            if (asked.MsvddRailFloorMv > 0)
+                Note("MSVDD floor", asked.MsvddRailFloorMv, applied.MsvddRailFloorMv, " mV");
+            if (Capabilities.CanSetXbarOffset)
+                Note("crossbar offset", asked.XbarOffsetMhz, applied.XbarOffsetMhz, " MHz");
+        }
         // Only meaningful when a cap was actually asked for; 0 means "no cap" and never clamps.
         if (asked.TargetVoltageMv > 0)
             Note("voltage cap", asked.TargetVoltageMv, applied.TargetVoltageMv, " mV");
@@ -502,6 +520,86 @@ public sealed class TuningService : IDisposable
             Note("fan speed", asked.FixedFanPercent, applied.FixedFanPercent, "%");
     }
 
+    // ------------------------------------------------------------------ extreme OC (XOC)
+
+    /// <summary>
+    /// Write the two rails and the crossbar, or put them back where the driver had them. Runs on
+    /// every apply as well as from the XOC window's Enable/Disable, so the card always matches the
+    /// gate instead of drifting from what an earlier session wrote.
+    /// </summary>
+    private void WriteXoc(TuningProfile p, Action<string, Action> Try)
+    {
+        if (p.XocEnabled)
+        {
+            // Rail ceiling is independent of both boost and cap: it moves the roof, they work under it.
+            if (Capabilities.CanSetVoltageRail && p.VoltageRailMaxMv > 0)
+                Try("Core rail ceiling", () => Backend.SetVoltageRailMax(GpuIndex, p.VoltageRailMaxMv));
+            if (Capabilities.CanSetMsvddRail && p.MsvddRailMaxMv > 0)
+                Try("MSVDD ceiling", () => Backend.SetMsvddRailMax(GpuIndex, p.MsvddRailMaxMv));
+            if (Capabilities.CanSetVoltageRail && p.VoltageRailFloorMv > 0)
+                Try("Core rail floor", () => Backend.SetVoltageRailFloor(GpuIndex, p.VoltageRailFloorMv));
+            if (Capabilities.CanSetMsvddRail && p.MsvddRailFloorMv > 0)
+                Try("MSVDD floor", () => Backend.SetMsvddRailFloor(GpuIndex, p.MsvddRailFloorMv));
+            if (Capabilities.CanSetXbarOffset)
+                Try("Crossbar offset", () => Backend.SetXbarOffset(GpuIndex, p.XbarOffsetMhz));
+            return;
+        }
+
+        // Disarmed. Ceilings go back to what was recorded before anything touched them; a default we
+        // never saw is left alone rather than guessed at, because guessing low browns the card out.
+        // Floors have a real default of zero offset, unlike the ceilings.
+        if (Capabilities.CanSetVoltageRail && NvvddDefaultMaxMv > 0)
+            Try("Core rail ceiling", () => Backend.SetVoltageRailMax(GpuIndex, NvvddDefaultMaxMv));
+        if (Capabilities.CanSetMsvddRail && MsvddDefaultMaxMv > 0)
+            Try("MSVDD ceiling", () => Backend.SetMsvddRailMax(GpuIndex, MsvddDefaultMaxMv));
+        if (Capabilities.CanSetVoltageRail)
+            Try("Core rail floor", () => Backend.SetVoltageRailFloor(GpuIndex, 0));
+        if (Capabilities.CanSetMsvddRail)
+            Try("MSVDD floor", () => Backend.SetMsvddRailFloor(GpuIndex, 0));
+        if (Capabilities.CanSetXbarOffset)
+            Try("Crossbar offset", () => Backend.SetXbarOffset(GpuIndex, 0));
+    }
+
+    /// <summary>
+    /// Arm or disarm the XOC levers and write them now, leaving clocks, power, temp and fan alone.
+    /// The profile supplies the values to arm with; disarming ignores them.
+    /// </summary>
+    public IReadOnlyList<string> SetXocEnabled(TuningProfile profile, bool enabled)
+    {
+        var errors = new List<string>();
+        var p = profile.Clone();
+        p.XocEnabled = enabled;
+        p.ClampTo(Capabilities);
+
+        lock (_lock)
+        {
+            void Try(string what, Action a)
+            {
+                try { a(); Log?.Invoke($"{what}: ok"); }
+                catch (Exception e) { errors.Add($"{what}: {e.Message}"); Log?.Invoke($"{what}: FAILED - {e.Message}"); }
+            }
+
+            WriteXoc(p, Try);
+
+            // Keep the applied profile describing the card, so the summary line and a later Revert
+            // both agree with what is actually on it.
+            if (AppliedProfile != null)
+            {
+                AppliedProfile.XocEnabled = enabled;
+                AppliedProfile.VoltageRailMaxMv = enabled ? p.VoltageRailMaxMv : 0;
+                AppliedProfile.MsvddRailMaxMv = enabled ? p.MsvddRailMaxMv : 0;
+                AppliedProfile.VoltageRailFloorMv = enabled ? p.VoltageRailFloorMv : 0;
+                AppliedProfile.MsvddRailFloorMv = enabled ? p.MsvddRailFloorMv : 0;
+                AppliedProfile.XbarOffsetMhz = enabled ? p.XbarOffsetMhz : 0;
+            }
+            // The NVVDD ceiling is one of the inputs to the boosted ceiling, so the figure the rest
+            // of the UI works from is now stale.
+            RefreshLiveVoltageState();
+            Log?.Invoke($"XOC {(enabled ? "enabled" : "disabled")}");
+        }
+        return errors;
+    }
+
     public void ResetToDefaults()
     {
         lock (_lock)
@@ -509,6 +607,18 @@ public sealed class TuningService : IDisposable
             _activeCurve = null;
             ManualCurveActive = false;
             Backend.ResetToDefaults(GpuIndex);
+            // Rails last: the backend deliberately leaves them alone because only this layer knows
+            // what they were before anything touched them.
+            if (Capabilities.CanSetVoltageRail && NvvddDefaultMaxMv > 0)
+                try { Backend.SetVoltageRailMax(GpuIndex, NvvddDefaultMaxMv); } catch (GpuBackendException) { }
+            if (Capabilities.CanSetMsvddRail && MsvddDefaultMaxMv > 0)
+                try { Backend.SetMsvddRailMax(GpuIndex, MsvddDefaultMaxMv); } catch (GpuBackendException) { }
+            // Floors have a real default of zero offset, unlike the ceilings: MSVDD ships with a
+            // maximum offset already applied but neither rail ships with a minimum offset.
+            if (Capabilities.CanSetVoltageRail)
+                try { Backend.SetVoltageRailFloor(GpuIndex, 0); } catch (GpuBackendException) { }
+            if (Capabilities.CanSetMsvddRail)
+                try { Backend.SetMsvddRailFloor(GpuIndex, 0); } catch (GpuBackendException) { }
             AppliedProfile = TuningProfile.Stock(Capabilities, Device.Name);
             RefreshLiveVoltageState();
             Log?.Invoke("Reset to driver defaults");
@@ -551,6 +661,8 @@ public sealed class TuningService : IDisposable
             VoltageOffsetMv = s.VoltageOffsetMv,
             VoltageRailMaxMv = s.VoltageRailMaxMv,
             MsvddRailMaxMv = s.MsvddRailMaxMv,
+            VoltageRailFloorMv = s.VoltageRailFloorMv,
+            MsvddRailFloorMv = s.MsvddRailFloorMv,
             XbarOffsetMhz = s.XbarOffsetMhz,
             ZeroRpm = s.ZeroRpm,
             MemoryTimingLevel = s.MemoryTimingLevel,

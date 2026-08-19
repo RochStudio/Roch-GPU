@@ -84,6 +84,10 @@ public sealed record GpuCapabilities
     public int VoltageRailMaxMv { get; init; }
     /// <summary>The rail's ceiling with no offset applied, i.e. what "default" restores.</summary>
     public int VoltageRailStockMaxMv { get; init; }
+    /// <summary>Floor range offered for the core rail, and the value it is configured at.</summary>
+    public int VoltageRailFloorMinMv { get; init; }
+    public int VoltageRailFloorMaxMv { get; init; }
+    public int VoltageRailStockFloorMv { get; init; }
 
     /// <summary>
     /// True when the crossbar (interconnect) clock takes an offset. Not a public clock domain —
@@ -97,6 +101,9 @@ public sealed record GpuCapabilities
     public int MsvddRailMinMv { get; init; }
     public int MsvddRailMaxMv { get; init; }
     public int MsvddRailStockMaxMv { get; init; }
+    public int MsvddRailFloorMinMv { get; init; }
+    public int MsvddRailFloorMaxMv { get; init; }
+    public int MsvddRailStockFloorMv { get; init; }
 
     public bool CanSetXbarOffset { get; init; }
     public int XbarOffsetMinMhz { get; init; }
@@ -185,6 +192,9 @@ public sealed record GpuTuningState
     public int VoltageRailMaxMv { get; init; }
     /// <summary>Current ceiling of the MSVDD rail in mV; 0 when the card doesn't expose it.</summary>
     public int MsvddRailMaxMv { get; init; }
+    /// <summary>Current floors of the two rails in mV; 0 when unavailable.</summary>
+    public int VoltageRailFloorMv { get; init; }
+    public int MsvddRailFloorMv { get; init; }
     /// <summary>Crossbar clock offset currently applied, in MHz.</summary>
     public int XbarOffsetMhz { get; init; }
     public bool FanManual { get; init; }

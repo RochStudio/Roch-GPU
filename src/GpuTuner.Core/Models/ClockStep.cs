@@ -28,6 +28,14 @@ public static class ClockStep
     public const int FanPercent = 5;
 
     /// <summary>
+    /// Over-voltage granularity, percent. Like the fan grid this is the UI's, not the driver's: the
+    /// card takes any integer, but a 0..100 slider one percent wide invites picking 63% when what the
+    /// hand meant was 65%, and a single percent of over-voltage is below the noise on the result.
+    /// The CLI is left exact — a typed number is a stated intention, a dragged one is an approximation.
+    /// </summary>
+    public const int VoltageBoostPercent = 5;
+
+    /// <summary>
     /// Practical offset range for the sliders, in MHz, intersected with whatever the driver reports.
     ///
     /// Ada reports ±1000 MHz core and -1000..+4000 memory, which is the driver describing the width
@@ -35,9 +43,14 @@ public static class ClockStep
     /// hang. Narrowing the slider to the range people actually tune in makes the useful part of the
     /// travel usable, and the numbers are on the 15/25 MHz grids so the ends stay reachable.
     ///
+    /// The core ceiling is 495 rather than a round 500 for that last reason: 500 is not a multiple of
+    /// 15, so it would be a slider end the card can never sit on. No Ada or Blackwell card holds a
+    /// plain +495 offset either, but the top of a slider should be optimistic, not impossible — it
+    /// used to be +750, which was neither.
+    ///
     /// These only ever narrow. A card whose driver reports less keeps its own smaller range.
     /// </summary>
-    public const int CoreOffsetPracticalMinMhz = -300, CoreOffsetPracticalMaxMhz = 750;
+    public const int CoreOffsetPracticalMinMhz = -150, CoreOffsetPracticalMaxMhz = 495;
     public const int MemoryOffsetPracticalMinMhz = -250, MemoryOffsetPracticalMaxMhz = 4000;
 
     /// <summary>
@@ -45,7 +58,7 @@ public static class ClockStep
     /// field rather than anything the interconnect will run: the published gains for this domain are
     /// double figures, and the useful travel sits well inside the driver's number.
     /// </summary>
-    public const int XbarOffsetPracticalMinMhz = -300, XbarOffsetPracticalMaxMhz = 750;
+    public const int XbarOffsetPracticalMinMhz = -150, XbarOffsetPracticalMaxMhz = 495;
 
     /// <summary>Intersect a driver-reported range with a practical one; never widens.</summary>
     public static (int min, int max) Narrow(int driverMin, int driverMax, int practicalMin, int practicalMax)

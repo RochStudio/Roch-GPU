@@ -106,4 +106,16 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, int> ObservedMaxBoostedVoltageByGpu { get; set; } = new();
 
+    /// <summary>
+    /// Voltage-rail ceilings as first seen on each GPU, in mV, and what Reset restores them to.
+    ///
+    /// This has to be remembered rather than read: the driver reports no factory default anywhere,
+    /// a rail offset survives a reboot, and every new process therefore sees whatever was last
+    /// applied and would call that the default. Recorded once, on first sight of a GPU, and never
+    /// overwritten — MSVDD ships with an offset already applied (985 mV against a 1035 mV base on a
+    /// 5070 Ti), so getting this wrong leaves the rail permanently above stock.
+    /// </summary>
+    public Dictionary<string, int> NvvddDefaultMaxByGpu { get; set; } = new();
+    public Dictionary<string, int> MsvddDefaultMaxByGpu { get; set; } = new();
+
 }

@@ -107,6 +107,69 @@ using (var svc = new TuningService(new MockBackend()))
     Check("reset", svc.Backend.ReadTuningState(0).CoreOffsetMhz == 0);
 }
 
+// ---- XOC gate: the rails and crossbar are written only while armed, and disarming puts them back.
+// Regression guard for the reason the gate exists — a rail ceiling left standing from an earlier
+// session is exactly the state that browns a card out on the next boot.
+using (var svc = new TuningService(new MockBackend()))
+{
+    svc.Initialize();
+    svc.SeedRailDefaults(1035, 985);
+
+    var armed = new TuningProfile
+    {
+        XocEnabled = true,
+        VoltageRailMaxMv = 1075, MsvddRailMaxMv = 1050,
+        VoltageRailFloorMv = 850, MsvddRailFloorMv = 850, XbarOffsetMhz = 100
+    };
+    svc.Apply(armed);
+    var st = svc.Backend.ReadTuningState(0);
+    Check("xoc armed writes nvvdd", st.VoltageRailMaxMv == 1075);
+    Check("xoc armed writes msvdd", st.MsvddRailMaxMv == 1050);
+    Check("xoc armed writes floors", st.VoltageRailFloorMv == 850 && st.MsvddRailFloorMv == 850);
+    Check("xoc armed writes xbar", st.XbarOffsetMhz == 100);
+
+    // Same values, gate shut: every one of them goes back to the driver's own figure, and the two
+    // ceilings go to their own separate defaults rather than a shared one.
+    svc.Apply(new TuningProfile
+    {
+        XocEnabled = false,
+        VoltageRailMaxMv = 1075, MsvddRailMaxMv = 1050,
+        VoltageRailFloorMv = 850, MsvddRailFloorMv = 850, XbarOffsetMhz = 100
+    });
+    st = svc.Backend.ReadTuningState(0);
+    Check("xoc disarmed restores nvvdd default", st.VoltageRailMaxMv == 1035);
+    Check("xoc disarmed restores msvdd default", st.MsvddRailMaxMv == 985);
+    Check("xoc disarmed zeroes floors", st.VoltageRailFloorMv == 0 && st.MsvddRailFloorMv == 0);
+    Check("xoc disarmed zeroes xbar", st.XbarOffsetMhz == 0);
+
+    // SetXocEnabled is the window's Enable/Disable: the gated levers move, nothing else does.
+    svc.Apply(new TuningProfile { CoreOffsetMhz = 150, PowerLimitPercent = 110 });
+    svc.SetXocEnabled(armed, true);
+    st = svc.Backend.ReadTuningState(0);
+    Check("SetXocEnabled(true) writes rails", st.VoltageRailMaxMv == 1075 && st.XbarOffsetMhz == 100);
+    Check("SetXocEnabled leaves core alone", st.CoreOffsetMhz == 150);
+    Check("SetXocEnabled leaves power alone", st.PowerLimitPercent == 110);
+
+    svc.SetXocEnabled(armed, false);
+    st = svc.Backend.ReadTuningState(0);
+    Check("SetXocEnabled(false) restores rails", st.VoltageRailMaxMv == 1035 && st.XbarOffsetMhz == 0);
+    Check("SetXocEnabled(false) leaves core alone", st.CoreOffsetMhz == 150);
+
+    // An unknown default is left alone rather than guessed at: guessing low browns the card out.
+    using (var bare = new TuningService(new MockBackend()))
+    {
+        bare.Initialize();
+        bare.Apply(new TuningProfile { XocEnabled = true, VoltageRailMaxMv = 1100 });
+        bare.Apply(new TuningProfile { XocEnabled = false });
+        Check("xoc disarm without a recorded default leaves the ceiling put",
+              bare.Backend.ReadTuningState(0).VoltageRailMaxMv == 1100);
+    }
+
+    // A profile round-trips the gate, so a saved tune cannot come back with the rails silently armed.
+    Check("gate survives clone", armed.Clone().XocEnabled);
+    Check("stock profile is disarmed", !TuningProfile.Stock(svc.Capabilities, "x").XocEnabled);
+}
+
 // ---- Curve span: the V/F curve runs through BOTH struct regions, not just the "GPU" one.
 // Regression: the struct-based reader stopped at the 80-entry GPU array and reported a 4070 Ti's
 // curve as 80 points ending at 945 mV, while the raw reader saw all 103 ending at 1090. Anything
@@ -131,7 +194,20 @@ using (var svc = new TuningService(new MockBackend()))
 {
     // Ada reports the width of its delta field, not a tunable range.
     var c = ClockStep.Narrow(-1000, 1000, ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreOffsetPracticalMaxMhz);
-    Check("core narrowed to -300..+750", c == (-300, 750));
+    Check("core narrowed to -150..+495", c == (-150, 495));
+    // Both ends must sit on the 15 MHz grid, or the slider has a stop the card can never occupy.
+    Check("core practical ends are on the grid",
+          ClockStep.CoreOffsetPracticalMinMhz % ClockStep.CoreMhz == 0 &&
+          ClockStep.CoreOffsetPracticalMaxMhz % ClockStep.CoreMhz == 0);
+    Check("crossbar practical ends are on the grid",
+          ClockStep.XbarOffsetPracticalMinMhz % ClockStep.CoreMhz == 0 &&
+          ClockStep.XbarOffsetPracticalMaxMhz % ClockStep.CoreMhz == 0);
+    // The 5% over-voltage grid has to reach both ends of a 0..100 slider.
+    Check("voltage boost grid divides 100", 100 % ClockStep.VoltageBoostPercent == 0);
+    Check("voltage boost snaps to fives",
+          ClockStep.SnapWithin(63, ClockStep.VoltageBoostPercent, 0, 100) == 65 &&
+          ClockStep.SnapWithin(100, ClockStep.VoltageBoostPercent, 0, 100) == 100 &&
+          ClockStep.SnapWithin(0, ClockStep.VoltageBoostPercent, 0, 100) == 0);
     var m = ClockStep.Narrow(-1000, 4000, ClockStep.MemoryOffsetPracticalMinMhz, ClockStep.MemoryOffsetPracticalMaxMhz);
     Check("memory narrowed to -250..+4000", m == (-250, 4000));
 

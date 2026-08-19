@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU OC" Height="820" Width="350"
+        Title="Roch GPU OC" Height="668" Width="350"
         ResizeMode="CanMinimize" WindowStyle="None"
         WindowStartupLocation="CenterScreen"
         Style="{StaticResource {x:Type Window}}">
@@ -12,28 +12,6 @@
         <conv:BoolToBrushConverter x:Key="StatusBrush" TrueBrush="{StaticResource DangerBrush}" FalseBrush="{StaticResource MutedBrush}"/>
         <conv:BoolToBrushConverter x:Key="LimitBrush" TrueBrush="{StaticResource WarnBrush}" FalseBrush="{StaticResource MutedBrush}"/>
 
-        <!-- One Afterburner-style control row: name on the left, typeable value on the right, slider under. -->
-        <Style x:Key="RowLabel" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-        <!-- Compact slider: the whole left column has to fit without scrolling. -->
-        <Style x:Key="Tight" TargetType="Slider">
-            <Setter Property="Margin" Value="0,1,0,0"/>
-            <Setter Property="Height" Value="17"/>
-            <Setter Property="IsSnapToTickEnabled" Value="True"/>
-            <Setter Property="TickFrequency" Value="1"/>
-            <Setter Property="IsMoveToPointEnabled" Value="True"/>
-        </Style>
-        <Style x:Key="ValueBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-            <Setter Property="Width" Value="60"/>
-            <Setter Property="HorizontalContentAlignment" Value="Right"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Padding" Value="3,1"/>
-        </Style>
         <!-- Afterburner-style numbered profile slot. Dim when empty, white when stored, red when active. -->
         <Style x:Key="SlotButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Width" Value="30"/>
@@ -121,42 +99,6 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="Nudge" TargetType="RepeatButton">
-            <Setter Property="Width" Value="18"/>
-            <Setter Property="Height" Value="17"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="FontSize" Value="9"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-            <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Delay" Value="400"/>
-            <Setter Property="Interval" Value="60"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="RepeatButton">
-                        <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="b" Property="Background" Value="{StaticResource AccentBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.35"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Window.Resources>
 
     <Grid>
@@ -187,14 +129,15 @@
         <!-- ================= Status bar (bottom) ================= -->
         <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="9,5" Margin="0,6,0,0">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <TextBlock Text="{Binding Status}" Foreground="{Binding StatusIsError, Converter={StaticResource StatusBrush}}"
-                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding Status}"/>
-                <TextBlock Grid.Column="1" Text="{Binding AppliedSummary}" Style="{StaticResource Muted}"
-                           VerticalAlignment="Center" Margin="10,0,0,0" TextTrimming="CharacterEllipsis"
+                           TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Status}"/>
+                <TextBlock Grid.Row="1" Text="{Binding AppliedSummary}" Style="{StaticResource Muted}"
+                           TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"
                            ToolTip="{Binding AppliedSummary}"/>
             </Grid>
         </Border>
@@ -241,6 +184,14 @@
                                     Visibility="{Binding HasCurveEditor, Converter={StaticResource BoolToVis}}"
                                     ToolTip="Open the voltage/frequency curve (Afterburner Ctrl+F equivalent)"/>
 
+                            <!-- The levers that can brown a card out live behind their own gate, off
+                                 by default, rather than sitting in the main column where a stray drag
+                                 reaches them. -->
+                            <Button Content="XOC" Click="Xoc_Click" Padding="10,4" Margin="0,0,0,7"
+                                    HorizontalAlignment="Stretch" FontWeight="SemiBold"
+                                    Visibility="{Binding HasXoc, Converter={StaticResource BoolToVis}}"
+                                    ToolTip="Extreme OC: NVVDD and MSVDD rail ranges and the crossbar clock"/>
+
                             <!-- 1a. Over-voltage percentage (Afterburner's "Core Voltage (%)"). Raises the
                                  ceiling above the top of the V/F table; separate lever from the cap below. -->
                             <StackPanel Visibility="{Binding HasVoltageBoost, Converter={StaticResource BoolToVis}}">
@@ -256,32 +207,11 @@
                                     <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                                   Command="{Binding NudgeCommand}" CommandParameter="voltboost:-1"/>
                                     <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageBoostMinPercent}" Maximum="{Binding Caps.VoltageBoostMaxPercent}"
-                                            Value="{Binding VoltageBoost, Mode=TwoWay}" TickFrequency="1"/>
+                                            Value="{Binding VoltageBoost, Mode=TwoWay}" TickFrequency="5"
+                                            SmallChange="5" LargeChange="5"/>
                                     <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                                   Command="{Binding NudgeCommand}" CommandParameter="voltboost:1"/>
                                 </Grid>
-                            </StackPanel>
-
-                            <!-- 1b2. NVVDD rail ceiling — moves the roof the boost and cap work under -->
-                            <StackPanel Margin="0,4,0,0" Visibility="{Binding HasVoltageRail, Converter={StaticResource BoolToVis}}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="NVVDD Ceiling (mV)" Style="{StaticResource RowLabel}"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                             ToolTip="{Binding VoltageRailMaxRangeText}"
-                                             Text="{Binding VoltageRailMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <Grid Margin="0,1,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                                  Command="{Binding NudgeCommand}" CommandParameter="rail:-1"/>
-                                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageRailMinMv}" Maximum="{Binding Caps.VoltageRailMaxMv}"
-                                            Value="{Binding VoltageRailMax, Mode=TwoWay}" TickFrequency="5"/>
-                                    <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                                  Command="{Binding NudgeCommand}" CommandParameter="rail:1"/>
-                                </Grid>
-                                <TextBlock Text="{Binding VoltageRailMaxText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding VoltageRailMaxRangeText}"/>
                             </StackPanel>
 
                             <!-- 2. Core clock -->
@@ -302,72 +232,6 @@
                                 <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="core:1"/>
                             </Grid>
-
-                            <!-- 1b2b. MSVDD rail ceiling — supplies XBAR/SYS/video, not the shader core -->
-                            <StackPanel Margin="0,4,0,0" Visibility="{Binding HasMsvddRail, Converter={StaticResource BoolToVis}}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="MSVDD Ceiling (mV)" Style="{StaticResource RowLabel}"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                             ToolTip="{Binding MsvddRailMaxRangeText}"
-                                             Text="{Binding MsvddRailMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <Grid Margin="0,1,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                                  Command="{Binding NudgeCommand}" CommandParameter="msvdd:-1"/>
-                                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.MsvddRailMinMv}" Maximum="{Binding Caps.MsvddRailMaxMv}"
-                                            Value="{Binding MsvddRailMax, Mode=TwoWay}" TickFrequency="5"/>
-                                    <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                                  Command="{Binding NudgeCommand}" CommandParameter="msvdd:1"/>
-                                </Grid>
-                                <TextBlock Text="{Binding MsvddRailMaxText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding MsvddRailMaxRangeText}"/>
-                            </StackPanel>
-
-                            <!-- 1b3. Crossbar clock offset — private domain, not in PStates20 -->
-                            <StackPanel Margin="0,4,0,0" Visibility="{Binding HasXbar, Converter={StaticResource BoolToVis}}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="XBAR Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                             ToolTip="{Binding XbarOffsetRangeText}"
-                                             Text="{Binding XbarOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <Grid Margin="0,1,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                                  Command="{Binding NudgeCommand}" CommandParameter="xbar:-1"/>
-                                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.XbarOffsetMinMhz}" Maximum="{Binding Caps.XbarOffsetMaxMhz}"
-                                            Value="{Binding XbarOffset, Mode=TwoWay}" TickFrequency="15"/>
-                                    <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                                  Command="{Binding NudgeCommand}" CommandParameter="xbar:1"/>
-                                </Grid>
-                                <TextBlock Text="{Binding XbarOffsetText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding XbarOffsetRangeText}"/>
-                            </StackPanel>
-
-                            <!-- 1c. Core voltage as a signed offset (AMD: applied to the whole curve) -->
-                            <StackPanel Margin="0,4,0,0" Visibility="{Binding IsVoltageOffset, Converter={StaticResource BoolToVis}}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="Voltage Offset (mV)" Style="{StaticResource RowLabel}"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                             ToolTip="{Binding VoltageOffsetRangeText}"
-                                             Text="{Binding VoltageOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <Grid Margin="0,1,0,0">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                              Command="{Binding NudgeCommand}" CommandParameter="voltoffset:-1"/>
-                                <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageOffsetMinMv}" Maximum="{Binding Caps.VoltageOffsetMaxMv}"
-                                        Value="{Binding VoltageOffset, Mode=TwoWay}" TickFrequency="5"/>
-                                <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                              Command="{Binding NudgeCommand}" CommandParameter="voltoffset:1"/>
-                            </Grid>
-                                <TextBlock Text="Undervolt: 0 is stock, more negative drops the whole curve."
-                                           Style="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
 
                             <!-- 3. Memory clock -->
                             <Grid Margin="0,14,0,0" IsEnabled="{Binding Caps.CanSetMemoryOffset}">

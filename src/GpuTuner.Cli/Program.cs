@@ -44,6 +44,7 @@ static class Cli
                 string name = svc.Backend.Devices[svc.GpuIndex].Name;
                 if (s.ObservedMaxVoltageByGpu.TryGetValue(name, out var seen)) svc.SeedObservedMaxVoltage(seen);
                 if (s.ObservedMaxBoostedVoltageByGpu.TryGetValue(name, out var seenB)) svc.SeedObservedMaxBoostedVoltage(seenB);
+                if (SeedRailDefaults(svc, s, name)) store.SaveSettings(s);
             }
 
             switch (args[0].ToLowerInvariant())
@@ -57,7 +58,7 @@ static class Cli
                 case "list-profiles":
                     foreach (var n in store.ListProfileNames()) Console.WriteLine(n);
                     return 0;
-                case "reset": svc.Initialize(gpu); svc.ResetToDefaults(); Console.WriteLine("Reset to defaults."); return 0;
+                case "reset": Start(); svc.ResetToDefaults(); Console.WriteLine("Reset to defaults."); return 0;
                 case "diag":
                     svc.Initialize(gpu);
                     var dump = svc.Backend.GetDiagnostics(gpu);
@@ -87,6 +88,25 @@ static class Cli
         catch (GpuBackendException e) { Console.Error.WriteLine("ERROR: " + e.Message); return 1; }
     }
 
+    /// <summary>
+    /// Carry the rail ceilings forward, recording them the first time a GPU is seen. Returns true
+    /// when something was recorded and the settings need saving.
+    /// </summary>
+    static bool SeedRailDefaults(TuningService svc, AppSettings s, string gpuName)
+    {
+        var c = svc.Capabilities;
+        bool dirty = false;
+        if (c.CanSetVoltageRail && !s.NvvddDefaultMaxByGpu.ContainsKey(gpuName) && c.VoltageRailStockMaxMv > 0)
+        { s.NvvddDefaultMaxByGpu[gpuName] = c.VoltageRailStockMaxMv; dirty = true; }
+        if (c.CanSetMsvddRail && !s.MsvddDefaultMaxByGpu.ContainsKey(gpuName) && c.MsvddRailStockMaxMv > 0)
+        { s.MsvddDefaultMaxByGpu[gpuName] = c.MsvddRailStockMaxMv; dirty = true; }
+
+        s.NvvddDefaultMaxByGpu.TryGetValue(gpuName, out int nv);
+        s.MsvddDefaultMaxByGpu.TryGetValue(gpuName, out int ms);
+        svc.SeedRailDefaults(nv, ms);
+        return dirty;
+    }
+
     static int Info(TuningService svc)
     {
         foreach (var d in svc.Backend.Devices)
@@ -106,8 +126,8 @@ static class Cli
             : c.CanSetVoltageCurve ? $"{c.VoltageOffsetMinMv}..0 mV (stock max {c.StockMaxVoltageMv} mV)"
             : $"{c.VoltageOffsetMinMv}..{c.VoltageOffsetMaxMv} mV (whole-curve offset)";
         Console.WriteLine($"Undervolt     : {undervolt}");
-        Console.WriteLine($"Core rail     : {(c.CanSetVoltageRail ? $"{c.VoltageRailMinMv}..{c.VoltageRailMaxMv} mV ceiling (stock {c.VoltageRailStockMaxMv} mV)" : "not supported")}");
-        Console.WriteLine($"MSVDD rail    : {(c.CanSetMsvddRail ? $"{c.MsvddRailMinMv}..{c.MsvddRailMaxMv} mV ceiling (stock {c.MsvddRailStockMaxMv} mV)" : "not supported")}");
+        Console.WriteLine($"Core rail     : {(c.CanSetVoltageRail ? $"{c.VoltageRailMinMv}..{c.VoltageRailMaxMv} mV ceiling (now {c.VoltageRailStockMaxMv} mV), floor {c.VoltageRailFloorMinMv}..{c.VoltageRailFloorMaxMv} mV (stock {c.VoltageRailStockFloorMv} mV)" : "not supported")}");
+        Console.WriteLine($"MSVDD rail    : {(c.CanSetMsvddRail ? $"{c.MsvddRailMinMv}..{c.MsvddRailMaxMv} mV ceiling (now {c.MsvddRailStockMaxMv} mV), floor {c.MsvddRailFloorMinMv}..{c.MsvddRailFloorMaxMv} mV (stock {c.MsvddRailStockFloorMv} mV)" : "not supported")}");
         Console.WriteLine($"Crossbar      : {(c.CanSetXbarOffset ? $"{c.XbarOffsetMinMhz}..{c.XbarOffsetMaxMhz} MHz offset" : "not supported")}");
         Console.WriteLine($"Fans          : {(c.CanSetFanSpeed ? $"{c.FanCount} fan(s), {c.FanMinPercent}..{c.FanMaxPercent} %" : "not supported")}");
         var s = svc.Backend.ReadTuningState(svc.GpuIndex);
@@ -133,7 +153,7 @@ static class Cli
             int lockMv = svc.Backend.ReadVoltageLockMv(svc.GpuIndex);
             uvMv = lockMv > 0 && svc.StockCeilingMv > 0 ? lockMv - svc.StockCeilingMv : 0;
         }
-        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {tempLimit}, vboost {s.VoltageBoostPercent}%, uv {uvMv} mV, rail {(s.VoltageRailMaxMv > 0 ? s.VoltageRailMaxMv + " mV" : "n/a")}, msvdd {(s.MsvddRailMaxMv > 0 ? s.MsvddRailMaxMv + " mV" : "n/a")}, xbar {s.XbarOffsetMhz:+#;-#;0} MHz, fan {fan}");
+        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {tempLimit}, vboost {s.VoltageBoostPercent}%, uv {uvMv} mV, rail {(s.VoltageRailMaxMv > 0 ? s.VoltageRailFloorMv + "-" + s.VoltageRailMaxMv + " mV" : "n/a")}, msvdd {(s.MsvddRailMaxMv > 0 ? s.MsvddRailFloorMv + "-" + s.MsvddRailMaxMv + " mV" : "n/a")}, xbar {s.XbarOffsetMhz:+#;-#;0} MHz, fan {fan}");
         var t = svc.Backend.ReadTelemetry(svc.GpuIndex);
         Console.WriteLine(Fmt(t));
         return 0;
@@ -207,6 +227,8 @@ static class Cli
             if (!svc.Capabilities.CanSetXbarOffset)
                 notes.Add($"{TuningService.NotePrefix} this card exposes no crossbar clock — {xb} MHz ignored.");
         }
+        if (o.TryGetValue("nvvdd-min", out var rmin)) p.VoltageRailFloorMv = int.Parse(rmin);
+        if (o.TryGetValue("msvdd-min", out var mmin)) p.MsvddRailFloorMv = int.Parse(mmin);
         if (o.TryGetValue("msvdd", out var ms))
         {
             p.MsvddRailMaxMv = int.Parse(ms);
@@ -219,6 +241,12 @@ static class Cli
             if (!svc.Capabilities.CanSetVoltageRail)
                 notes.Add($"{TuningService.NotePrefix} this card exposes no core voltage rail — {rail} mV ignored.");
         }
+        // Typing one of the gated flags is the arming gesture; the GUI has a button for it. Without
+        // any of them the profile carries the gate shut, and the apply puts the rails and crossbar
+        // back to the driver's own values rather than leaving an earlier tune half-standing.
+        p.XocEnabled = o.ContainsKey("nvvdd") || o.ContainsKey("nvvdd-min")
+                    || o.ContainsKey("msvdd") || o.ContainsKey("msvdd-min") || o.ContainsKey("xbar");
+        if (p.XocEnabled) notes.Add($"{TuningService.NotePrefix} XOC armed for this apply (rails/crossbar written).");
         if (o.TryGetValue("fan", out var fan))
         {
             if (fan.Equals("auto", StringComparison.OrdinalIgnoreCase)) p.FanMode = FanMode.Auto;
@@ -288,7 +316,8 @@ static class Cli
 
           rochoc info
           rochoc monitor [--interval 1000]
-          rochoc apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--msvdd 1050] [--xbar +100] [--fan 60|auto]
+          rochoc apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--fan 60|auto]
+            the rail and crossbar flags are gated: pass one to arm them, pass none and they go back to driver defaults
           rochoc apply-profile <name> [--gpu 0]
           rochoc list-profiles
           rochoc reset [--gpu 0]

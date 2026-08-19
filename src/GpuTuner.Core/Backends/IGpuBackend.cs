@@ -101,6 +101,13 @@ public interface IGpuBackend : IDisposable
     void SetMsvddRailMax(int gpuIndex, int millivolts) { }
 
     /// <summary>
+    /// Move a voltage rail's floor — the lowest it may drop to — to an absolute mV value; 0 restores
+    /// the card's own default.
+    /// </summary>
+    void SetVoltageRailFloor(int gpuIndex, int millivolts) { }
+    void SetMsvddRailFloor(int gpuIndex, int millivolts) { }
+
+    /// <summary>
     /// Offset the crossbar (interconnect) clock, in MHz. Backends without the domain ignore this.
     /// </summary>
     void SetXbarOffset(int gpuIndex, int offsetMhz) { }

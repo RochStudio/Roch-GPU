@@ -25,8 +25,21 @@ public sealed class TuningProfile
     /// <summary>Target ceiling for the MSVDD rail, in mV. 0 = leave it at its default.</summary>
     public int MsvddRailMaxMv { get; set; }
 
+    /// <summary>Target floors for the two rails, in mV. 0 = leave them at their defaults.</summary>
+    public int VoltageRailFloorMv { get; set; }
+    public int MsvddRailFloorMv { get; set; }
+
     /// <summary>Crossbar clock offset in MHz.</summary>
     public int XbarOffsetMhz { get; set; }
+
+    /// <summary>
+    /// Arms the three fields above - the two rails and the crossbar. They are off by default and
+    /// written only when this is set, because they are the levers that can brown a card out rather
+    /// than merely fail: a rail ceiling moves the roof the whole card runs under, and the crossbar
+    /// is an undocumented domain the driver range-checks far more loosely. Everything else in this
+    /// profile is bounded by ranges the driver itself reports, so it needs no gate.
+    /// </summary>
+    public bool XocEnabled { get; set; }
 
     /// <summary>
     /// Absolute core-voltage target in mV. When non-zero this drives both voltage boost and the
@@ -60,7 +73,10 @@ public sealed class TuningProfile
         VoltageOffsetMv = VoltageOffsetMv,
         VoltageRailMaxMv = VoltageRailMaxMv,
         MsvddRailMaxMv = MsvddRailMaxMv,
+        VoltageRailFloorMv = VoltageRailFloorMv,
+        MsvddRailFloorMv = MsvddRailFloorMv,
         XbarOffsetMhz = XbarOffsetMhz,
+        XocEnabled = XocEnabled,
         TargetVoltageMv = TargetVoltageMv,
         ZeroRpm = ZeroRpm,
         MemoryTimingLevel = MemoryTimingLevel,
@@ -97,6 +113,10 @@ public sealed class TuningProfile
             VoltageRailMaxMv = Math.Clamp(VoltageRailMaxMv, caps.VoltageRailMinMv, caps.VoltageRailMaxMv);
         if (MsvddRailMaxMv > 0 && caps.MsvddRailMaxMv > 0)
             MsvddRailMaxMv = Math.Clamp(MsvddRailMaxMv, caps.MsvddRailMinMv, caps.MsvddRailMaxMv);
+        if (VoltageRailFloorMv > 0 && caps.VoltageRailFloorMaxMv > 0)
+            VoltageRailFloorMv = Math.Clamp(VoltageRailFloorMv, caps.VoltageRailFloorMinMv, caps.VoltageRailFloorMaxMv);
+        if (MsvddRailFloorMv > 0 && caps.MsvddRailFloorMaxMv > 0)
+            MsvddRailFloorMv = Math.Clamp(MsvddRailFloorMv, caps.MsvddRailFloorMinMv, caps.MsvddRailFloorMaxMv);
         if (caps.CanSetXbarOffset)
             XbarOffsetMhz = Math.Clamp(XbarOffsetMhz, caps.XbarOffsetMinMhz, caps.XbarOffsetMaxMhz);
         if (TargetVoltageMv > 0 && caps.MaxVoltageMv > 0)
