@@ -1441,6 +1441,39 @@ public sealed class NvApiBackend : IGpuBackend
         //
         // Read-only. On a 4070 Ti this reports slots 0 and 4 and nothing else, which is how we know
         // Ada exposes no XBAR through NVAPI; run it on a 50-series card to see whether that changes.
+        Section("Crossbar (XBAR) probe", () =>
+        {
+            var x = NvApiPrivate.ProbeXbar(g.Handle);
+            sb.AppendLine($"  entry points resolved: info={x.InfoResolved} control={x.ControlResolved} " +
+                          $"set={x.SetResolved} measure={x.MeasureResolved}");
+            static string St(int s) => s == int.MinValue ? "not called / threw" : s == 0 ? "0 (Ok)" : s.ToString();
+            sb.AppendLine($"  GetInfo status    : {St(x.InfoStatus)}");
+            sb.AppendLine($"  GetControl status : {St(x.ControlStatus)}");
+            sb.AppendLine($"  measured clocks   : core {x.CoreKhz / 1000.0:N0} MHz, " +
+                          $"xbar {x.XbarKhz / 1000.0:N0} MHz, memory {x.MemoryKhz / 1000.0:N0} MHz");
+            if (x.CoreKhz > 0 && x.XbarKhz > 0)
+                sb.AppendLine($"  xbar : core ratio = {(double)x.XbarKhz / x.CoreKhz:F4}");
+            sb.AppendLine(x.EntryTypes.Length == 0
+                ? "  info entry types  : <none read>"
+                : "  info entry types  : " + string.Join(",", x.EntryTypes));
+            sb.AppendLine($"  type-1 entry index: {x.TypeOneIndex}");
+            if (x.TypeOneWords.Length > 0)
+            {
+                sb.AppendLine("  type-1 entry words (offset: value  [signed lo/hi halves]):");
+                for (int i = 0; i < x.TypeOneWords.Length; i++)
+                {
+                    int w = x.TypeOneWords[i];
+                    short lo = unchecked((short)(w & 0xFFFF)), hi = unchecked((short)(w >> 16));
+                    sb.AppendLine($"      +0x{i * 4:X3}  {w,12}  0x{w:X8}  [{lo,6} / {hi,6}]");
+                }
+            }
+            if (x.ControlWords.Length > 0)
+                sb.AppendLine($"  control words near +0x{0x53C:X3}: " + string.Join(", ", x.ControlWords));
+            var xi = NvApiPrivate.ReadXbarInfo(g.Handle);
+            sb.AppendLine($"  ReadXbarInfo      : supported={xi.Supported} range=[{xi.MinOffsetMhz}..{xi.MaxOffsetMhz}]");
+            sb.AppendLine($"  current offset    : {NvApiPrivate.ReadXbarOffsetMhz(g.Handle)} MHz");
+        });
+
         Section("Clock domains (all 32 slots, not just the named ones)", () =>
         {
             // Resolve on the runtime type: the property is typed IClockFrequencies and the wrapper

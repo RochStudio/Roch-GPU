@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using NvAPIWrapper.Native.GPU.Structures;
 
 namespace GpuTuner.Core.Backends.Nvidia;
@@ -638,7 +638,9 @@ internal static class NvApiPrivate
                        FnXbarSetControl = 0xD14B69CF, FnXbarMeasure = 0x527FC458;
     private const int XbarInfoSize = 0x86AC, XbarControlSize = 0x61A4, XbarMeasureSize = 0x000C;
     private const uint XbarInfoVersion = 0x000486AC, XbarControlVersion = 0x000261A4, XbarMeasureVersion = 0x0001000C;
-    private const int XbarInfoEntries = 0xB0, XbarInfoStride = 0x430, XbarInfoRange = 0x3C;
+    private const int XbarInfoEntries = 0xB0, XbarInfoStride = 0x430;
+    /// <summary>Window searched for the int16 offset-range pair inside a type-1 entry.</summary>
+    private const int XbarRangeSearchStart = 0x38, XbarRangeSearchEnd = 0x40;
     /// <summary>The control request carries a 2 here; it comes back empty without it.</summary>
     private const int XbarControlSelector = 0x08;
     private const int XbarControlOffsetKhz = 0x53C;
@@ -700,13 +702,25 @@ internal static class NvApiPrivate
         for (int i = 0; i < 32; i++)
         {
             int e = XbarInfoEntries + i * XbarInfoStride;
-            if (e + 0x40 > info.Length) break;
+            if (e + XbarRangeSearchEnd + 4 > info.Length) break;
             if (BitConverter.ToUInt32(info, e) != 1u) continue;
-            uint packed = BitConverter.ToUInt32(info, e + XbarInfoRange);
-            int min = unchecked((short)(packed & 0xFFFF)), max = unchecked((short)(packed >> 16));
-            // Anything outside this is a layout mismatch rather than a card with an exotic range.
-            if (min < -2000 || max > 2000 || min > max) return default;
-            return new XbarInfo(true, min, max);
+
+            // The range is two adjacent int16s, and its offset within the entry is not the same on
+            // every driver: a 5070 Ti (610.88) carries it at +0x3C, a 4070 Ti (591.86) at +0x3A, both
+            // reading -1000..+1000. Reading one fixed offset therefore found (1000, 0) on Ada, failed
+            // min > max, and reported a working crossbar as unsupported. Locate the pair instead.
+            //
+            // A candidate has to look like an offset range — negative floor, positive ceiling, neither
+            // absurd — which is tight enough that the neighbouring words here (3598, 1024, 258, 15000)
+            // cannot pass for one.
+            for (int off = XbarRangeSearchStart; off <= XbarRangeSearchEnd; off += 2)
+            {
+                short min = BitConverter.ToInt16(info, e + off);
+                short max = BitConverter.ToInt16(info, e + off + 2);
+                if (min < 0 && max > 0 && min >= -2000 && max <= 2000)
+                    return new XbarInfo(true, min, max);
+            }
+            return default;      // right entry, unrecognised layout: say so rather than guess a range
         }
         return default;
     }
@@ -737,6 +751,98 @@ internal static class NvApiPrivate
             catch { return -2; }
         }
         finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    /// <summary>
+    /// Why the crossbar came back unsupported. ReadXbarInfo collapses three different failures into
+    /// one "no": the entry points not resolving at all, the call returning a status, or the call
+    /// succeeding with a layout that carries no type-1 entry. On a driver or architecture other than
+    /// the one the offsets were mapped against, knowing which of those happened is the whole question.
+    ///
+    /// Read-only — GetInfo, GetControl and the frequency counter only, never SetControl.
+    /// </summary>
+    public readonly record struct XbarProbe(
+        bool InfoResolved, bool ControlResolved, bool SetResolved, bool MeasureResolved,
+        int InfoStatus, int ControlStatus,
+        uint CoreKhz, uint XbarKhz, uint MemoryKhz,
+        int[] EntryTypes,
+        int TypeOneIndex,
+        int[] TypeOneWords,
+        int[] ControlWords);
+
+    /// <summary>
+    /// Call a private entry point read-only with a deliberately oversized buffer. The declared size
+    /// stays whatever we are probing, but the allocation is far larger, so a driver that writes more
+    /// than we declared lands inside our own memory rather than past it.
+    /// </summary>
+    private static (int status, byte[] data)? ProbeCall(PhysicalGPUHandle handle, uint id, int declaredSize,
+                                                        uint version, int selectorValue = -1)
+    {
+        var fn = Resolve(id);
+        if (fn == null) return null;
+        const int Slack = 0x40000;                       // 256 KB, far past any of these structures
+        var buf = Marshal.AllocHGlobal(declaredSize + Slack);
+        try
+        {
+            for (int i = 0; i < declaredSize + Slack; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, unchecked((int)version));
+            if (selectorValue >= 0) Marshal.WriteInt32(buf, XbarControlSelector, selectorValue);
+            int status;
+            try { status = fn(handle.MemoryAddress, buf); }
+            catch { return (int.MinValue, Array.Empty<byte>()); }
+            var outb = new byte[declaredSize];
+            Marshal.Copy(buf, outb, 0, declaredSize);
+            return (status, outb);
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    public static XbarProbe ProbeXbar(PhysicalGPUHandle handle)
+    {
+        bool infoR = QueryInterface64(FnXbarGetInfo) != IntPtr.Zero;
+        bool ctrlR = QueryInterface64(FnXbarGetControl) != IntPtr.Zero;
+        bool setR = QueryInterface64(FnXbarSetControl) != IntPtr.Zero;
+        bool measR = QueryInterface64(FnXbarMeasure) != IntPtr.Zero;
+
+        var info = ProbeCall(handle, FnXbarGetInfo, XbarInfoSize, XbarInfoVersion);
+        var ctrl = ProbeCall(handle, FnXbarGetControl, XbarControlSize, XbarControlVersion, selectorValue: 2);
+
+        // Whatever the info call returned, list the entry type words: the reader looks for a 1, and
+        // seeing what is actually there says whether the stride is wrong or the family is just absent.
+        var types = new List<int>();
+        if (info is { status: 0, data: var d })
+            for (int i = 0; i < 32; i++)
+            {
+                int e = XbarInfoEntries + i * XbarInfoStride;
+                if (e + 4 > d.Length) break;
+                types.Add(BitConverter.ToInt32(d, e));
+            }
+
+        // The reader locates the range at a fixed offset inside the type-1 entry. If that offset is
+        // wrong for this driver it rejects a perfectly good entry, so dump the entry's leading words
+        // and let the actual layout be read off rather than assumed.
+        int oneIdx = types.IndexOf(1);
+        var oneWords = new List<int>();
+        if (oneIdx >= 0 && info is { status: 0, data: var d2 })
+        {
+            int e = XbarInfoEntries + oneIdx * XbarInfoStride;
+            for (int off = 0; off < 0x80 && e + off + 4 <= d2.Length; off += 4)
+                oneWords.Add(BitConverter.ToInt32(d2, e + off));
+        }
+
+        // Same for the control buffer around the offset field, to confirm where the applied value sits.
+        var ctrlWords = new List<int>();
+        if (ctrl is { status: 0, data: var d3 })
+            for (int off = XbarControlOffsetKhz - 0x20; off < XbarControlOffsetKhz + 0x20 && off + 4 <= d3.Length; off += 4)
+                if (off >= 0) ctrlWords.Add(BitConverter.ToInt32(d3, off));
+
+        return new XbarProbe(
+            infoR, ctrlR, setR, measR,
+            info?.status ?? int.MinValue, ctrl?.status ?? int.MinValue,
+            MeasureClockKhz(handle, DomainCore),
+            MeasureClockKhz(handle, DomainXbar),
+            MeasureClockKhz(handle, DomainMemory),
+            types.ToArray(), oneIdx, oneWords.ToArray(), ctrlWords.ToArray());
     }
 
     /// <summary>Raw dump of the two trailing 23-int arrays, to confirm where high-point deltas live.</summary>
