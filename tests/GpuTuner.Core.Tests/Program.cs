@@ -175,8 +175,14 @@ using (var svc = new TuningService(new MockBackend()))
 // curve as 80 points ending at 945 mV, while the raw reader saw all 103 ending at 1090. Anything
 // measured against the short curve — the stock ceiling, an undervolt target — came out wrong.
 {
-    Check("curve spans both regions", NvApiPrivate.TotalPoints(80) == 103);
-    Check("span scales with the GPU region", NvApiPrivate.TotalPoints(128) == 151);
+    // TotalPoints is the buffer's capacity, mask-bounded - not the struct's field split. It used to
+    // return 80+23=103 on the reasoning that a 4070 Ti's 103 points were "exactly the mask's bit
+    // count"; they were not. The mask is 128 bits, and a 5070 Ti returns 127 points in the same
+    // buffer, so the split reached 81% of the curve and left the top slots unwritten on a reset.
+    Check("curve span is the mask, not the struct split", NvApiPrivate.TotalPoints(80) == 128);
+    Check("span never exceeds the mask", NvApiPrivate.TotalPoints(128) == NvApiPrivate.MaskPoints);
+    Check("span covers a 127-point Blackwell curve", NvApiPrivate.TotalPoints(80) >= 127);
+    Check("span covers a 103-point Ada curve", NvApiPrivate.TotalPoints(80) >= 103);
     Check("trailing array defaults to the second", NvApiPrivate.TrailingArray == 1);
 }
 

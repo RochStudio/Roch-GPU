@@ -1513,8 +1513,12 @@ public sealed class NvApiBackend : IGpuBackend
                 sb.AppendLine($"    {pr.GpuEntries,4} x v{pr.Version}  status={pr.Status,-3} " +
                               (pr.Status == 0 ? $"points={pr.ValidPoints,4}  {pr.MinMv}-{pr.MaxMv} mV  max {pr.MaxMhz} MHz" : ""));
             var chosen = CurveLayout(g);
+            // The points actually read, not what the struct's field split would allow: those two
+            // disagree by 24 on a 5070 Ti, and a bug report saying "103 curve points" next to a probe
+            // line saying 127 sends the reader after the wrong thing.
+            int chosenPoints = ReadEffectiveCurve(g).Count;
             sb.AppendLine($"  chosen layout = {chosen.entries} entries, version {chosen.version}, " +
-                          $"{NvApiPrivate.TotalPoints(chosen.entries)} curve points");
+                          $"{chosenPoints} curve points (buffer holds up to {NvApiPrivate.TotalPoints(chosen.entries)})");
             var (arrA, arrB) = NvApiPrivate.ReadTrailingArrays(g.Handle, CurveMask(g), chosen.entries, chosen.version);
             if (arrA.Length > 0)
             {

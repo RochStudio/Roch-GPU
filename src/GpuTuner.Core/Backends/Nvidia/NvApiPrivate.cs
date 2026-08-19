@@ -197,12 +197,16 @@ internal static class NvApiPrivate
         try { if (_getVfpCurve(handle.MemoryAddress, ref s) != 0) return Array.Empty<(uint, int)>(); }
         catch { return Array.Empty<(uint, int)>(); }
 
-        // Read straight through both regions, exactly as ReadCurveRaw does. The curve does not stop
-        // at the "GPU" array — on a 4070 Ti it is 103 points and spills into the 23-entry array
-        // NvAPIWrapper labels "memory". Stopping at 80 truncated this card's curve at 945 mV instead
-        // of 1090, and anything computed from it (an undervolt target, the stock ceiling) came out
-        // measured against the wrong top. See TotalPoints.
-        var r = new (uint, int)[TotalPoints(CurveEntries)];
+        // Both regions, not just the "GPU" one: the curve does not stop at the 80-entry array, and
+        // stopping there truncated a 4070 Ti at 945 mV instead of 1090.
+        //
+        // This reader still cannot see the whole curve, because the struct's fields only span 103 of
+        // the buffer's points — a 5070 Ti has 127 and this returns the first 103, ending at 1090 mV
+        // instead of 1240. It is a fallback for drivers that refuse the raw call; ReadCurveRaw is
+        // what normally answers and it parses the buffer to the mask. Anything measured against the
+        // short version (the stock ceiling, an undervolt target) comes out against the wrong top,
+        // so callers must prefer the raw reader. See TotalPoints vs StructPoints.
+        var r = new (uint, int)[StructPoints(CurveEntries)];
         for (int i = 0; i < CurveEntries; i++)
             r[i] = (s.GpuEntries[i * CurveStride + 2], (int)s.GpuEntries[i * CurveStride + 1]);
         for (int i = 0; i < MemCurveEntries; i++)
@@ -221,7 +225,7 @@ internal static class NvApiPrivate
 
         // Same span as the curve: the points past the GPU array take their delta from one of the two
         // trailing 23-int arrays, picked by TrailingArray — the offsets here mirror DeltaOffset().
-        var r = new int[TotalPoints(DeltaEntries)];
+        var r = new int[StructPoints(DeltaEntries)];   // struct-bounded, like ReadCurve above
         for (int i = 0; i < DeltaEntries; i++) r[i] = s.GpuDeltas[i * DeltaStride + 5];
         for (int i = 0; i < MemCurveEntries; i++)
             r[DeltaEntries + i] = TrailingArray == 1 ? s.MemoryDeltas[i] : unchecked((int)s.MemoryFilled[i]);
@@ -266,7 +270,7 @@ internal static class NvApiPrivate
     /// </summary>
     public static (int status, (int mv, int mhz)[] points) ReadCurveRaw(
         PhysicalGPUHandle handle, uint[] mask, int gpuEntries, int version,
-        int memEntries = MemCurveEntries, int tailUints = 1064)
+        int memEntries = MemCurveEntries, int tailUints = CurveTailUints)
     {
         ResolveCurve();
         if (_rawVfpCurve == null)
@@ -333,11 +337,28 @@ internal static class NvApiPrivate
     }
 
     /// <summary>
-    /// Total curve points a layout carries. The driver's curve runs contiguously through BOTH the
-    /// "GPU" array and the 23-entry array after it — 103 points on a 4070 Ti, which is exactly the
-    /// mask's bit count. NvAPIWrapper calls the second region "memory" entries; it isn't.
+    /// Points the <em>named struct fields</em> reach: the "GPU" array plus the 23-entry one after it.
+    /// 103 for the 80-entry layout. This is a property of NvAPIWrapper's struct declaration, not of
+    /// the card — only the struct-based readers are limited to it.
     /// </summary>
-    public static int TotalPoints(int gpuEntries) => gpuEntries + MemCurveEntries;
+    private static int StructPoints(int gpuEntries) => gpuEntries + MemCurveEntries;
+
+    /// <summary>
+    /// Points the curve buffer really carries, which is what the raw readers and every writer
+    /// address. Bounded by the mask, since a point outside it can never be selected.
+    ///
+    /// This used to return <see cref="StructPoints"/>, on the reasoning that a 4070 Ti's 103 points
+    /// were "exactly the mask's bit count". They were not: the mask is 128 bits and that card simply
+    /// had 103 points. A 5070 Ti returns 127 in the same buffer — one contiguous run from 450 mV to
+    /// 1240 mV with no discontinuity at index 102 — so the struct's split reaches only 81% of it,
+    /// and sizing a delta array by it left the top 25 slots unwritten on every reset.
+    /// </summary>
+    public static int TotalPoints(int gpuEntries) =>
+        Math.Min(MaskPoints, (CurveTableSize(gpuEntries) - HeaderBytes) / EntryBytes);
+
+    /// <summary>Bytes the curve call wants, for the layout ReadCurveRaw builds.</summary>
+    private static int CurveTableSize(int gpuEntries) =>
+        HeaderBytes + (gpuEntries + MemCurveEntries) * EntryBytes + CurveTailUints * 4;
 
     /// <summary>
     /// Points the curve buffer really carries. NvAPIWrapper's struct splits the array into an
@@ -347,6 +368,9 @@ internal static class NvApiPrivate
     /// and that — not the struct's internal division — is the real bound.
     /// </summary>
     public const int MaskPoints = 128;
+
+    /// <summary>Uints of tail past the named entry arrays. The driver fills curve points into it.</summary>
+    private const int CurveTailUints = 1064;
 
     /// <summary>Delta entries the boost table holds: the mask's width, bounded by the buffer.</summary>
     private static int DeltaPoints(int gpuEntries) =>
