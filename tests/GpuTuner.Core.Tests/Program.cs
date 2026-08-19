@@ -406,6 +406,33 @@ using (var svc = new TuningService(counting))
     Check("unknown curve -> no-op", VoltagePlan.Compute(1000, 0, 0) == (0, 0));
     Check("zero target -> no-op", VoltagePlan.Compute(0, stock, max) == (0, 0));
 
+    // ---- CeilingMv keeps the two baselines apart.
+    //
+    // The 5070 Ti case that drew "card tops out at 795 mV" next to a "capped 1000 mV" marker on the
+    // same graph: the V/F table runs to 1240 mV, the card is only ever seen to reach 1035, and a
+    // 1000 mV cap is reported as an offset of 1000-1240 = -240 against the table. Subtracting that
+    // from the measured ceiling gave 795. The cap is 1000, so the ceiling is 1000.
+    {
+        const int table = 1240, seen = 1035, boosted = 1100;
+        Check("flatten reported against the table top resolves to the cap",
+              VoltagePlan.CeilingMv(0, -240, seen, boosted, table) == 1000);
+        Check("no flatten -> the measured ceiling, not the table top",
+              VoltagePlan.CeilingMv(0, 0, seen, boosted, table) == seen);
+        Check("boost raises the ceiling", VoltagePlan.CeilingMv(100, 0, seen, boosted, table) == boosted);
+        // A flatten that lands above the card's measured roof cannot raise it. This is also what
+        // makes the result stable when the curve reader returns the shorter table and the offset
+        // comes back measured against 1035 instead of 1240.
+        Check("a flatten above the roof does not raise it",
+              VoltagePlan.CeilingMv(0, -35, seen, boosted, table) == seen);
+        Check("flatten still caps a boosted card",
+              VoltagePlan.CeilingMv(100, -300, seen, boosted, table) == 940);
+        Check("unknown table top -> ceiling unchanged",
+              VoltagePlan.CeilingMv(0, -240, seen, boosted, 0) == seen);
+        // The old expression, kept as a guard: this is the arithmetic that produced 795.
+        Check("the mixed-baseline result is no longer produced",
+              VoltagePlan.CeilingMv(0, -240, seen, boosted, table) != VoltagePlan.ToTargetMv(0, -240, seen, boosted));
+    }
+
     // Boost and flatten are never requested together — that is the whole point of one slider.
     foreach (int t in new[] { 850, 900, 1000, 1089, 1090, 1091, 1120, 1150 })
     {

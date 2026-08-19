@@ -658,7 +658,11 @@ public sealed class TuningService : IDisposable
             PowerLimitPercent = s.PowerLimitPercent,
             TempLimitC = s.TempLimitC,
             VoltageBoostPercent = s.VoltageBoostPercent,
-            VoltageOffsetMv = s.VoltageOffsetMv,
+            // Not carried on an absolute-voltage card. There the figure is inferred by subtracting
+            // the cap from the top of the V/F table, a different baseline from the one the cap below
+            // uses — and Apply's --uv fallback reads a negative offset as "hold this far under the
+            // ceiling", so carrying it would let a 1000 mV cap come back as a 795 mV one.
+            VoltageOffsetMv = Capabilities.VoltageStyle == VoltageControlStyle.Offset ? s.VoltageOffsetMv : 0,
             VoltageRailMaxMv = s.VoltageRailMaxMv,
             MsvddRailMaxMv = s.MsvddRailMaxMv,
             VoltageRailFloorMv = s.VoltageRailFloorMv,
@@ -672,8 +676,8 @@ public sealed class TuningService : IDisposable
             // which case fall back to the old inference so the slider still lands somewhere sane.
             TargetVoltageMv = Backend.ReadVoltageLockMv(GpuIndex) is var lk && lk >= 0
                 ? lk
-                : VoltagePlan.ToTargetMv(s.VoltageBoostPercent, s.VoltageOffsetMv,
-                                         StockCeilingMv, BoostCeilingMv),
+                : VoltagePlan.CeilingMv(s.VoltageBoostPercent, s.VoltageOffsetMv,
+                                        StockCeilingMv, BoostCeilingMv, Capabilities.StockMaxVoltageMv),
             FanMode = s.FanManual ? FanMode.Fixed : FanMode.Auto,
             FixedFanPercent = s.FanPercent
         };

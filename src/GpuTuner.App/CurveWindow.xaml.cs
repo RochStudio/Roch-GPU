@@ -139,8 +139,10 @@ public partial class CurveWindow : Window
             var st = _svc.Backend.ReadTuningState(_svc.GpuIndex);
             // Measured ceilings, not the table's top and a compiled-in headroom: the dashed
             // extrapolation past the last curve point is only honest if it stops where the card does.
-            return VoltagePlan.ToTargetMv(st.VoltageBoostPercent, st.VoltageOffsetMv,
-                                          _svc.StockCeilingMv, _svc.BoostCeilingMv);
+            // The curve offset needs its own baseline passed in — see VoltagePlan.CeilingMv.
+            return VoltagePlan.CeilingMv(st.VoltageBoostPercent, st.VoltageOffsetMv,
+                                         _svc.StockCeilingMv, _svc.BoostCeilingMv,
+                                         _svc.Capabilities.StockMaxVoltageMv);
         }
         catch { return 0; }
     }

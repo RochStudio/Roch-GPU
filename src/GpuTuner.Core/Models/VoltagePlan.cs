@@ -41,4 +41,29 @@ public static class VoltagePlan
         if (boostPercent > 0) return stockMaxMv + (int)Math.Round(boostPercent / 100.0 * (maxMv - stockMaxMv));
         return stockMaxMv;
     }
+
+    /// <summary>
+    /// The highest voltage the card can actually select right now: its measured roof with any boost
+    /// applied, brought down by a flattened curve when that sits lower.
+    ///
+    /// The two inputs are measured against <em>different baselines</em>, and mixing them is how this
+    /// went wrong once already. <paramref name="stockCeilingMv"/> is what the card has been observed
+    /// to reach under load. <paramref name="curveOffsetMv"/> is measured against
+    /// <paramref name="curveTopMv"/>, the top of the V/F table, which runs a couple of hundred
+    /// millivolts above anything the card will ever select. Subtracting one from the other gave
+    /// 1035 − (1000 − 1240) = 795 and drew "card tops out at 795 mV" beside a "capped 1000 mV"
+    /// marker on the same graph — two labels for one setting, disagreeing.
+    ///
+    /// So convert the offset back to an absolute voltage against its own baseline first, then take
+    /// whichever roof is lower. Taking the minimum is also what makes this safe against the curve
+    /// reader occasionally returning the shorter table: an over-estimated plateau is discarded by
+    /// the measured ceiling rather than believed.
+    /// </summary>
+    public static int CeilingMv(int boostPercent, int curveOffsetMv, int stockCeilingMv, int maxMv, int curveTopMv)
+    {
+        int ceiling = ToTargetMv(boostPercent, 0, stockCeilingMv, maxMv);
+        if (curveOffsetMv < 0 && curveTopMv > 0)
+            ceiling = Math.Min(ceiling, curveTopMv + curveOffsetMv);
+        return ceiling;
+    }
 }

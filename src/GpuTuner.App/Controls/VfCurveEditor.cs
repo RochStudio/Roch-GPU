@@ -346,6 +346,11 @@ public sealed class VfCurveEditor : FrameworkElement
             dc.DrawText(ft, new Point(Math.Min(s.X + 10, w - ft.Width - 4), Math.Max(PadT, s.Y - 20)));
         }
 
+        // A cap is usually the reason the ceiling sits where it does, and then the two markers land on
+        // the same millivolt: one line drawn over another, one label stacked on another, both saying
+        // the same number. Let the cap marker carry the wording and skip the second one.
+        bool ceilingIsTheCap = _capMv > 0 && _ceilingMv > 0 && Math.Abs(_ceilingMv - _capMv) <= 1;
+
         // Voltage cap: everything to the right of it is unreachable, and the card behaves as if the
         // curve were flat from here on even though the stored points keep climbing.
         if (_capMv > 0 && _capMv >= vMin && _capMv <= vMax)
@@ -366,7 +371,9 @@ public sealed class VfCurveEditor : FrameworkElement
                 // Label the cap at the top of its line, not next to the flat segment. The selected
                 // point's readout sits on the curve and now stays put after the mouse is released,
                 // so anything drawn at curve height collides with it.
-                var cft = new FormattedText($"capped {_capMv} mV → {atCap.LiveMhz} MHz",
+                var cft = new FormattedText(
+                    $"capped {_capMv} mV → {atCap.LiveMhz} MHz" +
+                    (ceilingIsTheCap ? " — points above are unreachable" : ""),
                     CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, CapBrush, ppd);
                 dc.DrawText(cft, new Point(Math.Min(capX + 6, w - PadR - cft.Width - 2), PadT + 4));
             }
@@ -377,7 +384,7 @@ public sealed class VfCurveEditor : FrameworkElement
         // while a ceiling INSIDE the curve means the table describes voltages this card never
         // reaches — every point above the line is drawn but unreachable, and cannot be tuned into.
         int lastPointMv = _points[^1].VoltageMv;
-        if (_ceilingMv > 0 && _ceilingMv >= vMin && _ceilingMv <= vMax)
+        if (_ceilingMv > 0 && !ceilingIsTheCap && _ceilingMv >= vMin && _ceilingMv <= vMax)
         {
             double cx = ToScreen(_ceilingMv, fMin).X;
             var cp = new Pen(CeilingBrush, 1.5) { DashStyle = DashStyles.Dot }; cp.Freeze();
