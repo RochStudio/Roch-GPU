@@ -596,6 +596,16 @@ public sealed class NvApiBackend : IGpuBackend
     }
 
     /// <summary>
+    /// The GPU's own frequency counter for one clock domain, in MHz; 0 when unavailable. Domains are
+    /// <see cref="NvApiPrivate.DomainCore"/>, <see cref="NvApiPrivate.DomainXbar"/> and
+    /// <see cref="NvApiPrivate.DomainMemory"/>. This reports what a domain is actually running rather
+    /// than the setpoint it was handed, which is the only way to tell a crossbar write that landed
+    /// from one the driver merely accepted.
+    /// </summary>
+    public double MeasureClockMhz(int gpuIndex, int domain) =>
+        NvApiPrivate.MeasureClockKhz(Gpu(gpuIndex).Handle, domain) / 1000.0;
+
+    /// <summary>
     /// Offset the crossbar clock. Verified against the GPU's own frequency counter rather than the
     /// call's return: a +100 MHz offset moved the measured crossbar 2414 -> 2514 MHz with the core
     /// clock unchanged, which is what distinguishes this from a number the driver merely stored.
@@ -1468,7 +1478,12 @@ public sealed class NvApiBackend : IGpuBackend
                 }
             }
             if (x.ControlWords.Length > 0)
-                sb.AppendLine($"  control words near +0x{0x53C:X3}: " + string.Join(", ", x.ControlWords));
+            {
+                sb.AppendLine($"  control buffer, non-zero words ({x.ControlWords.Length / 2} shown):");
+                for (int i = 0; i + 1 < x.ControlWords.Length; i += 2)
+                    sb.AppendLine($"      +0x{x.ControlWords[i]:X4}  {x.ControlWords[i + 1],12}  0x{x.ControlWords[i + 1]:X8}");
+            }
+            else sb.AppendLine("  control buffer: entirely zero");
             var xi = NvApiPrivate.ReadXbarInfo(g.Handle);
             sb.AppendLine($"  ReadXbarInfo      : supported={xi.Supported} range=[{xi.MinOffsetMhz}..{xi.MaxOffsetMhz}]");
             sb.AppendLine($"  current offset    : {NvApiPrivate.ReadXbarOffsetMhz(g.Handle)} MHz");

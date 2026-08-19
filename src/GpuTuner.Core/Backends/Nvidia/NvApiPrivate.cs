@@ -830,11 +830,18 @@ internal static class NvApiPrivate
                 oneWords.Add(BitConverter.ToInt32(d2, e + off));
         }
 
-        // Same for the control buffer around the offset field, to confirm where the applied value sits.
+        // The control buffer's layout matters as much as the info one: the offset field is written at a
+        // fixed position, and if that has moved too then a non-zero write lands in a field the driver
+        // validates and the whole call is refused. Everything around the assumed position reads zero,
+        // so record where the buffer is NOT zero instead and let the structure show itself.
         var ctrlWords = new List<int>();
         if (ctrl is { status: 0, data: var d3 })
-            for (int off = XbarControlOffsetKhz - 0x20; off < XbarControlOffsetKhz + 0x20 && off + 4 <= d3.Length; off += 4)
-                if (off >= 0) ctrlWords.Add(BitConverter.ToInt32(d3, off));
+            for (int off = 0; off + 4 <= d3.Length; off += 4)
+            {
+                int w = BitConverter.ToInt32(d3, off);
+                if (w != 0) { ctrlWords.Add(off); ctrlWords.Add(w); }
+                if (ctrlWords.Count >= 240) break;
+            }
 
         return new XbarProbe(
             infoR, ctrlR, setR, measR,
