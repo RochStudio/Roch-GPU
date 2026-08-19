@@ -797,6 +797,62 @@ internal static class NvApiPrivate
         finally { Marshal.FreeHGlobal(buf); }
     }
 
+    /// <summary>
+    /// Read-only: call GetControl with different mask/selector shapes and report how much of the
+    /// buffer the driver fills in. The crossbar request carries no mask today, while the voltage-rail
+    /// request — which works on the same card — only returns data when one is supplied. If a mask is
+    /// what this family wants too, the buffer stops coming back nearly empty and the offset field
+    /// becomes readable instead of assumed. Nothing here writes: GetControl only.
+    /// </summary>
+    public static List<(string label, int status, int nonZero, string head)> ExploreXbarControl(PhysicalGPUHandle handle)
+    {
+        var results = new List<(string, int, int, string)>();
+        var fn = Resolve(FnXbarGetControl);
+        if (fn == null) { results.Add(("GetControl unresolved", int.MinValue, 0, "")); return results; }
+
+        void Try(string label, uint? maskAt04, int? selectorAt08)
+        {
+            const int Slack = 0x40000;
+            var buf = Marshal.AllocHGlobal(XbarControlSize + Slack);
+            try
+            {
+                for (int i = 0; i < XbarControlSize + Slack; i += 4) Marshal.WriteInt32(buf, i, 0);
+                Marshal.WriteInt32(buf, 0, unchecked((int)XbarControlVersion));
+                if (maskAt04.HasValue) Marshal.WriteInt32(buf, 0x04, unchecked((int)maskAt04.Value));
+                if (selectorAt08.HasValue) Marshal.WriteInt32(buf, XbarControlSelector, selectorAt08.Value);
+                int status;
+                try { status = fn(handle.MemoryAddress, buf); }
+                catch { results.Add((label, int.MinValue, 0, "threw")); return; }
+
+                int nz = 0; var head = new List<string>();
+                for (int off = 0; off + 4 <= XbarControlSize; off += 4)
+                {
+                    int w = Marshal.ReadInt32(buf, off);
+                    if (w == 0) continue;
+                    nz++;
+                    if (head.Count < 10) head.Add($"+0x{off:X4}={w}");
+                }
+                results.Add((label, status, nz, string.Join(" ", head)));
+            }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+
+        Try("selector=2, no mask (current)", null, 2);
+        Try("selector=2, mask=0x02 at +0x04", 0x02u, 2);
+        Try("selector=2, mask=0xFFFFFFFF", 0xFFFFFFFFu, 2);
+        Try("no selector, mask=0x02", 0x02u, null);
+        Try("selector=1, mask=0x02", 0x02u, 1);
+        Try("selector=3, mask=0x02", 0x02u, 3);
+        Try("selector=2, mask=0x01", 0x01u, 2);
+        // The selector behaves as a bitmask of sub-structures rather than a magic 2: bit 0 fills a
+        // count at +0x0124, bit 1 one at +0x0428, and 3 fills both. Ask for everything and see how
+        // much of the buffer the driver is willing to describe.
+        Try("selector=0xFF", 0x02u, 0xFF);
+        Try("selector=0xFFFF", 0x02u, 0xFFFF);
+        Try("selector=0xFFFFFFF", 0x02u, 0xFFFFFFF);
+        return results;
+    }
+
     public static XbarProbe ProbeXbar(PhysicalGPUHandle handle)
     {
         bool infoR = QueryInterface64(FnXbarGetInfo) != IntPtr.Zero;

@@ -1484,6 +1484,10 @@ public sealed class NvApiBackend : IGpuBackend
                     sb.AppendLine($"      +0x{x.ControlWords[i]:X4}  {x.ControlWords[i + 1],12}  0x{x.ControlWords[i + 1]:X8}");
             }
             else sb.AppendLine("  control buffer: entirely zero");
+            sb.AppendLine("  GetControl shapes (read-only, how much the driver fills in):");
+            foreach (var (label, status, nonZero, head) in NvApiPrivate.ExploreXbarControl(g.Handle))
+                sb.AppendLine($"      {label,-32} status={(status == int.MinValue ? "threw" : status.ToString()),-5} " +
+                              $"nonZero={nonZero,-4} {head}");
             var xi = NvApiPrivate.ReadXbarInfo(g.Handle);
             sb.AppendLine($"  ReadXbarInfo      : supported={xi.Supported} range=[{xi.MinOffsetMhz}..{xi.MaxOffsetMhz}]");
             sb.AppendLine($"  current offset    : {NvApiPrivate.ReadXbarOffsetMhz(g.Handle)} MHz");
