@@ -614,8 +614,18 @@ public sealed class NvApiBackend : IGpuBackend
     {
         var g = Gpu(gpuIndex);
         int status = NvApiPrivate.WriteXbarOffsetMhz(g.Handle, offsetMhz);
-        if (status != 0)
-            throw new GpuBackendException($"Failed to set the crossbar offset to {offsetMhz:+#;-#;0} MHz: status {status}.");
+        if (status == 0) return;
+
+        // -1 is the driver refusing the value, not the request: a wrong struct shape answers -9, and
+        // every other part of this family checks out on a card that still refuses to move. Say which
+        // it is, because "status -1" alone sends the next person looking for a layout bug that is not
+        // there. See the note on ProbeXbarControlShapes.
+        string why = status == -1
+            ? " The request was accepted and the value refused, which is what a card that reports a " +
+              "crossbar range but has no controllable crossbar domain does. Reads and 0 still work."
+            : "";
+        throw new GpuBackendException(
+            $"Failed to set the crossbar offset to {offsetMhz:+#;-#;0} MHz: status {status}.{why}");
     }
 
     public void SetCoreOffset(int gpuIndex, int offsetMhz) => SetClockDelta(gpuIndex, PublicClockDomain.Graphics, offsetMhz);
@@ -1488,6 +1498,9 @@ public sealed class NvApiBackend : IGpuBackend
             foreach (var (label, status, nonZero, head) in NvApiPrivate.ExploreXbarControl(g.Handle))
                 sb.AppendLine($"      {label,-32} status={(status == int.MinValue ? "threw" : status.ToString()),-5} " +
                               $"nonZero={nonZero,-4} {head}");
+            sb.AppendLine("  GetControl accepted shapes (-9 = wrong struct version, 0 = accepted):");
+            foreach (var (shape, status) in NvApiPrivate.ProbeXbarControlShapes(g.Handle))
+                sb.AppendLine($"      {shape,-16} status={(status == int.MinValue ? "threw" : status.ToString())}");
             var xi = NvApiPrivate.ReadXbarInfo(g.Handle);
             sb.AppendLine($"  ReadXbarInfo      : supported={xi.Supported} range=[{xi.MinOffsetMhz}..{xi.MaxOffsetMhz}]");
             sb.AppendLine($"  current offset    : {NvApiPrivate.ReadXbarOffsetMhz(g.Handle)} MHz");

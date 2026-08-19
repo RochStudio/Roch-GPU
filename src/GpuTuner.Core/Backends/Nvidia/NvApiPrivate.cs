@@ -853,6 +853,58 @@ internal static class NvApiPrivate
         return results;
     }
 
+    // Measured, 4070 Ti (591.86) against a 5070 Ti (610.88) where the write lands. Every observable
+    // is identical: only 0x61A4 x v2 is accepted and every other shape answers -9; +0x000C reads
+    // 0x01010000 on both; the selector is an 8-bit mask over eight blocks at 0x124 + n*0x304 on both;
+    // both report a -1000..+1000 range. The block counts differ (10 vs 15) and track the GPU's clock
+    // domain count, which is not the difference that matters.
+    //
+    // The one difference is the write. On the 5070 Ti a +30 MHz offset changes exactly one word,
+    // +0x053C = 30000 kHz, which is block_start + 0x114 for selector bit 1. On the 4070 Ti that same
+    // write is refused with -1 -- a content rejection, since a wrong shape gives -9 -- for every value
+    // tried, in either unit, positive or negative, under every selector. Writing 0 succeeds, which is
+    // what a no-op does regardless.
+    //
+    // So the field address is right and Ada simply will not apply a non-zero crossbar offset. The
+    // range it reports is the width of the delta field, not a promise, the same way its +/-1000 MHz
+    // core offset is. Do not go looking for the offset field again on the strength of the -1.
+
+    /// <summary>
+    /// Read-only: which (size, version) shape does GetControl accept? NVAPI answers a wrong struct
+    /// version with -9 and a wrong *content* with -1, so this separates "the driver wants a different
+    /// structure on this driver build" from "the structure is fine and the value was refused".
+    /// GetControl only; nothing is written.
+    /// </summary>
+    public static List<(string shape, int status)> ProbeXbarControlShapes(PhysicalGPUHandle handle)
+    {
+        var results = new List<(string, int)>();
+        var fn = Resolve(FnXbarGetControl);
+        if (fn == null) { results.Add(("GetControl unresolved", int.MinValue)); return results; }
+
+        void Try(int size, int ver)
+        {
+            const int Slack = 0x40000;
+            var buf = Marshal.AllocHGlobal(size + Slack);
+            try
+            {
+                for (int i = 0; i < size + Slack; i += 4) Marshal.WriteInt32(buf, i, 0);
+                Marshal.WriteInt32(buf, 0, size | (ver << 16));
+                Marshal.WriteInt32(buf, XbarControlSelector, 2);
+                int status;
+                try { status = fn(handle.MemoryAddress, buf); }
+                catch { results.Add(($"0x{size:X4} x v{ver}", int.MinValue)); return; }
+                results.Add(($"0x{size:X4} x v{ver}", status));
+            }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+
+        foreach (int ver in new[] { 1, 2, 3, 4 }) Try(XbarControlSize, ver);
+        // Sizes either side, and ones a differently-sized block array would produce.
+        foreach (int size in new[] { 0x61A4 - 0x304, 0x61A4 + 0x304, 0x4000, 0x5000, 0x7000, 0x86AC })
+            Try(size, 2);
+        return results;
+    }
+
     public static XbarProbe ProbeXbar(PhysicalGPUHandle handle)
     {
         bool infoR = QueryInterface64(FnXbarGetInfo) != IntPtr.Zero;
