@@ -21,6 +21,16 @@ public sealed class MainViewModel : ObservableObject
         Device = svc.Device;
         BackendName = svc.Backend.BackendName;
 
+        // Seed the measured ceilings BEFORE loading the editor. The cap slider defaults to the stock
+        // ceiling, and until an observation is in hand that falls back to the V/F table's top — on a
+        // card whose table runs 200 mV past what it reaches, the slider opened at a voltage the card
+        // cannot select while the caption underneath correctly read the measured one.
+        var settings = App.Settings;
+        if (settings.ObservedMaxVoltageByGpu.TryGetValue(svc.Device.Name, out var seenMv))
+            svc.SeedObservedMaxVoltage(seenMv);
+        if (settings.ObservedMaxBoostedVoltageByGpu.TryGetValue(svc.Device.Name, out var seenBoostMv))
+            svc.SeedObservedMaxBoostedVoltage(seenBoostMv);
+
         // Seed sliders with what the driver currently has.
         var cur = svc.ReadCurrentAsProfile();
         cur.ClampTo(Caps);
@@ -39,7 +49,6 @@ public sealed class MainViewModel : ObservableObject
         RefreshProfiles();
         RefreshSlots();
 
-        var settings = App.Settings;
         _applyOnStartup = settings.ApplyOnStartup && StartupTaskService.Exists();
         _startupProfile = settings.StartupProfile;
 
@@ -90,6 +99,12 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public bool HasVoltageBoost => IsVoltageAbsolute && Caps.CanSetVoltageBoost;
     public bool HasCurveEditor => Caps.CanSetVoltageCurve;
+    /// <summary>NVVDD: the core rail's own ceiling, a separate lever from the boost and the cap.</summary>
+    public bool HasVoltageRail => Caps.CanSetVoltageRail;
+    /// <summary>MSVDD: the rail feeding the crossbar, SYS and video domains.</summary>
+    public bool HasMsvddRail => Caps.CanSetMsvddRail;
+    /// <summary>The interconnect clock, which no public NVAPI surface exposes.</summary>
+    public bool HasXbar => Caps.CanSetXbarOffset;
     public bool HasTempLimit => Caps.CanSetTempLimit;
     public bool HasZeroRpm => Caps.CanSetZeroRpm;
     public bool HasMemoryTiming => Caps.CanSetMemoryTiming && Caps.MemoryTimingOptions.Count > 0;
@@ -105,24 +120,16 @@ public sealed class MainViewModel : ObservableObject
         $"{Caps.VoltageBoostMinPercent} … {Caps.VoltageBoostMaxPercent} % (0 = stock ceiling). " +
         "Raises how far the core may be driven above the top of the V/F table; it does not add curve points.";
 
-    /// <summary>What the boost buys, in the mV the rest of the UI is expressed in.</summary>
-    public string VoltageBoostEffectText
-    {
-        get
-        {
-            int ceiling = StockCeilingMv, max = Caps.MaxVoltageMv;
-            if (VoltageBoost <= 0)
-                return ceiling > 0 ? $"Stock ceiling ({ceiling} mV)." : "Stock ceiling.";
-            if (ceiling <= 0 || max <= ceiling) return $"+{VoltageBoost} % of the card's boost headroom.";
-            int mv = ceiling + (int)Math.Round(VoltageBoost / 100.0 * (max - ceiling));
-            return $"+{VoltageBoost} % — lets the core reach {mv} mV (stock {ceiling} mV).";
-        }
-    }
+    // No caption under the boost slider: it used to predict the voltage the boost would reach, which
+    // meant stating a per-card figure derived from VoltageBoostHeadroomMv — a constant measured on
+    // one 4070 Ti. On a 5070 Ti that overstates the headroom threefold, and NVAPI exposes no way to
+    // ask. Better to show nothing than a number invented for a different card.
+
     public string PowerRangeText => $"{Caps.PowerLimitMinPercent} … {Caps.PowerLimitMaxPercent} % (default {Caps.PowerLimitDefaultPercent})";
     public string TempRangeText => $"{Caps.TempLimitMinC} … {Caps.TempLimitMaxC} °C (default {Caps.TempLimitDefaultC})";
 
     // ------------------------------------------------------------------ editor values (sliders)
-    private int _core, _mem, _power, _temp, _volt, _uv, _vTarget, _fanFixed, _fanModeIndex;
+    private int _core, _mem, _power, _temp, _volt, _uv, _vTarget, _rail, _msvdd, _xbar, _fanFixed, _fanModeIndex;
     private bool _pendingChanges;
 
     // Each numeric property clamps to the driver range on set, so typing "+9999" or dragging past the end is safe,
@@ -144,12 +151,27 @@ public sealed class MainViewModel : ObservableObject
     public int MemoryOffset { get => _mem; set { if (SetClamped(ref _mem, ClockStep.SnapWithin(value, MemorySnapMhz, Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz), Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(MemoryOffset)); } } }
     public int PowerLimit { get => _power; set { if (SetClamped(ref _power, value, Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent)) { Dirty(); RaiseVal(nameof(PowerLimit)); } } }
     public int TempLimit { get => _temp; set { if (SetClamped(ref _temp, value, Caps.TempLimitMinC, Caps.TempLimitMaxC)) { Dirty(); RaiseVal(nameof(TempLimit)); } } }
-    public int VoltageBoost { get => _volt; set { if (SetClamped(ref _volt, value, Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent)) { Dirty(); RaiseVal(nameof(VoltageBoost)); OnPropertyChanged(nameof(VoltageBoostEffectText)); } } }
+    public int VoltageBoost { get => _volt; set { if (SetClamped(ref _volt, value, Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent)) { Dirty(); RaiseVal(nameof(VoltageBoost)); } } }
     public int VoltageOffset { get => _uv; set { if (SetClamped(ref _uv, value, Caps.VoltageOffsetMinMv, Caps.VoltageOffsetMaxMv)) { Dirty(); RaiseVal(nameof(VoltageOffset)); OnPropertyChanged(nameof(VoltageCapText)); } } }
     /// <summary>Absolute ceiling in mV the core is held at — the "voltage cap" slider. Independent of
     /// <see cref="VoltageBoost"/>, which raises the top of the range this caps within.</summary>
-    public int TargetVoltage { get => _vTarget; set { if (SetClamped(ref _vTarget, value, Caps.MinVoltageMv, Math.Max(Caps.MinVoltageMv, Caps.MaxVoltageMv))) { Dirty(); RaiseVal(nameof(TargetVoltage)); OnPropertyChanged(nameof(VoltageCapText)); } } }
-    public int FixedFan { get => _fanFixed; set { if (SetClamped(ref _fanFixed, value, Caps.FanMinPercent, Caps.FanMaxPercent)) { Dirty(); RaiseVal(nameof(FixedFan)); } } }
+    public int TargetVoltage { get => _vTarget; set { if (SetClamped(ref _vTarget, value, Caps.MinVoltageMv, Math.Max(Caps.MinVoltageMv, BoostCeilingMv))) { Dirty(); RaiseVal(nameof(TargetVoltage)); OnPropertyChanged(nameof(VoltageCapText)); } } }
+    /// <summary>
+    /// Ceiling of the core voltage rail, in mV. Raising it lets the card select voltages above its
+    /// stock maximum — the boost and the cap both operate underneath whatever this allows.
+    /// </summary>
+    public int VoltageRailMax { get => _rail; set { if (SetClamped(ref _rail, value, Caps.VoltageRailMinMv, Math.Max(Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv))) { Dirty(); RaiseVal(nameof(VoltageRailMax)); OnPropertyChanged(nameof(BoostCeilingMv)); OnPropertyChanged(nameof(VoltageCapText)); } } }
+
+    /// <summary>Ceiling of the MSVDD rail, in mV. Separate supply from NVVDD.</summary>
+    public int MsvddRailMax { get => _msvdd; set { if (SetClamped(ref _msvdd, value, Caps.MsvddRailMinMv, Math.Max(Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv))) { Dirty(); RaiseVal(nameof(MsvddRailMax)); } } }
+
+    /// <summary>Crossbar clock offset in MHz. Snaps to the same 15 MHz grid as the core clock.</summary>
+    public int XbarOffset { get => _xbar; set { if (SetClamped(ref _xbar, ClockStep.SnapWithin(value, CoreStepMhz, Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz), Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(XbarOffset)); } } }
+
+    /// <summary>Fixed fan duty. Snaps to the 5% grid — see <see cref="ClockStep.FanPercent"/>.</summary>
+    private const int FanStepPercent = ClockStep.FanPercent;
+
+    public int FixedFan { get => _fanFixed; set { if (SetClamped(ref _fanFixed, ClockStep.SnapWithin(value, FanStepPercent, Caps.FanMinPercent, Caps.FanMaxPercent), Caps.FanMinPercent, Caps.FanMaxPercent)) { Dirty(); RaiseVal(nameof(FixedFan)); } } }
 
     private bool _zeroRpm = true;
     /// <summary>AMD: let the fans stop entirely at idle.</summary>
@@ -185,7 +207,10 @@ public sealed class MainViewModel : ObservableObject
             case "mem": MemoryOffset += MemoryStepMhz * dir; break;
             case "power": PowerLimit += dir; break;
             case "temp": TempLimit += dir; break;
-            case "fan": FixedFan += dir; break;
+            case "rail": VoltageRailMax += 5 * dir; break;
+            case "msvdd": MsvddRailMax += 5 * dir; break;
+            case "xbar": XbarOffset += CoreStepMhz * dir; break;
+            case "fan": FixedFan += FanStepPercent * dir; break;
         }
     }
 
@@ -210,7 +235,10 @@ public sealed class MainViewModel : ObservableObject
     public string PowerLimitInput { get => _power.ToString(); set { if (TryParseSigned(value, out var v)) PowerLimit = v; RaiseVal(nameof(PowerLimit)); } }
     public string TempLimitInput { get => _temp.ToString(); set { if (TryParseSigned(value, out var v)) TempLimit = v; RaiseVal(nameof(TempLimit)); } }    public string VoltageOffsetInput { get => _uv.ToString("+#;-#;0"); set { if (TryParseSigned(value, out var v)) VoltageOffset = v; RaiseVal(nameof(VoltageOffset)); OnPropertyChanged(nameof(VoltageCapText)); } }
     public string TargetVoltageInput { get => _vTarget.ToString(); set { if (TryParseSigned(value, out var v)) TargetVoltage = v; RaiseVal(nameof(TargetVoltage)); OnPropertyChanged(nameof(VoltageCapText)); } }
-    public string VoltageBoostInput { get => _volt.ToString(); set { if (TryParseSigned(value, out var v)) VoltageBoost = v; RaiseVal(nameof(VoltageBoost)); OnPropertyChanged(nameof(VoltageBoostEffectText)); } }
+    public string VoltageBoostInput { get => _volt.ToString(); set { if (TryParseSigned(value, out var v)) VoltageBoost = v; RaiseVal(nameof(VoltageBoost)); } }
+    public string MsvddRailMaxInput { get => _msvdd.ToString(); set { if (TryParseSigned(value, out var v)) MsvddRailMax = v; RaiseVal(nameof(MsvddRailMax)); } }
+    public string XbarOffsetInput { get => _xbar.ToString("+#;-#;0"); set { if (TryParseSigned(value, out var v)) XbarOffset = v; RaiseVal(nameof(XbarOffset)); } }
+    public string VoltageRailMaxInput { get => _rail.ToString(); set { if (TryParseSigned(value, out var v)) VoltageRailMax = v; RaiseVal(nameof(VoltageRailMax)); } }
     public string FixedFanInput { get => _fanFixed.ToString(); set { if (TryParseSigned(value, out var v)) FixedFan = v; RaiseVal(nameof(FixedFan)); } }
 
     /// <summary>Parse a user-typed offset: leading +/- allowed, whitespace trimmed, trailing units ignored.</summary>
@@ -260,10 +288,18 @@ public sealed class MainViewModel : ObservableObject
     public string TargetVoltageText => $"{TargetVoltage} mV";
     /// <summary>What this card really tops out at — the curve's last point is a step below it.</summary>
     public int StockCeilingMv => _svc.StockCeilingMv;
+
+    /// <summary>Top of the cap slider: the highest voltage the boost can actually reach here.</summary>
+    public int BoostCeilingMv => _svc.BoostCeilingMv;
+
     public string TargetVoltageRangeText =>
-        $"{Caps.MinVoltageMv} … {Caps.MaxVoltageMv} mV. Holds the core at or below this voltage; "
-        + $"set it at or above the ceiling to cap nothing. This card tops out at {StockCeilingMv} mV "
-        + $"(the V/F curve's last point is {Caps.StockMaxVoltageMv} mV; the VID sits a step above it).";
+        $"{Caps.MinVoltageMv} … {BoostCeilingMv} mV. Holds the core at or below this voltage; "
+        + $"set it at or above the ceiling to cap nothing. "
+        + (StockCeilingMv < Caps.StockMaxVoltageMv
+            ? $"This card has not been seen above {StockCeilingMv} mV under load, against a V/F curve "
+              + $"whose last point is {Caps.StockMaxVoltageMv} mV — a cap above {StockCeilingMv} mV caps nothing."
+            : $"This card tops out at {StockCeilingMv} mV (the V/F curve's last point is "
+              + $"{Caps.StockMaxVoltageMv} mV; the VID sits a step above it).");
     public string VoltageCapText
     {
         get
@@ -284,10 +320,32 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    public string VoltageRailMaxText => Caps.VoltageRailStockMaxMv > 0 && VoltageRailMax == Caps.VoltageRailStockMaxMv
+        ? $"stock ceiling ({VoltageRailMax} mV)"
+        : $"{VoltageRailMax} mV — {VoltageRailMax - Caps.VoltageRailStockMaxMv:+#;-#;0} mV on the core rail's ceiling";
+    public string VoltageRailMaxRangeText =>
+        $"{Caps.VoltageRailMinMv} … {Caps.VoltageRailMaxMv} mV (stock {Caps.VoltageRailStockMaxMv} mV). Moves the core "
+        + "rail's own ceiling. The driver accepts more than this range offers; it is narrowed to the part worth using.";
+    // No "seen" figure beside the MSVDD ceiling, though it would be the useful thing to show: the
+    // rail sits well under its roof in normal use. The obvious source is wrong — the rail status
+    // entry's +0x04 field reads identically for both rails (0 of 14 samples under load differed)
+    // while HWiNFO shows MSVDD about 45 mV below the core, so it is not a per-rail voltage and
+    // quoting it here would label the core's reading as MSVDD. The real source looks to be the ADC
+    // family (0x43D9B26A), which returns an empty structure until its mask is pre-filled.
+    public string MsvddRailMaxText => Caps.MsvddRailStockMaxMv > 0 && MsvddRailMax == Caps.MsvddRailStockMaxMv
+        ? $"stock ceiling ({MsvddRailMax} mV)"
+        : $"{MsvddRailMax} mV on the MSVDD rail";
+    public string MsvddRailMaxRangeText =>
+        $"{Caps.MsvddRailMinMv} ... {Caps.MsvddRailMaxMv} mV (stock {Caps.MsvddRailStockMaxMv} mV). Feeds the crossbar, "
+        + "SYS and video domains rather than the shader core.";
+    public string XbarOffsetText => $"{XbarOffset:+#;-#;0} MHz on the interconnect clock";
+    public string XbarOffsetRangeText =>
+        $"{Caps.XbarOffsetMinMhz:+#;-#;0} … {Caps.XbarOffsetMaxMhz:+#;-#;0} MHz. Offsets the crossbar, which no public "
+        + "NVAPI surface exposes; the GPU's own frequency counter is used to verify the write landed.";
     public string FixedFanText => $"{FixedFan} %";
     // ------------------------------------------------------------------ live telemetry
     private GpuTelemetry? _t;
-    private int _lastCeiling;
+    private int _lastCeiling, _lastBoostCeiling;
     public GpuTelemetry? Telemetry
     {
         get => _t;
@@ -295,12 +353,23 @@ public sealed class MainViewModel : ObservableObject
         {
             _t = value;
             OnPropertyChanged(); OnPropertyChanged(nameof(LimitReasonText)); OnPropertyChanged(nameof(LimitIsActive));
-            if (_svc.StockCeilingMv != _lastCeiling)
+            if (_svc.StockCeilingMv != _lastCeiling || _svc.BoostCeilingMv != _lastBoostCeiling)
             {
                 _lastCeiling = _svc.StockCeilingMv;
+                _lastBoostCeiling = _svc.BoostCeilingMv;
                 OnPropertyChanged(nameof(StockCeilingMv));
+                OnPropertyChanged(nameof(BoostCeilingMv));
                 OnPropertyChanged(nameof(VoltageCapText));
                 OnPropertyChanged(nameof(TargetVoltageRangeText));
+
+                // Only moves when the card shows us a voltage it has never reached before, so this
+                // writes rarely rather than on every sample.
+                if (_svc.ObservedMaxVoltageMv > 0)
+                    App.Settings.ObservedMaxVoltageByGpu[Device.Name] = _svc.ObservedMaxVoltageMv;
+                if (_svc.ObservedMaxBoostedVoltageMv > 0)
+                    App.Settings.ObservedMaxBoostedVoltageByGpu[Device.Name] = _svc.ObservedMaxBoostedVoltageMv;
+                if (_svc.ObservedMaxVoltageMv > 0 || _svc.ObservedMaxBoostedVoltageMv > 0)
+                    App.Store.SaveSettings(App.Settings);
             }
         }
     }
@@ -317,9 +386,24 @@ public sealed class MainViewModel : ObservableObject
     public string Status { get => _status; set => Set(ref _status, value); }
     private bool _statusIsError;
     public bool StatusIsError { get => _statusIsError; set => Set(ref _statusIsError, value); }
-    public string AppliedSummary
+    private string _appliedSummary = "Nothing applied this session (driver state shown)";
+
+    /// <summary>
+    /// What the card is actually carrying, read back rather than echoed. Computed when something is
+    /// applied and cached: it costs two driver calls and roughly 35 ms, the XAML binds it twice
+    /// (label and tooltip), and a property getter that stalls the UI thread that long is a trap for
+    /// whoever next adds a binding to it.
+    /// </summary>
+    public string AppliedSummary => _appliedSummary;
+
+    private void RefreshAppliedSummary()
     {
-        get
+        _appliedSummary = BuildAppliedSummary();
+        RefreshAppliedSummary();
+    }
+
+    private string BuildAppliedSummary()
+    {
         {
             var p = _svc.AppliedProfile;
             if (p == null) return "Nothing applied this session (driver state shown)";
@@ -517,7 +601,13 @@ public sealed class MainViewModel : ObservableObject
         TempLimitC = TempLimit,
         VoltageBoostPercent = VoltageBoost,
         VoltageOffsetMv = VoltageOffset,
-        TargetVoltageMv = TargetVoltage,
+        VoltageRailMaxMv = HasVoltageRail ? VoltageRailMax : 0,
+        MsvddRailMaxMv = HasMsvddRail ? MsvddRailMax : 0,
+        XbarOffsetMhz = HasXbar ? XbarOffset : 0,
+        // The cap has no slider any more — the curve editor's flatten owns it. Carry whatever lock is
+        // actually on the card so pressing Apply here preserves a flatten set over there instead of
+        // overwriting it with a value this window last read at startup.
+        TargetVoltageMv = Math.Max(0, _svc.Backend.ReadVoltageLockMv(_svc.GpuIndex)),
         ZeroRpm = ZeroRpm,
         MemoryTimingLevel = MemoryTimingIndex,
         FanMode = (FanMode)FanModeIndex,
@@ -533,6 +623,9 @@ public sealed class MainViewModel : ObservableObject
         TempLimit = p.TempLimitC;
         VoltageBoost = p.VoltageBoostPercent;
         VoltageOffset = p.VoltageOffsetMv;
+        VoltageRailMax = p.VoltageRailMaxMv > 0 ? p.VoltageRailMaxMv : Caps.VoltageRailStockMaxMv;
+        MsvddRailMax = p.MsvddRailMaxMv > 0 ? p.MsvddRailMaxMv : Caps.MsvddRailStockMaxMv;
+        XbarOffset = p.XbarOffsetMhz;
         TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : StockCeilingMv;
         ZeroRpm = p.ZeroRpm;
         MemoryTimingIndex = p.MemoryTimingLevel;
@@ -547,9 +640,14 @@ public sealed class MainViewModel : ObservableObject
     {
         var p = BuildProfileFromEditor(SelectedProfile ?? "Session");
         var errs = _svc.Apply(p);
-        if (errs.Count == 0)
+        // Notes say what the apply did differently, not that it failed — showing them in the error
+        // colour would make a clean apply look broken.
+        if (errs.Count == 0 || TuningService.OnlyNotes(errs))
         {
-            Status = $"Applied at {DateTime.Now:HH:mm:ss}"; StatusIsError = false; PendingChanges = false;
+            Status = errs.Count == 0
+                ? $"Applied at {DateTime.Now:HH:mm:ss}"
+                : string.Join("  |  ", errs);
+            StatusIsError = false; PendingChanges = false;
             App.Settings.LastProfileByGpu[Device.Name] = p.Name;
         }
         else
@@ -557,7 +655,8 @@ public sealed class MainViewModel : ObservableObject
             Status = string.Join("  |  ", errs); StatusIsError = true;
         }
         OnPropertyChanged(nameof(VoltageCapText));   // the mechanism is only known after the write
-        OnPropertyChanged(nameof(AppliedSummary));
+        OnPropertyChanged(nameof(BoostCeilingMv));  // a raised rail ceiling lifts the cap slider's top
+        RefreshAppliedSummary();
     }
 
     private void Reset()
@@ -570,7 +669,7 @@ public sealed class MainViewModel : ObservableObject
             Status = "Reset to driver defaults"; StatusIsError = false;
         }
         catch (Exception e) { Status = e.Message; StatusIsError = true; }
-        OnPropertyChanged(nameof(AppliedSummary));
+        RefreshAppliedSummary();
     }
 
     private void Revert()
@@ -653,9 +752,9 @@ public sealed class MainViewModel : ObservableObject
     private void RaiseTexts()
     {
         foreach (var p in new[] { nameof(CoreOffset), nameof(MemoryOffset), nameof(PowerLimit),
-                                  nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(FixedFan) })
+                                  nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(VoltageRailMax), nameof(MsvddRailMax), nameof(XbarOffset), nameof(FixedFan) })
             RaiseVal(p);
         OnPropertyChanged(nameof(VoltageCapText));
-        OnPropertyChanged(nameof(VoltageBoostEffectText));
+       
     }
 }

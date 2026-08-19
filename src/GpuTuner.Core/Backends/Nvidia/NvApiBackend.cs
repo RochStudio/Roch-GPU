@@ -100,10 +100,12 @@ public sealed class NvApiBackend : IGpuBackend
                     else if (c.DomainId == PublicClockDomain.Memory)
                     {
                         canMem = ps.IsEditable && c.IsEditable;
+                        // Take the driver's own maximum. This used to be forced up to +4000 on the
+                        // theory that 50-series cards under-report what they'll accept; a 5070 Ti
+                        // (driver 610.88) reports +3000 and rejects anything above it outright with
+                        // NotSupported rather than clamping to the limit, so the extra travel was
+                        // slider the card could only ever refuse.
                         memMin = range.Minimum / 1000; memMax = range.Maximum / 1000;
-                        // 50-series cards take far more memory offset than older drivers advertise,
-                        // so never cap the slider below +4000; the driver clamps anything it won't take.
-                        memMax = Math.Max(memMax, 4000);
                     }
                 }
             }
@@ -127,8 +129,10 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
 
-        // Temp limit.
-        bool canTemp = false; int tMin = 65, tMax = 90, tDef = 83;
+        // Temp limit. Zeros when the card exposes no thermal policy — a range of 65..90 with a
+        // default of 83 is a description of some other card, and everything downstream (the stock
+        // profile, the clamp) would carry it as though this one had a limit.
+        bool canTemp = false; int tMin = 0, tMax = 0, tDef = 0;
         try
         {
             var info = g.PerformanceControl.ThermalLimitInformation.FirstOrDefault();
@@ -188,6 +192,51 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIANotSupportedException) { curveReason = "entry point not exposed by this driver"; }
         catch (Exception ex) { curveReason = ex.GetType().Name + ": " + ex.Message; }
 
+        // Core voltage rail (NVVDD). Read rather than assumed: the rail reports its own ceiling and
+        // floor, and the ceiling already includes whatever offset is applied, so stock is the
+        // difference. A card without the rail family simply reports nothing and the control hides.
+        bool canRail = false; int railMin = 0, railMax = 0, railStock = 0;
+        bool canMsvdd = false; int msMin = 0, msMax = 0, msStock = 0;
+        try
+        {
+            foreach (var rail in NvApiPrivate.ReadVoltRails(g.Handle))
+            {
+                if (rail.MaxUv == 0) continue;
+                // The reported ceiling already carries any offset in force, so stock is the difference.
+                int stock = ((int)rail.MaxUv - rail.MaxOffsetUv) / 1000;
+                int min = (int)rail.MinUv / 1000;
+                int max = stock + VoltageRailHeadroomMv;
+                if (rail.Index == NvApiPrivate.RailNvvdd)
+                {
+                    railStock = stock; railMin = min; railMax = max;
+                    canRail = stock > 0 && max > min;
+                }
+                else if (rail.Index == NvApiPrivate.RailMsvdd)
+                {
+                    msStock = stock; msMin = min; msMax = max;
+                    canMsvdd = stock > 0 && max > min;
+                }
+            }
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+
+        // Crossbar. Its own control family reports the range; no practical narrowing, because it is a
+        // clock rather than a voltage — an offset that is too high shows up as instability, not damage.
+        bool canXbar = false; int xbarMin = 0, xbarMax = 0;
+        try
+        {
+            var xi = NvApiPrivate.ReadXbarInfo(g.Handle);
+            if (xi.Supported)
+            {
+                canXbar = true;
+                (xbarMin, xbarMax) = ClockStep.Narrow(xi.MinOffsetMhz, xi.MaxOffsetMhz,
+                    ClockStep.XbarOffsetPracticalMinMhz, ClockStep.XbarOffsetPracticalMaxMhz);
+            }
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+
         var coreRange = ClockStep.Narrow(coreMin, coreMax,
             ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreOffsetPracticalMaxMhz);
         var memRange = ClockStep.Narrow(memMin, memMax,
@@ -212,7 +261,12 @@ public sealed class NvApiBackend : IGpuBackend
             PowerLimitMinPercent = pMin, PowerLimitMaxPercent = pMax, PowerLimitDefaultPercent = pDef,
             TempLimitMinC = tMin, TempLimitMaxC = tMax, TempLimitDefaultC = tDef,
             VoltageBoostMinPercent = 0, VoltageBoostMaxPercent = 100,
-            FanMinPercent = fMin, FanMaxPercent = fMax, FanCount = fanCount
+            FanMinPercent = fMin, FanMaxPercent = fMax, FanCount = fanCount,
+            CanSetVoltageRail = canRail,
+            VoltageRailMinMv = railMin, VoltageRailMaxMv = railMax, VoltageRailStockMaxMv = railStock,
+            CanSetMsvddRail = canMsvdd,
+            MsvddRailMinMv = msMin, MsvddRailMaxMv = msMax, MsvddRailStockMaxMv = msStock,
+            CanSetXbarOffset = canXbar, XbarOffsetMinMhz = xbarMin, XbarOffsetMaxMhz = xbarMax
         };
         _capsCache[gpuIndex] = caps;
         return caps;
@@ -381,7 +435,10 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
 
-        int temp = 83;
+        // 0, not a plausible-looking 83: a card with no thermal policy has no temperature limit to
+        // report, and inventing one made `info` print "temp 83°C" two lines under "Temp limit: not
+        // supported". Callers treat 0 as "the card didn't say".
+        int temp = 0;
         try
         {
             var t = g.PerformanceControl.ThermalLimitPolicies.FirstOrDefault();
@@ -438,9 +495,29 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
 
+        // One pass for both rails. Reading them separately cost three extra driver calls and ~16 KB
+        // of marshalling per tuning-state read, on a path the GUI hits after every Apply.
+        int railMaxMv = 0, msvddMaxMv = 0;
+        try
+        {
+            foreach (var rail in NvApiPrivate.ReadVoltRails(g.Handle))
+            {
+                if (rail.Index == NvApiPrivate.RailNvvdd) railMaxMv = (int)rail.MaxUv / 1000;
+                else if (rail.Index == NvApiPrivate.RailMsvdd) msvddMaxMv = (int)rail.MaxUv / 1000;
+            }
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+
+        int xbarMhz = 0;
+        try { xbarMhz = NvApiPrivate.ReadXbarOffsetMhz(g.Handle); }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+
         return new GpuTuningState
         {
             CoreOffsetMhz = core, MemoryOffsetMhz = mem,
+            VoltageRailMaxMv = railMaxMv, MsvddRailMaxMv = msvddMaxMv, XbarOffsetMhz = xbarMhz,
             PowerLimitPercent = power, TempLimitC = temp,
             VoltageBoostPercent = voltBoost, VoltageOffsetMv = voltOffset,
             FanManual = fanManual, FanPercent = fanPct
@@ -448,6 +525,45 @@ public sealed class NvApiBackend : IGpuBackend
     }
 
     // ------------------------------------------------------------------ writes
+
+    /// <summary>
+    /// Move the core rail's ceiling to an absolute mV target. 0 restores the card's own default.
+    /// The rail takes a signed offset rather than an absolute, so the stock ceiling is recovered
+    /// from the live reading first — its reported maximum already carries any offset in force.
+    /// </summary>
+    public void SetVoltageRailMax(int gpuIndex, int millivolts) =>
+        SetRailMax(gpuIndex, NvApiPrivate.RailNvvdd, millivolts, "core (NVVDD)");
+
+    public void SetMsvddRailMax(int gpuIndex, int millivolts) =>
+        SetRailMax(gpuIndex, NvApiPrivate.RailMsvdd, millivolts, "MSVDD");
+
+    private void SetRailMax(int gpuIndex, int railIndex, int millivolts, string name)
+    {
+        var g = Gpu(gpuIndex);
+        int stockUv = 0;
+        foreach (var rail in NvApiPrivate.ReadVoltRails(g.Handle))
+            if (rail.Index == railIndex) { stockUv = (int)rail.MaxUv - rail.MaxOffsetUv; break; }
+        if (stockUv <= 0) throw new GpuBackendException($"This card does not expose a {name} voltage rail.");
+
+        int offsetUv = millivolts <= 0 ? 0 : millivolts * 1000 - stockUv;
+        int status = NvApiPrivate.WriteVoltRailMaxOffset(g.Handle, railIndex, offsetUv);
+        if (status != 0)
+            throw new GpuBackendException(
+                $"Failed to set the {name} rail ceiling to {millivolts} mV (offset {offsetUv / 1000:+#;-#;0} mV): status {status}.");
+    }
+
+    /// <summary>
+    /// Offset the crossbar clock. Verified against the GPU's own frequency counter rather than the
+    /// call's return: a +100 MHz offset moved the measured crossbar 2414 -> 2514 MHz with the core
+    /// clock unchanged, which is what distinguishes this from a number the driver merely stored.
+    /// </summary>
+    public void SetXbarOffset(int gpuIndex, int offsetMhz)
+    {
+        var g = Gpu(gpuIndex);
+        int status = NvApiPrivate.WriteXbarOffsetMhz(g.Handle, offsetMhz);
+        if (status != 0)
+            throw new GpuBackendException($"Failed to set the crossbar offset to {offsetMhz:+#;-#;0} MHz: status {status}.");
+    }
 
     public void SetCoreOffset(int gpuIndex, int offsetMhz) => SetClockDelta(gpuIndex, PublicClockDomain.Graphics, offsetMhz);
     public void SetMemoryOffset(int gpuIndex, int offsetMhz) => SetClockDelta(gpuIndex, PublicClockDomain.Memory, offsetMhz);
@@ -589,6 +705,16 @@ public sealed class NvApiBackend : IGpuBackend
     /// (1090 mV stock curve top → 1150 mV observed). NVAPI exposes no way to query it.
     /// </summary>
     private const int VoltageBoostHeadroomMv = 60;
+
+    /// <summary>
+    /// How far above its stock ceiling a voltage rail may be driven from here, in mV.
+    ///
+    /// The driver accepts far more: this card took the ceiling to 1280 mV against a 1035 mV stock,
+    /// +245 mV, before clamping. That is not a number anyone should arrive at by dragging a slider.
+    /// The reasoning is the same as the practical clock ranges in ClockStep — offer the part of the
+    /// travel worth using, and leave the rest to someone who edits the source deliberately.
+    /// </summary>
+    private const int VoltageRailHeadroomMv = 115;
 
     private (int entries, int version)? _curveLayout;
 
@@ -903,7 +1029,7 @@ public sealed class NvApiBackend : IGpuBackend
     }
 
     /// <summary>The write recipe this driver actually honours, found by probing and then reused.</summary>
-    private (uint[] mask, int trailing, int entryFlag)? _writeRecipe;
+    private (uint[] mask, int entryFlag)? _writeRecipe;
 
     /// <summary>
     /// Write per-point deltas and prove they landed.
@@ -931,8 +1057,7 @@ public sealed class NvApiBackend : IGpuBackend
         // Clearing the table can't be verified by "did anything move" — just use what we know works.
         if (targeted.Length == 0)
         {
-            var (m0, t0, f0) = _writeRecipe ?? (CurveMask(g), NvApiPrivate.TrailingArray, -1);
-            NvApiPrivate.TrailingArray = t0;
+            var (m0, f0) = _writeRecipe ?? (CurveMask(g), -1);
             if (NvApiPrivate.WriteDeltasRaw(g.Handle, m0, entries, ver, deltas, f0) == 0) return;
             NvApiPrivate.WriteDeltas(g.Handle, CurveMask(g), deltas);
             return;
@@ -948,17 +1073,21 @@ public sealed class NvApiBackend : IGpuBackend
             return false;
         }
 
-        // Known-good recipe first, then the full grid.
-        var recipes = new List<(uint[] mask, int trailing, int entryFlag)>();
+        // Known-good recipe first, then the grid. Two dimensions used to be probed here and are
+        // gone: which trailing array held the high points, and whether to drop them entirely. Both
+        // existed because the delta table was modelled as 80 entries followed by two arrays of bare
+        // ints. It is one flat run of 36-byte entries, so those points were being written into the
+        // middle of entry 80's record — the driver validates that record and refused the whole call.
+        // With the offsets right there is nothing left for either dimension to select, and dropping
+        // them takes the worst case from 32 write-and-verify cycles to 8.
+        var recipes = new List<(uint[] mask, int entryFlag)>();
         if (_writeRecipe != null) recipes.Add(_writeRecipe.Value);
         foreach (var mask in new[] { CurveMask(g), NvApiPrivate.Mask103, NvApiPrivate.MaskFor(deltas), NvApiPrivate.FullMask })
-            foreach (int trailing in new[] { 1, 0 })
-                foreach (int flag in new[] { -1, 1 })
-                    recipes.Add((mask, trailing, flag));
+            foreach (int flag in new[] { -1, 1 })
+                recipes.Add((mask, flag));
 
         foreach (var r in recipes)
         {
-            NvApiPrivate.TrailingArray = r.trailing;
             if (NvApiPrivate.WriteDeltasRaw(g.Handle, r.mask, entries, ver, deltas, r.entryFlag) != 0) continue;
             if (!Moved()) continue;
             _writeRecipe = r;
@@ -1166,6 +1295,14 @@ public sealed class NvApiBackend : IGpuBackend
 
     public void ResetToDefaults(int gpuIndex)
     {
+        // The rail ceiling survives a driver-level reset, so clear it explicitly or a raised
+        // ceiling would outlive the Reset button that appears to undo everything.
+        // Both rails, and both matter: a rail offset survives a reboot, so anything left behind here
+        // outlives the Reset button that appears to undo everything.
+        try { SetVoltageRailMax(gpuIndex, 0); } catch (GpuBackendException) { }
+        try { SetMsvddRailMax(gpuIndex, 0); } catch (GpuBackendException) { }
+        try { SetXbarOffset(gpuIndex, 0); } catch (GpuBackendException) { }
+
         var caps = GetCapabilities(gpuIndex);
         var errors = new List<string>();
         void Try(Action a) { try { a(); } catch (Exception e) { errors.Add(e.Message); } }
@@ -1341,11 +1478,10 @@ public sealed class NvApiBackend : IGpuBackend
             {
                 sb.AppendLine($"  trailing array 0 = {string.Join(",", arrA)}");
                 sb.AppendLine($"  trailing array 1 = {string.Join(",", arrB)}");
-                sb.AppendLine($"  writing high points to trailing array {NvApiPrivate.TrailingArray}");
                 sb.AppendLine(_writeRecipe == null
                     ? "  write recipe: not yet established (no curve write attempted this session)"
                     : $"  write recipe: mask {_writeRecipe.Value.mask[0]:X8}-{_writeRecipe.Value.mask[3]:X8}, " +
-                      $"trailing array {_writeRecipe.Value.trailing}, entry flag {_writeRecipe.Value.entryFlag}");
+                      $"entry flag {_writeRecipe.Value.entryFlag}");
             }
         });
 

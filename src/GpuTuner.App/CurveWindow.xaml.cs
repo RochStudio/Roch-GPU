@@ -96,7 +96,7 @@ public partial class CurveWindow : Window
         // conversion into something arbitrary.
         var caps = _svc.Capabilities;
         int lo = caps.MinVoltageMv > 0 ? caps.MinVoltageMv : 600;
-        int hi = caps.MaxVoltageMv > 0 ? caps.MaxVoltageMv : 1200;
+        int hi = _svc.BoostCeilingMv > 0 ? _svc.BoostCeilingMv : 1200;
         if (mv < lo || mv > hi) { Say($"Voltage must be between {lo} and {hi} mV on this card.", true); return; }
 
         try
@@ -137,9 +137,10 @@ public partial class CurveWindow : Window
         try
         {
             var st = _svc.Backend.ReadTuningState(_svc.GpuIndex);
-            var caps = _svc.Capabilities;
+            // Measured ceilings, not the table's top and a compiled-in headroom: the dashed
+            // extrapolation past the last curve point is only honest if it stops where the card does.
             return VoltagePlan.ToTargetMv(st.VoltageBoostPercent, st.VoltageOffsetMv,
-                                          caps.StockMaxVoltageMv, caps.MaxVoltageMv);
+                                          _svc.StockCeilingMv, _svc.BoostCeilingMv);
         }
         catch { return 0; }
     }

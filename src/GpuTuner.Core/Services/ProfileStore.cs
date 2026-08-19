@@ -91,4 +91,19 @@ public sealed class AppSettings
     /// <summary>Hardware monitor collapsed, leaving only the control column.</summary>    /// <summary>Last applied profile per GPU (by name), restored into the sliders on launch.</summary>
     public Dictionary<string, string> LastProfileByGpu { get; set; } = new();
 
+    /// <summary>
+    /// Highest core voltage seen under load, per GPU. The card's real ceiling doesn't change between
+    /// runs, but it can only be learned while something is sampling — and the monitor is closed most
+    /// of the time by design. Remembering it stops the ceiling resetting to the V/F table's top,
+    /// which overstates it on cards that never reach their own last curve point.
+    /// </summary>
+    public Dictionary<string, int> ObservedMaxVoltageByGpu { get; set; } = new();
+
+    /// <summary>
+    /// Highest core voltage seen per GPU with the boost wound fully open. Together with the stock
+    /// figure above this gives the card's real boost headroom, which no vendor call reports and
+    /// which otherwise falls back to a constant measured on one 4070 Ti.
+    /// </summary>
+    public Dictionary<string, int> ObservedMaxBoostedVoltageByGpu { get; set; } = new();
+
 }

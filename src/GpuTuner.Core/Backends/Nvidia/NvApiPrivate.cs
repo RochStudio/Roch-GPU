@@ -291,14 +291,22 @@ internal static class NvApiPrivate
 
             // Parse every slot, GPU region and the region after it, so a curve that spills past the
             // GPU array shows up instead of being silently dropped.
-            int total = gpuEntries + memEntries;
+            int total = Math.Min(MaskPoints, (size - HeaderBytes) / EntryBytes);
             var pts = new List<(int, int)>(total);
+            int lastUv = 0;
             for (int i = 0; i < total; i++)
             {
                 int off = HeaderBytes + i * EntryBytes;
                 int freqKhz = Marshal.ReadInt32(buf, off + 4);
                 int voltUv = Marshal.ReadInt32(buf, off + 8);
-                if (voltUv > 0 && freqKhz > 0) pts.Add((voltUv / 1000, freqKhz / 1000));
+                if (voltUv <= 0 || freqKhz <= 0) continue;
+                // The buffer carries more than one clock domain. The graphics curve climbs the whole
+                // way, so a point that steps back down in voltage is the next domain starting, not a
+                // continuation — on a 5070 Ti that is slot 127, at 515 mV and the 405 MHz memory
+                // clock, sitting immediately after the graphics curve's 1240 mV top.
+                if (voltUv < lastUv) break;
+                lastUv = voltUv;
+                pts.Add((voltUv / 1000, freqKhz / 1000));
             }
             return (status, pts.ToArray());
         }
@@ -332,19 +340,35 @@ internal static class NvApiPrivate
     public static int TotalPoints(int gpuEntries) => gpuEntries + MemCurveEntries;
 
     /// <summary>
+    /// Points the curve buffer really carries. NvAPIWrapper's struct splits the array into an
+    /// 80-entry "GPU" region and a 23-entry one after it, and stopping where those end truncates the
+    /// curve: a 5070 Ti returns a contiguous run to 1240 mV, of which the split layout shows the
+    /// first 103 (to 1090 mV) and treats the rest as padding. The selection mask is 128 bits wide,
+    /// and that — not the struct's internal division — is the real bound.
+    /// </summary>
+    public const int MaskPoints = 128;
+
+    /// <summary>Delta entries the boost table holds: the mask's width, bounded by the buffer.</summary>
+    private static int DeltaPoints(int gpuEntries) =>
+        Math.Min(MaskPoints, (DeltaTableSize(gpuEntries) - HeaderBytes) / DeltaEntryBytes);
+
+    /// <summary>
     /// Which of the two trailing 23-int arrays holds the deltas for curve points past the GPU array.
     /// 1 = the second array (NvAPIWrapper calls it "MemoryDeltas"), 0 = the first ("MemoryFilled").
     /// Which one the driver actually reads is decided by writing and checking the curve moved.
     /// </summary>
     public static int TrailingArray { get; set; } = 1;
 
-    /// <summary>Byte offset of point i's frequency delta inside the boost table buffer.</summary>
-    private static int DeltaOffset(int gpuEntries, int i)
-    {
-        if (i < gpuEntries) return HeaderBytes + i * DeltaEntryBytes + 20;
-        int gpuRegionEnd = HeaderBytes + gpuEntries * DeltaEntryBytes;
-        return gpuRegionEnd + TrailingArray * MemCurveEntries * 4 + (i - gpuEntries) * 4;
-    }
+    /// <summary>
+    /// Byte offset of point i's frequency delta inside the boost table buffer.
+    ///
+    /// One flat array, 36 bytes per entry, all the way. The struct this was modelled on splits after
+    /// 80 entries into two 23-entry arrays of bare ints, and writing points past 80 into those puts
+    /// them inside entry 80's record instead — the driver validates those fields and rejects the
+    /// whole call, taking the valid points down with it. Verified by driving a known +150 MHz offset
+    /// through the table: 127 entries moved, every one at stride 0x24 + 20, nothing anywhere else.
+    /// </summary>
+    private static int DeltaOffset(int gpuEntries, int i) => HeaderBytes + i * DeltaEntryBytes + 20;
 
     /// <summary>Read per-point frequency deltas (kHz) for all points in a layout.</summary>
     public static (int status, int[] deltas) ReadDeltasRaw(
@@ -364,7 +388,7 @@ internal static class NvApiPrivate
             catch { return (-2, Array.Empty<int>()); }
             if (status != 0) return (status, Array.Empty<int>());
 
-            int total = TotalPoints(gpuEntries);
+            int total = DeltaPoints(gpuEntries);
             var d = new int[total];
             for (int i = 0; i < total; i++) d[i] = Marshal.ReadInt32(buf, DeltaOffset(gpuEntries, i));
             return (status, d);
@@ -398,7 +422,7 @@ internal static class NvApiPrivate
             Marshal.WriteInt32(buf, 0, size | (version << 16));
             for (int i = 0; i < 4; i++) Marshal.WriteInt32(buf, 4 + i * 4, unchecked((int)mask[i]));
 
-            int total = TotalPoints(gpuEntries);
+            int total = DeltaPoints(gpuEntries);
             for (int i = 0; i < total && i < deltasKhz.Length; i++)
             {
                 Marshal.WriteInt32(buf, DeltaOffset(gpuEntries, i), deltasKhz[i]);
@@ -407,6 +431,253 @@ internal static class NvApiPrivate
             }
 
             try { return _rawSetTable!(handle.MemoryAddress, buf); }
+            catch { return -2; }
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    // ------------------------------------------------------------------ voltage rails
+    //
+    // NVVDD (the core rail) and MSVDD (the rail that feeds XBAR/SYS/video) are exposed through a
+    // separate private family from the V/F curve. Same trap as the curve: the calls succeed with a
+    // zeroed mask and hand back an empty structure, so the rail mask from GetInfo has to be written
+    // into the Status and Control buffers before calling them.
+    //
+    // Entry layouts were confirmed against this hardware rather than assumed: MSVDD carried a
+    // -50000 uV primary-maximum offset against a 1055000 uV limit, and the tool that set it displayed
+    // exactly 1.005 V.
+
+    private const uint FnVoltRailsGetInfo = 0x2C73AFDC, FnVoltRailsGetStatus = 0x5D0634EE,
+                       FnVoltRailsGetControl = 0xA3070DB0, FnVoltRailsSetControl = 0x87C55C8A;
+    private const int VoltRailsInfoSize = 0x184C, VoltRailsStatusSize = 0x1620, VoltRailsControlSize = 0x0AC8;
+    private const int VoltRailsVersion = 2;
+    private const int RailMaskOffset = 0x04;
+    private const int StatusEntries = 0xA0, StatusStride = 0xAC;
+    private const int ControlEntries = 0x48, ControlStride = 0x54;
+    /// <summary>Signed microvolt offset applied to the rail's primary maximum.</summary>
+    private const int ControlMaxOffset = 0x04;
+    /// <summary>
+    /// Signed microvolt offset applied to the rail's ALTERNATE maximum — and this is the one the
+    /// boost algorithm obeys. Moving the primary alone raises the number the rail reports while the
+    /// card carries on selecting the old voltage: measured here, primary at 1100 mV with the
+    /// alternate left at 1055 peaked at 1045 mV under load, and raising both reached 1095 mV.
+    /// </summary>
+    private const int ControlAltMaxOffset = 0x08;
+    /// <summary>Signed microvolt offset applied to the rail's minimum.</summary>
+    private const int ControlMinOffset = 0x10;
+
+    /// <summary>Rail indices in the mask: 0 is the core supply, 1 the one behind XBAR/SYS/video.</summary>
+    public const int RailNvvdd = 0, RailMsvdd = 1;
+
+    /// <summary>One power rail's live state, in microvolts.</summary>
+    public readonly record struct VoltRail(int Index, uint CurrentUv, uint MaxUv, uint MinUv, int MaxOffsetUv, int MinOffsetUv);
+
+    private static RawDelegate? Resolve(uint id)
+    {
+        var p = QueryInterface64(id);
+        return p == IntPtr.Zero ? null : Marshal.GetDelegateForFunctionPointer<RawDelegate>(p);
+    }
+
+    /// <summary>Call one of the rail entry points into a caller-sized buffer. Returns null on failure.</summary>
+    private static byte[]? RailCall(PhysicalGPUHandle handle, uint id, int size, uint mask)
+    {
+        var fn = Resolve(id);
+        if (fn == null) return null;
+        var buf = Marshal.AllocHGlobal(size);
+        try
+        {
+            for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, size | (VoltRailsVersion << 16));
+            if (mask != 0) Marshal.WriteInt32(buf, RailMaskOffset, unchecked((int)mask));
+            int status;
+            try { status = fn(handle.MemoryAddress, buf); }
+            catch { return null; }
+            if (status != 0) return null;
+            var outb = new byte[size];
+            Marshal.Copy(buf, outb, 0, size);
+            return outb;
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    /// <summary>The mask of rails this GPU exposes; 0 when the family is unavailable.</summary>
+    public static uint ReadRailMask(PhysicalGPUHandle handle) =>
+        RailCall(handle, FnVoltRailsGetInfo, VoltRailsInfoSize, 0) is { } info
+            ? BitConverter.ToUInt32(info, RailMaskOffset)
+            : 0u;
+
+    /// <summary>Read every rail the GPU reports. Empty when unsupported.</summary>
+    public static IReadOnlyList<VoltRail> ReadVoltRails(PhysicalGPUHandle handle)
+    {
+        uint mask = ReadRailMask(handle);
+        if (mask == 0) return Array.Empty<VoltRail>();
+        var status = RailCall(handle, FnVoltRailsGetStatus, VoltRailsStatusSize, mask);
+        var control = RailCall(handle, FnVoltRailsGetControl, VoltRailsControlSize, mask);
+        if (status == null) return Array.Empty<VoltRail>();
+
+        var rails = new List<VoltRail>();
+        for (int r = 0, slot = 0; r < 32; r++)
+        {
+            if ((mask & (1u << r)) == 0) continue;
+            int s = StatusEntries + slot * StatusStride;
+            int c = ControlEntries + slot * ControlStride;
+            slot++;
+            if (s + StatusStride > status.Length) break;
+            rails.Add(new VoltRail(
+                r,
+                BitConverter.ToUInt32(status, s + 0x04),
+                BitConverter.ToUInt32(status, s + 0x08),
+                BitConverter.ToUInt32(status, s + 0x18),
+                control != null && c + ControlStride <= control.Length ? BitConverter.ToInt32(control, c + ControlMaxOffset) : 0,
+                control != null && c + ControlStride <= control.Length ? BitConverter.ToInt32(control, c + ControlMinOffset) : 0));
+        }
+        return rails;
+    }
+
+    /// <summary>
+    /// Apply a signed microvolt offset to a rail's maximum, primary and alternate together — the
+    /// alternate is what actually binds, so moving one without the other changes the reported
+    /// ceiling and nothing else. Read-modify-write: the current control block is fetched and only
+    /// these two fields changed, so every reserved field the driver validates goes back exactly as
+    /// it arrived. Returns the NVAPI status (0 = Ok).
+    /// </summary>
+    public static int WriteVoltRailMaxOffset(PhysicalGPUHandle handle, int railIndex, int offsetUv)
+    {
+        uint mask = ReadRailMask(handle);
+        if (mask == 0 || (mask & (1u << railIndex)) == 0) return -1;
+        var fnSet = Resolve(FnVoltRailsSetControl);
+        if (fnSet == null) return -1;
+
+        int slot = 0;
+        for (int r = 0; r < railIndex; r++) if ((mask & (1u << r)) != 0) slot++;
+
+        var buf = Marshal.AllocHGlobal(VoltRailsControlSize);
+        try
+        {
+            for (int i = 0; i < VoltRailsControlSize; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, VoltRailsControlSize | (VoltRailsVersion << 16));
+            Marshal.WriteInt32(buf, RailMaskOffset, unchecked((int)mask));
+            var get = Resolve(FnVoltRailsGetControl);
+            if (get != null) { try { get(handle.MemoryAddress, buf); } catch { } }
+            Marshal.WriteInt32(buf, 0, VoltRailsControlSize | (VoltRailsVersion << 16));
+            Marshal.WriteInt32(buf, RailMaskOffset, unchecked((int)mask));
+            int entry = ControlEntries + slot * ControlStride;
+            Marshal.WriteInt32(buf, entry + ControlMaxOffset, offsetUv);
+            Marshal.WriteInt32(buf, entry + ControlAltMaxOffset, offsetUv);
+            try { return fnSet(handle.MemoryAddress, buf); }
+            catch { return -2; }
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    // ------------------------------------------------------------------ crossbar (XBAR)
+    //
+    // The GPU's interconnect clock, which NVAPI's public surface does not expose at all: it is not a
+    // PStates20 domain (writes to every domain id but graphics and memory are refused) and does not
+    // appear in the clock-domain enumeration. It has its own control family, and its own hardware
+    // frequency counter — MeasureClockKhz — which is what makes a write verifiable rather than
+    // merely acknowledged.
+
+    private const uint FnXbarGetInfo = 0x57B5A5DF, FnXbarGetControl = 0xF58938F5,
+                       FnXbarSetControl = 0xD14B69CF, FnXbarMeasure = 0x527FC458;
+    private const int XbarInfoSize = 0x86AC, XbarControlSize = 0x61A4, XbarMeasureSize = 0x000C;
+    private const uint XbarInfoVersion = 0x000486AC, XbarControlVersion = 0x000261A4, XbarMeasureVersion = 0x0001000C;
+    private const int XbarInfoEntries = 0xB0, XbarInfoStride = 0x430, XbarInfoRange = 0x3C;
+    /// <summary>The control request carries a 2 here; it comes back empty without it.</summary>
+    private const int XbarControlSelector = 0x08;
+    private const int XbarControlOffsetKhz = 0x53C;
+
+    /// <summary>Clock domain indices accepted by <see cref="MeasureClockKhz"/>, confirmed on hardware.</summary>
+    public const int DomainCore = 0, DomainXbar = 1, DomainMemory = 4;
+
+    /// <summary>Crossbar offset range the driver reports; Supported is false when the family is absent.</summary>
+    public readonly record struct XbarInfo(bool Supported, int MinOffsetMhz, int MaxOffsetMhz);
+
+    private static byte[]? XbarCall(PhysicalGPUHandle handle, uint id, int size, uint version, bool selector)
+    {
+        var fn = Resolve(id);
+        if (fn == null) return null;
+        var buf = Marshal.AllocHGlobal(size);
+        try
+        {
+            for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, unchecked((int)version));
+            if (selector) Marshal.WriteInt32(buf, XbarControlSelector, 2);
+            int status;
+            try { status = fn(handle.MemoryAddress, buf); }
+            catch { return null; }
+            if (status != 0) return null;
+            var outb = new byte[size];
+            Marshal.Copy(buf, outb, 0, size);
+            return outb;
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    /// <summary>
+    /// Measure a clock domain with the GPU's own counter, in kHz; 0 when unavailable. This reports
+    /// what the domain is really running, not the setpoint it was asked for.
+    /// </summary>
+    public static uint MeasureClockKhz(PhysicalGPUHandle handle, int domain)
+    {
+        var fn = Resolve(FnXbarMeasure);
+        if (fn == null) return 0;
+        var buf = Marshal.AllocHGlobal(XbarMeasureSize);
+        try
+        {
+            for (int i = 0; i < XbarMeasureSize; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, unchecked((int)XbarMeasureVersion));
+            Marshal.WriteInt32(buf, 0x04, domain);
+            int status;
+            try { status = fn(handle.MemoryAddress, buf); }
+            catch { return 0; }
+            return status == 0 ? (uint)Marshal.ReadInt32(buf, 0x08) : 0u;
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    /// <summary>Read the crossbar offset range. The entry is found by type rather than by index.</summary>
+    public static XbarInfo ReadXbarInfo(PhysicalGPUHandle handle)
+    {
+        var info = XbarCall(handle, FnXbarGetInfo, XbarInfoSize, XbarInfoVersion, selector: false);
+        if (info == null) return default;
+        for (int i = 0; i < 32; i++)
+        {
+            int e = XbarInfoEntries + i * XbarInfoStride;
+            if (e + 0x40 > info.Length) break;
+            if (BitConverter.ToUInt32(info, e) != 1u) continue;
+            uint packed = BitConverter.ToUInt32(info, e + XbarInfoRange);
+            int min = unchecked((short)(packed & 0xFFFF)), max = unchecked((short)(packed >> 16));
+            // Anything outside this is a layout mismatch rather than a card with an exotic range.
+            if (min < -2000 || max > 2000 || min > max) return default;
+            return new XbarInfo(true, min, max);
+        }
+        return default;
+    }
+
+    /// <summary>Crossbar offset currently applied, in MHz.</summary>
+    public static int ReadXbarOffsetMhz(PhysicalGPUHandle handle) =>
+        XbarCall(handle, FnXbarGetControl, XbarControlSize, XbarControlVersion, selector: true) is { } c
+            ? BitConverter.ToInt32(c, XbarControlOffsetKhz) / 1000
+            : 0;
+
+    /// <summary>Apply a crossbar offset in MHz. Read-modify-write. Returns the NVAPI status (0 = Ok).</summary>
+    public static int WriteXbarOffsetMhz(PhysicalGPUHandle handle, int mhz)
+    {
+        var fnSet = Resolve(FnXbarSetControl);
+        var fnGet = Resolve(FnXbarGetControl);
+        if (fnSet == null || fnGet == null) return -1;
+        var buf = Marshal.AllocHGlobal(XbarControlSize);
+        try
+        {
+            for (int i = 0; i < XbarControlSize; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, unchecked((int)XbarControlVersion));
+            Marshal.WriteInt32(buf, XbarControlSelector, 2);
+            try { fnGet(handle.MemoryAddress, buf); } catch { }
+            Marshal.WriteInt32(buf, 0, unchecked((int)XbarControlVersion));
+            Marshal.WriteInt32(buf, XbarControlSelector, 2);
+            Marshal.WriteInt32(buf, XbarControlOffsetKhz, mhz * 1000);
+            try { return fnSet(handle.MemoryAddress, buf); }
             catch { return -2; }
         }
         finally { Marshal.FreeHGlobal(buf); }

@@ -34,14 +34,26 @@ static class Cli
             using var svc = new TuningService(backend);
             var store = new ProfileStore();
 
+            // Every command that reasons about voltage needs the ceilings an earlier run measured;
+            // without them an undervolt offset is taken from the V/F table's top rather than from
+            // where this card actually runs, which can be tens of millivolts out.
+            void Start()
+            {
+                svc.Initialize(gpu);
+                var s = store.LoadSettings();
+                string name = svc.Backend.Devices[svc.GpuIndex].Name;
+                if (s.ObservedMaxVoltageByGpu.TryGetValue(name, out var seen)) svc.SeedObservedMaxVoltage(seen);
+                if (s.ObservedMaxBoostedVoltageByGpu.TryGetValue(name, out var seenB)) svc.SeedObservedMaxBoostedVoltage(seenB);
+            }
+
             switch (args[0].ToLowerInvariant())
             {
-                case "info": svc.Initialize(gpu); return Info(svc);
-                case "monitor": svc.Initialize(gpu); return Monitor(svc, opts);
-                case "apply": svc.Initialize(gpu); return Apply(svc, opts);
+                case "info": Start(); return Info(svc);
+                case "monitor": Start(); return Monitor(svc, store, opts);
+                case "apply": Start(); return Apply(svc, opts);
                 case "apply-profile":
                     if (args.Length < 2) { Console.Error.WriteLine("profile name required"); return 2; }
-                    svc.Initialize(gpu); return ApplyProfile(svc, store, args[1]);
+                    Start(); return ApplyProfile(svc, store, args[1]);
                 case "list-profiles":
                     foreach (var n in store.ListProfileNames()) Console.WriteLine(n);
                     return 0;
@@ -94,6 +106,9 @@ static class Cli
             : c.CanSetVoltageCurve ? $"{c.VoltageOffsetMinMv}..0 mV (stock max {c.StockMaxVoltageMv} mV)"
             : $"{c.VoltageOffsetMinMv}..{c.VoltageOffsetMaxMv} mV (whole-curve offset)";
         Console.WriteLine($"Undervolt     : {undervolt}");
+        Console.WriteLine($"Core rail     : {(c.CanSetVoltageRail ? $"{c.VoltageRailMinMv}..{c.VoltageRailMaxMv} mV ceiling (stock {c.VoltageRailStockMaxMv} mV)" : "not supported")}");
+        Console.WriteLine($"MSVDD rail    : {(c.CanSetMsvddRail ? $"{c.MsvddRailMinMv}..{c.MsvddRailMaxMv} mV ceiling (stock {c.MsvddRailStockMaxMv} mV)" : "not supported")}");
+        Console.WriteLine($"Crossbar      : {(c.CanSetXbarOffset ? $"{c.XbarOffsetMinMhz}..{c.XbarOffsetMaxMhz} MHz offset" : "not supported")}");
         Console.WriteLine($"Fans          : {(c.CanSetFanSpeed ? $"{c.FanCount} fan(s), {c.FanMinPercent}..{c.FanMaxPercent} %" : "not supported")}");
         var s = svc.Backend.ReadTuningState(svc.GpuIndex);
         Console.WriteLine();
@@ -106,19 +121,64 @@ static class Cli
             FanMode.Auto => "auto",
             _ => s.FanManual ? $"{s.FanPercent}% manual" : "auto"
         };
-        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {s.TempLimitC}°C, vboost {s.VoltageBoostPercent}%, uv {s.VoltageOffsetMv} mV, fan {fan}");
+        // 0 means the card reported no thermal policy at all, which is not the same as a limit of 0.
+        string tempLimit = s.TempLimitC > 0 ? $"{s.TempLimitC}°C" : "n/a";
+
+        // Measure the undervolt from the same ceiling an apply measures it from. The backend reports
+        // it against the V/F table's top, which on a card that never reaches that top reads tens of
+        // millivolts deeper than what was asked for: --uv -90 came back as -145.
+        int uvMv = s.VoltageOffsetMv;
+        if (c.VoltageStyle == VoltageControlStyle.Absolute)
+        {
+            int lockMv = svc.Backend.ReadVoltageLockMv(svc.GpuIndex);
+            uvMv = lockMv > 0 && svc.StockCeilingMv > 0 ? lockMv - svc.StockCeilingMv : 0;
+        }
+        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {tempLimit}, vboost {s.VoltageBoostPercent}%, uv {uvMv} mV, rail {(s.VoltageRailMaxMv > 0 ? s.VoltageRailMaxMv + " mV" : "n/a")}, msvdd {(s.MsvddRailMaxMv > 0 ? s.MsvddRailMaxMv + " mV" : "n/a")}, xbar {s.XbarOffsetMhz:+#;-#;0} MHz, fan {fan}");
         var t = svc.Backend.ReadTelemetry(svc.GpuIndex);
         Console.WriteLine(Fmt(t));
         return 0;
     }
 
-    static int Monitor(TuningService svc, Dictionary<string, string> o)
+    static int Monitor(TuningService svc, ProfileStore store, Dictionary<string, string> o)
     {
         int interval = o.TryGetValue("interval", out var s) && int.TryParse(s, out var i) ? i : 1000;
         Console.WriteLine("Ctrl+C to stop.");
+
+        // The stock-ceiling estimate is only fed while something is polling, and the GUI's monitor is
+        // usually closed. Carrying it through the same store the GUI uses means a load run from here
+        // teaches both front-ends what the card really tops out at.
+        string gpuName = svc.Backend.Devices[svc.GpuIndex].Name;
+        var settings = store.LoadSettings();
+        if (settings.ObservedMaxVoltageByGpu.TryGetValue(gpuName, out var seenMv))
+            svc.SeedObservedMaxVoltage(seenMv);
+        if (settings.ObservedMaxBoostedVoltageByGpu.TryGetValue(gpuName, out var seenBoostMv))
+            svc.SeedObservedMaxBoostedVoltage(seenBoostMv);
+        int recorded = svc.ObservedMaxVoltageMv, recordedBoost = svc.ObservedMaxBoostedVoltageMv;
+
         var done = new ManualResetEventSlim();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; done.Set(); };
-        svc.TelemetryUpdated += t => Console.WriteLine(Fmt(t));
+        svc.TelemetryUpdated += t =>
+        {
+            Console.WriteLine(Fmt(t));
+            bool stockMoved = svc.ObservedMaxVoltageMv > recorded;
+            bool boostMoved = svc.ObservedMaxBoostedVoltageMv > recordedBoost;
+            if (!stockMoved && !boostMoved) return;
+
+            var cur = store.LoadSettings();
+            if (stockMoved)
+            {
+                recorded = svc.ObservedMaxVoltageMv;
+                cur.ObservedMaxVoltageByGpu[gpuName] = recorded;
+                Console.WriteLine($"   ceiling: recorded {recorded} mV stock, under load");
+            }
+            if (boostMoved)
+            {
+                recordedBoost = svc.ObservedMaxBoostedVoltageMv;
+                cur.ObservedMaxBoostedVoltageByGpu[gpuName] = recordedBoost;
+                Console.WriteLine($"   ceiling: recorded {recordedBoost} mV boosted, under load");
+            }
+            store.SaveSettings(cur);
+        };
         svc.StartPolling(interval);
         done.Wait();
         return 0;
@@ -127,18 +187,45 @@ static class Cli
     static int Apply(TuningService svc, Dictionary<string, string> o)
     {
         var p = svc.ReadCurrentAsProfile();
+        var notes = new List<string>();
         if (o.TryGetValue("core", out var core)) p.CoreOffsetMhz = int.Parse(core);
         if (o.TryGetValue("mem", out var mem)) p.MemoryOffsetMhz = int.Parse(mem);
         if (o.TryGetValue("power", out var pw)) p.PowerLimitPercent = int.Parse(pw);
-        if (o.TryGetValue("temp", out var tp)) p.TempLimitC = int.Parse(tp);
+        if (o.TryGetValue("temp", out var tp))
+        {
+            p.TempLimitC = int.Parse(tp);
+            // Here, not in the service: only this side knows the flag was actually typed rather than
+            // carried along from the card's current state.
+            if (!svc.Capabilities.CanSetTempLimit)
+                notes.Add($"{TuningService.NotePrefix} this card exposes no temperature limit — {tp}°C ignored.");
+        }
         if (o.TryGetValue("volt", out var vb)) p.VoltageBoostPercent = int.Parse(vb);
         if (o.TryGetValue("uv", out var uv)) p.VoltageOffsetMv = int.Parse(uv);
+        if (o.TryGetValue("xbar", out var xb))
+        {
+            p.XbarOffsetMhz = int.Parse(xb);
+            if (!svc.Capabilities.CanSetXbarOffset)
+                notes.Add($"{TuningService.NotePrefix} this card exposes no crossbar clock — {xb} MHz ignored.");
+        }
+        if (o.TryGetValue("msvdd", out var ms))
+        {
+            p.MsvddRailMaxMv = int.Parse(ms);
+            if (!svc.Capabilities.CanSetMsvddRail)
+                notes.Add($"{TuningService.NotePrefix} this card exposes no MSVDD rail - {ms} mV ignored.");
+        }
+        if (o.TryGetValue("nvvdd", out var rail))
+        {
+            p.VoltageRailMaxMv = int.Parse(rail);
+            if (!svc.Capabilities.CanSetVoltageRail)
+                notes.Add($"{TuningService.NotePrefix} this card exposes no core voltage rail — {rail} mV ignored.");
+        }
         if (o.TryGetValue("fan", out var fan))
         {
             if (fan.Equals("auto", StringComparison.OrdinalIgnoreCase)) p.FanMode = FanMode.Auto;
             else { p.FanMode = FanMode.Fixed; p.FixedFanPercent = int.Parse(fan); }
         }
-        return Report(svc.Apply(p));
+        notes.AddRange(svc.Apply(p));
+        return Report(notes);
     }
 
     static int ApplyProfile(TuningService svc, ProfileStore store, string name)
@@ -153,8 +240,13 @@ static class Cli
 
     static int Report(IReadOnlyList<string> errs)
     {
-        if (errs.Count == 0) { Console.WriteLine("Applied."); return 0; }
-        foreach (var e in errs) Console.Error.WriteLine(e);
+        // Notes are what the apply did differently, not what it failed to do — they belong on stdout
+        // with a success exit code. Only a real failure is stderr and 1.
+        foreach (var n in errs.Where(e => e.StartsWith(TuningService.NotePrefix, StringComparison.Ordinal)))
+            Console.WriteLine(n);
+        var failures = errs.Where(e => !e.StartsWith(TuningService.NotePrefix, StringComparison.Ordinal)).ToList();
+        if (failures.Count == 0) { Console.WriteLine("Applied."); return 0; }
+        foreach (var e in failures) Console.Error.WriteLine(e);
         return 1;
     }
 
@@ -196,7 +288,7 @@ static class Cli
 
           rochoc info
           rochoc monitor [--interval 1000]
-          rochoc apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--fan 60|auto]
+          rochoc apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--msvdd 1050] [--xbar +100] [--fan 60|auto]
           rochoc apply-profile <name> [--gpu 0]
           rochoc list-profiles
           rochoc reset [--gpu 0]

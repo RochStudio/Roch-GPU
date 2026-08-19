@@ -21,6 +21,13 @@ public static class ClockStep
     public const int MemoryMhz = 25;
 
     /// <summary>
+    /// Fan duty granularity, percent. Unlike the clock grids this one is not the driver's — fans take
+    /// any integer duty. It is here because a 1% step makes a 30..100 slider seventy positions wide,
+    /// where nobody tuning a fan curve wants 63% rather than 65%. Five is the grid people think in.
+    /// </summary>
+    public const int FanPercent = 5;
+
+    /// <summary>
     /// Practical offset range for the sliders, in MHz, intersected with whatever the driver reports.
     ///
     /// Ada reports ±1000 MHz core and -1000..+4000 memory, which is the driver describing the width
@@ -32,6 +39,13 @@ public static class ClockStep
     /// </summary>
     public const int CoreOffsetPracticalMinMhz = -300, CoreOffsetPracticalMaxMhz = 750;
     public const int MemoryOffsetPracticalMinMhz = -250, MemoryOffsetPracticalMaxMhz = 4000;
+
+    /// <summary>
+    /// Practical crossbar offset range. The driver reports ±1000 MHz, which is the width of its delta
+    /// field rather than anything the interconnect will run: the published gains for this domain are
+    /// double figures, and the useful travel sits well inside the driver's number.
+    /// </summary>
+    public const int XbarOffsetPracticalMinMhz = -300, XbarOffsetPracticalMaxMhz = 750;
 
     /// <summary>Intersect a driver-reported range with a practical one; never widens.</summary>
     public static (int min, int max) Narrow(int driverMin, int driverMax, int practicalMin, int practicalMax)

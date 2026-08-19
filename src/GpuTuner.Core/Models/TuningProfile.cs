@@ -19,6 +19,14 @@ public sealed class TuningProfile
 
     /// <summary>Negative = undervolt. Caps the V/F curve this many mV below the stock maximum.</summary>
     public int VoltageOffsetMv { get; set; }
+    /// <summary>Target ceiling for the core voltage rail, in mV. 0 = leave the rail at its default.</summary>
+    public int VoltageRailMaxMv { get; set; }
+
+    /// <summary>Target ceiling for the MSVDD rail, in mV. 0 = leave it at its default.</summary>
+    public int MsvddRailMaxMv { get; set; }
+
+    /// <summary>Crossbar clock offset in MHz.</summary>
+    public int XbarOffsetMhz { get; set; }
 
     /// <summary>
     /// Absolute core-voltage target in mV. When non-zero this drives both voltage boost and the
@@ -50,6 +58,9 @@ public sealed class TuningProfile
         TempLimitC = TempLimitC,
         VoltageBoostPercent = VoltageBoostPercent,
         VoltageOffsetMv = VoltageOffsetMv,
+        VoltageRailMaxMv = VoltageRailMaxMv,
+        MsvddRailMaxMv = MsvddRailMaxMv,
+        XbarOffsetMhz = XbarOffsetMhz,
         TargetVoltageMv = TargetVoltageMv,
         ZeroRpm = ZeroRpm,
         MemoryTimingLevel = MemoryTimingLevel,
@@ -81,6 +92,13 @@ public sealed class TuningProfile
         TempLimitC = Math.Clamp(TempLimitC, caps.TempLimitMinC, caps.TempLimitMaxC);
         VoltageBoostPercent = Math.Clamp(VoltageBoostPercent, caps.VoltageBoostMinPercent, caps.VoltageBoostMaxPercent);
         VoltageOffsetMv = Math.Clamp(VoltageOffsetMv, caps.VoltageOffsetMinMv, caps.VoltageOffsetMaxMv);
+        // 0 means "leave the rail alone"; only a real request gets clamped into the offered range.
+        if (VoltageRailMaxMv > 0 && caps.VoltageRailMaxMv > 0)
+            VoltageRailMaxMv = Math.Clamp(VoltageRailMaxMv, caps.VoltageRailMinMv, caps.VoltageRailMaxMv);
+        if (MsvddRailMaxMv > 0 && caps.MsvddRailMaxMv > 0)
+            MsvddRailMaxMv = Math.Clamp(MsvddRailMaxMv, caps.MsvddRailMinMv, caps.MsvddRailMaxMv);
+        if (caps.CanSetXbarOffset)
+            XbarOffsetMhz = Math.Clamp(XbarOffsetMhz, caps.XbarOffsetMinMhz, caps.XbarOffsetMaxMhz);
         if (TargetVoltageMv > 0 && caps.MaxVoltageMv > 0)
             TargetVoltageMv = Math.Clamp(TargetVoltageMv, caps.MinVoltageMv, caps.MaxVoltageMv);
         FixedFanPercent = Math.Clamp(FixedFanPercent, caps.FanMinPercent, caps.FanMaxPercent);

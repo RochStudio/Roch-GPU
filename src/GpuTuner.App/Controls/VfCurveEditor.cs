@@ -49,6 +49,7 @@ public sealed class VfCurveEditor : FrameworkElement
     public void SetPoints(IEnumerable<VfCurveSample> pts)
     {
         _points = pts.OrderBy(p => p.VoltageMv).ToList();
+        RecomputeCapIndex();
         _dragIndex = -1;
         _selectedIndex = -1;      // indices refer to the old list; a reload invalidates the selection
         _dragStartAll = null;
@@ -60,6 +61,7 @@ public sealed class VfCurveEditor : FrameworkElement
     public void ResetToStock()
     {
         _points = _points.Select(p => p with { LiveMhz = p.StockMhz }).ToList();
+        RecomputeCapIndex();
         Raise();
     }
 
@@ -94,6 +96,7 @@ public sealed class VfCurveEditor : FrameworkElement
     public void SetVoltageCap(int capMv)
     {
         _capMv = capMv;
+        RecomputeCapIndex();
         // A cap that has just swallowed the selected point would leave a white ring on a dot the
         // arrow keys can no longer move.
         if (_selectedIndex >= 0 && IsCapped(_selectedIndex)) _selectedIndex = -1;
@@ -101,12 +104,17 @@ public sealed class VfCurveEditor : FrameworkElement
     }
 
     /// <summary>Frequency of the last point at or below the cap — the level the card flattens to.</summary>
-    private int CapFlatMhz()
-    {
-        if (_capMv <= 0) return 0;
-        int i = _points.FindLastIndex(p => p.VoltageMv <= _capMv);
-        return i >= 0 ? _points[i].LiveMhz : 0;
-    }
+    /// <summary>
+    /// Index of the last point at or below the cap, or -1. Cached because it depends only on the cap
+    /// and the points' voltages, neither of which move while the curve is being drawn or dragged —
+    /// and it used to be re-found by a linear scan inside DisplayMhz, once per point per render.
+    /// </summary>
+    private int _capIndex = -1;
+
+    private void RecomputeCapIndex() =>
+        _capIndex = _capMv <= 0 ? -1 : _points.FindLastIndex(p => p.VoltageMv <= _capMv);
+
+    private int CapFlatMhz() => _capIndex >= 0 ? _points[_capIndex].LiveMhz : 0;
 
     /// <summary>
     /// True for points the cap has made unreachable. Their stored frequency still exists and is still
@@ -148,6 +156,9 @@ public sealed class VfCurveEditor : FrameworkElement
     // The cap marker is white rather than red: red now belongs to the curve points, and two different
     // reds a shade apart read as one thing that has gone wrong somewhere.
     private static readonly Brush CeilingBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x7F, 0xB0, 0xE8)));
+    /// <summary>Wash over the stretch of curve the card cannot reach. Faint on purpose — it marks
+    /// the region without hiding the points, which are still real table data.</summary>
+    private static readonly Brush UnreachableBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x18, 0x7F, 0xB0, 0xE8)));
     private static readonly Brush CapBrush = Freeze(new SolidColorBrush(Colors.White));
     private static readonly Brush CapShade = Freeze(new SolidColorBrush(Color.FromArgb(26, 255, 255, 255)));
     private static readonly Typeface Face = new("Segoe UI");
@@ -171,11 +182,23 @@ public sealed class VfCurveEditor : FrameworkElement
     private (int vMin, int vMax, int fMin, int fMax) Bounds()
     {
         if (_frozenAxes != null) return _frozenAxes.Value;
-        // Deliberately fixed, never fitted to the data. A card's curve starts around 450 mV, but
-        // those are idle points nobody tunes; letting them widen the axis squashes the useful range
-        // into the right-hand third. Afterburner frames 700-1250 mV for the same reason. Points
-        // outside the frame are clipped, not drawn into the margins.
-        return (AxisVMin, AxisVMax, AxisFMin, AxisFMax);
+        // The low end is deliberately fixed rather than fitted: a card's curve starts around 450 mV,
+        // and those idle points nobody tunes would squash the useful range into the right-hand third.
+        // Afterburner frames 700-1250 mV for the same reason.
+        //
+        // The top ends are grown to fit, because clipping there hides real data — a 5070 Ti's curve
+        // runs to 1240 mV and 3247 MHz, past the 1200/3400 frame, and the last points simply vanished
+        // off the right-hand edge with nothing to say they existed.
+        int vMax = AxisVMax, fMax = AxisFMax;
+        if (_points.Count > 0)
+        {
+            int topMv = _points[^1].VoltageMv;
+            if (topMv > vMax) vMax = (topMv + 24) / 25 * 25;          // next 25 mV tick
+            int topMhz = 0;
+            for (int i = 0; i < _points.Count; i++) topMhz = Math.Max(topMhz, DisplayMhz(i));
+            if (topMhz > fMax) fMax = (topMhz + 199) / 200 * 200;     // next 200 MHz tick
+        }
+        return (AxisVMin, vMax, AxisFMin, fMax);
     }
 
     private double PlotW => Math.Max(1, ActualWidth - PadL - PadR);
@@ -349,16 +372,28 @@ public sealed class VfCurveEditor : FrameworkElement
             }
         }
 
-        // Boost ceiling. The table ends at its last point; a voltage boost lets the card run past that
-        // without the driver handing us any more points, so mark where the headroom actually ends
-        // rather than leaving an unexplained empty stretch of axis.
+        // Where the card stops. Two different situations, and labelling one as the other would
+        // mislead: a ceiling PAST the table's last point is boost headroom running beyond the curve,
+        // while a ceiling INSIDE the curve means the table describes voltages this card never
+        // reaches — every point above the line is drawn but unreachable, and cannot be tuned into.
         int lastPointMv = _points[^1].VoltageMv;
-        if (_ceilingMv > lastPointMv && _ceilingMv >= vMin && _ceilingMv <= vMax)
+        if (_ceilingMv > 0 && _ceilingMv >= vMin && _ceilingMv <= vMax)
         {
             double cx = ToScreen(_ceilingMv, fMin).X;
             var cp = new Pen(CeilingBrush, 1.5) { DashStyle = DashStyles.Dot }; cp.Freeze();
             dc.DrawLine(cp, new Point(cx, PadT), new Point(cx, h - PadB));
-            var t = new FormattedText($"boost ceiling {_ceilingMv} mV — table ends at {lastPointMv}",
+
+            // Shade the unreachable stretch, faintly enough to read the curve through it.
+            if (_ceilingMv < lastPointMv)
+            {
+                double rx = ToScreen(Math.Min(lastPointMv, vMax), fMin).X;
+                if (rx > cx) dc.DrawRectangle(UnreachableBrush, null, new Rect(cx, PadT, rx - cx, h - PadB - PadT));
+            }
+
+            string label = _ceilingMv > lastPointMv
+                ? $"boost ceiling {_ceilingMv} mV — table ends at {lastPointMv}"
+                : $"card tops out at {_ceilingMv} mV — points above are unreachable";
+            var t = new FormattedText(label,
                 CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, CeilingBrush, ppd);
             // Label to the left of its line when there isn't room on the right.
             double tx = cx + 6 + t.Width < w - PadR ? cx + 6 : cx - 6 - t.Width;

@@ -87,6 +87,24 @@ public interface IGpuBackend : IDisposable
     void SetFanCurve(int gpuIndex, FanCurve curve) =>
         throw new GpuBackendException("This backend has no hardware fan curve.");
 
+    /// <summary>
+    /// Move the core power rail's own voltage ceiling to an absolute mV value; 0 restores the
+    /// card's default. Distinct from the boost percentage, which asks for headroom within the
+    /// existing ceiling rather than moving it. Backends without the lever ignore this.
+    /// </summary>
+    void SetVoltageRailMax(int gpuIndex, int millivolts) { }
+
+    /// <summary>
+    /// Move the MSVDD rail's ceiling to an absolute mV value; 0 restores the default. MSVDD feeds
+    /// the crossbar, SYS and video domains rather than the shader core.
+    /// </summary>
+    void SetMsvddRailMax(int gpuIndex, int millivolts) { }
+
+    /// <summary>
+    /// Offset the crossbar (interconnect) clock, in MHz. Backends without the domain ignore this.
+    /// </summary>
+    void SetXbarOffset(int gpuIndex, int offsetMhz) { }
+
     /// <summary>Force a fan to a fixed duty. fanIndex = -1 means all fans.</summary>
     void SetFanSpeed(int gpuIndex, int fanIndex, int percent);
 

@@ -18,7 +18,7 @@
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="Flatten above" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <TextBox x:Name="FlattenBox" Width="60" Text="900" HorizontalContentAlignment="Right"/>
+                    <TextBox x:Name="FlattenBox" Width="60" Text="1000" HorizontalContentAlignment="Right"/>
                     <TextBlock Text="mV" VerticalAlignment="Center" Margin="4,0,8,0" Style="{StaticResource Muted}"/>
                     <Button Content="Apply flatten" Click="Flatten_Click" Padding="10,4"
                             ToolTip="Clamp every point above this voltage to the frequency at that point — the classic undervolt"/>

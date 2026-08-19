@@ -73,6 +73,35 @@ public sealed record GpuCapabilities
     /// <summary>Number of independently controllable fans (0 if fan control unsupported).</summary>
     public int FanCount { get; init; }
 
+    /// <summary>
+    /// True when the core power rail's own voltage ceiling can be moved. This is a different lever
+    /// from the boost percentage and from the V/F cap: it raises or lowers the rail's maximum
+    /// outright, rather than asking the boost algorithm for more headroom within it.
+    /// </summary>
+    public bool CanSetVoltageRail { get; init; }
+    /// <summary>Rail ceiling range offered, in mV — the driver's, narrowed to a sane one.</summary>
+    public int VoltageRailMinMv { get; init; }
+    public int VoltageRailMaxMv { get; init; }
+    /// <summary>The rail's ceiling with no offset applied, i.e. what "default" restores.</summary>
+    public int VoltageRailStockMaxMv { get; init; }
+
+    /// <summary>
+    /// True when the crossbar (interconnect) clock takes an offset. Not a public clock domain —
+    /// PStates20 refuses it — so it is detected by asking its own control family.
+    /// </summary>
+    /// <summary>
+    /// MSVDD is the rail feeding the crossbar, SYS and video domains — a separate supply from NVVDD,
+    /// with its own ceiling.
+    /// </summary>
+    public bool CanSetMsvddRail { get; init; }
+    public int MsvddRailMinMv { get; init; }
+    public int MsvddRailMaxMv { get; init; }
+    public int MsvddRailStockMaxMv { get; init; }
+
+    public bool CanSetXbarOffset { get; init; }
+    public int XbarOffsetMinMhz { get; init; }
+    public int XbarOffsetMaxMhz { get; init; }
+
     // ---------------- vendor differences the UI has to reflect ----------------
 
     /// <summary>
@@ -152,6 +181,12 @@ public sealed record GpuTuningState
     public int VoltageBoostPercent { get; init; }
     /// <summary>Inferred from the live curve: how far below stock max the curve is flattened. 0 = not flattened.</summary>
     public int VoltageOffsetMv { get; init; }
+    /// <summary>Current ceiling of the core voltage rail in mV; 0 when the card doesn't expose it.</summary>
+    public int VoltageRailMaxMv { get; init; }
+    /// <summary>Current ceiling of the MSVDD rail in mV; 0 when the card doesn't expose it.</summary>
+    public int MsvddRailMaxMv { get; init; }
+    /// <summary>Crossbar clock offset currently applied, in MHz.</summary>
+    public int XbarOffsetMhz { get; init; }
     public bool FanManual { get; init; }
     public int FanPercent { get; init; }
 

@@ -372,6 +372,18 @@ GUI alone into `gui-build.log`, and `DIAG.bat` self-elevates and dumps `rochoc-d
 - Multi-GPU is implemented but untested — GPU 0 is used unless `--gpu` says otherwise.
 - The V/F curve editor is NVIDIA-only.
 - vBIOS flashing is deliberately out of scope.
+- **The XBAR (crossbar) clock is not tunable, and not readable either.** Every published interface
+  omits the domain, checked on a 5070 Ti (driver 610.88): NVAPI reports only Graphics and Memory
+  across all 32 clock slots, PStates20 adds a read-only Video and nothing else, NVML lists
+  Graphics/SM/Memory/Video, and NVIDIA's open kernel modules carry no `CLK_CLK_DOMAINS_*` control at
+  all — their one open clock command, `PMUMON_CLK_DOMAINS_GET_SAMPLES` (0x20801037), samples GPC,
+  DRAM, NVD and active-GPC, with no crossbar field. Tools that do move it drive the proprietary
+  clock-domain control block (XBAR is domain index 1) through kernel RM calls, and raise the
+  frequency indirectly by offsetting the shared MSVDD rail rather than setting a clock. Reaching that
+  needs an undocumented Windows RM transport plus a control-block layout pinned to a specific driver
+  build, and MSVDD is a shared rail with no vendor-sanctioned safe range — so it stays out for the
+  same reason vBIOS flashing does. `\\.\NvAdminDevice` does open, so the transport is the missing
+  piece rather than the permissions.
 - No signed release binaries yet; build from source.
 
 ---
