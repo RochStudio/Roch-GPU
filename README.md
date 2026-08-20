@@ -11,9 +11,31 @@ profile slots.
 No kernel driver — everything goes through the vendors' own user-mode libraries (`nvapi64.dll`,
 `atiadlxx.dll`), the same route Afterburner and Adrenalin take.
 
-> **Beta.** Tested on an RTX 5070 Ti (610.88), an RTX 4070 Ti (591.86) and an RX 9070 XT
-> (Adrenalin 25.x–26.x). Other cards should work — the tool asks the driver what it supports rather
-> than assuming — but are untested. Read the [warning](#a-word-of-warning) first.
+> **Beta.** Read the [warning](#a-word-of-warning) before using it.
+
+---
+
+## Screenshots
+
+| Main window | Extreme OC (XOC) | Hardware monitor |
+|---|---|---|
+| <img src="assets/screenshots/main.png" alt="Main window" width="230"> | <img src="assets/screenshots/xoc.png" alt="Extreme OC window" width="250"> | <img src="assets/screenshots/monitor.png" alt="Hardware monitor" width="290"> |
+
+<img src="assets/screenshots/curve.png" alt="V/F curve editor" width="840">
+
+---
+
+## Tested GPUs
+
+The tool asks the driver what it supports rather than assuming, so other cards should work. These
+are the ones actually run against hardware:
+
+| GPU | Driver | Status |
+|---|---|---|
+| **RTX 5070 Ti** (Blackwell) | 610.88 | Full feature set, including the V/F curve editor and everything behind XOC — NVVDD and MSVDD rails, and a crossbar offset that lands and reads back. |
+| **RTX 4070 Ti** (Ada) | 591.86 | Everything except the crossbar *write*: the domain is present and measurable, but the driver refuses any non-zero offset. See [Known limitations](#known-limitations). |
+| **RTX 4070** (Ada) | — | Expected to behave as the 4070 Ti. Not yet run against hardware. |
+| **RX 9070 XT** (RDNA 4) | Adrenalin 25.x–26.x | The AMD feature set: clocks, undervolt offset, power limit, zero RPM, memory timing, hardware fan curve. No editable V/F curve or temperature limit on RDNA 4. |
 
 ---
 
@@ -200,6 +222,28 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
 - RDNA 4 exposes no editable V/F curve and no temperature limit; both are hidden rather than faked.
 - The V/F curve editor is NVIDIA-only. Multi-GPU is implemented but untested.
 - vBIOS flashing is deliberately out of scope. No signed release binaries yet.
+
+---
+
+## Repository layout
+
+```
+roch-gpu-oc-beta.sln       solution
+assets/                    logo.svg (banner), icon.png, RochGpuOC.ico, screenshots/
+build.ps1                  build + test + publish to dist\
+setup.ps1                  as above, plus SDK install and launch (driven by SETUP.bat)
+src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
+src/GpuTuner.App           WPF GUI (RochGpuOC.exe)
+src/GpuTuner.Cli           rochoc.exe, same engine headless
+tests/GpuTuner.Core.Tests  dependency-free test runner (215 checks, no hardware needed)
+tools/amd                  read-only PowerShell probes used to map the AMD driver surface
+.github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
+third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
+```
+
+The loose `.bat` files are development conveniences: `REBUILD-AND-RUN.bat` wipes `bin`/`obj`/`dist`
+and republishes when an incremental build goes wrong, `BUILD-GUI.bat` builds the GUI alone, and
+`DIAG.bat` self-elevates and dumps `rochoc-diag.txt`. Use `build.ps1` for an ordinary build.
 
 ---
 
