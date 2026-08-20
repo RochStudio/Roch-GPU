@@ -32,9 +32,9 @@ are the ones actually run against hardware:
 
 | GPU | Driver | Status |
 |---|---|---|
-| **RTX 5070 Ti** (Blackwell) | 610.88 | Full feature set, including the V/F curve editor and everything behind XOC — NVVDD and MSVDD rails, and a crossbar offset that lands and reads back. |
-| **RTX 4070 Ti** (Ada) | 591.86 | Everything except the crossbar *write*: the domain is present and measurable, but the driver refuses any non-zero offset. See [Known limitations](#known-limitations). |
-| **RTX 4070** (Ada) | — | Expected to behave as the 4070 Ti. Not yet run against hardware. |
+| **RTX 5070 Ti** (Blackwell) | 610.88 | Full feature set, including the V/F curve editor and everything behind XOC — both rails, and a crossbar offset that lands and reads back. |
+| **RTX 4070 Ti** (Ada) | 591.86 | Everything except the two Blackwell-only levers: the MSVDD rail, and the crossbar *write* — that domain is present and measurable, but the driver refuses any non-zero offset. NVVDD works. |
+| **RTX 4070** (Ada) | — | Same as the 4070 Ti: works, without MSVDD or the crossbar write. |
 | **RX 9070 XT** (RDNA 4) | Adrenalin 25.x–26.x | The AMD feature set: clocks, undervolt offset, power limit, zero RPM, memory timing, hardware fan curve. No editable V/F curve or temperature limit on RDNA 4. |
 
 ---
@@ -50,8 +50,9 @@ showing everything greyed out.
 | Memory clock | offset, 25 MHz steps | absolute clock |
 | Voltage boost | %, raises the ceiling | — |
 | Voltage cap | in the curve editor's flatten | offset, mV (undervolt) |
-| NVVDD / MSVDD rails | floor and ceiling, mV | — |
-| XBAR clock | offset, MHz | — |
+| NVVDD rail | floor and ceiling, mV | — |
+| MSVDD rail | floor and ceiling, mV — Blackwell only | — |
+| XBAR clock | offset, MHz — writable on Blackwell only | — |
 | Power limit | % of TDP | % offset |
 | Temperature limit | ✓ | driver-owned, hidden |
 | Fan | fixed %, or a software curve | fixed %, or a hardware curve |
@@ -82,7 +83,8 @@ given card selects, so the unreachable stretch is shaded rather than left lookin
 
 The **XOC** button holds the levers that can brown a card out rather than merely fail: the NVVDD and
 MSVDD rail ranges, and the crossbar clock. They sit behind an **Enable / Disable** pair and are off
-by default.
+by default. On the 40-series cards tested only NVVDD is usable — the other two are Blackwell-only,
+and controls the card doesn't support are hidden rather than shown greyed out.
 
 Enable and Disable write the card immediately and touch nothing else — no clocks, power or fan. The
 gate travels with the profile, so a normal **Apply** respects it: armed writes your values, disarmed
@@ -213,6 +215,8 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   and reads it back. A 4070 Ti reports a ±1000 MHz range and refuses every non-zero value while 0
   succeeds — a rejection of the value, not of the request shape, so that range is the width of the
   delta field rather than a promise.
+- **MSVDD is Blackwell-only.** The rail control is present on a 5070 Ti and absent on the 40-series
+  cards tested, where NVVDD works on its own.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - The AMD core-clock offset is a **ceiling**, not a shift. A power-limited card will ignore it —
