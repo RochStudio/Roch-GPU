@@ -12,9 +12,9 @@ No kernel driver. Everything goes through the vendors' own user-mode libraries �
 NVIDIA, `atiadlxx.dll` on AMD — the same route Afterburner, NVIDIA Inspector and AMD's own Adrenalin
 software take.
 
-> **Beta.** Tested on an RTX 4070 Ti (driver 591.86) and an RX 9070 XT (Adrenalin 25.x–26.x). Other cards
-> should work — the tool asks the driver what it supports rather than assuming — but they are
-> untested. Read the [warning](#a-word-of-warning) before using it.
+> **Beta.** Tested on an RTX 5070 Ti (driver 610.88), an RTX 4070 Ti (driver 591.86) and an RX 9070 XT
+> (Adrenalin 25.x–26.x). Other cards should work — the tool asks the driver what it supports rather
+> than assuming — but they are untested. Read the [warning](#a-word-of-warning) before using it.
 
 ---
 
@@ -26,8 +26,11 @@ rather than showing everything greyed out.
 | Control | NVIDIA | AMD (RDNA+) |
 |---|---|---|
 | Core clock | offset, MHz, in 15 MHz steps | offset, MHz |
-| Core voltage (%) | over-voltage, raises the ceiling | — |
-| Voltage cap (mV) | absolute lock, holds the core at or below it | offset, mV (undervolt) |
+| Voltage boost (%) | over-voltage, raises the ceiling, in 5% steps | — |
+| Voltage cap (mV) | set in the curve editor's flatten | offset, mV (undervolt) |
+| NVVDD rail (mV) | floor and ceiling of the core rail | — |
+| MSVDD rail (mV) | floor and ceiling of the crossbar/SYS/video rail | — |
+| XBAR clock (MHz) | offset on the interconnect domain | — |
 | Memory clock | offset, MHz, in 25 MHz steps | absolute clock, MHz |
 | Power limit | % of TDP | % offset |
 | Temperature limit | ✓ | driver-owned, hidden |
@@ -36,14 +39,18 @@ rather than showing everything greyed out.
 | Memory timing | — | ✓ (fast timing) |
 | V/F curve editor | ✓ | no editable curve on RDNA 4 |
 
-Voltage is two independent levers on NVIDIA, as in Afterburner: **Core Voltage (%)** raises how far
-the core may be driven above the top of the V/F table, and **Voltage Cap (mV)** holds it at or below
-a chosen voltage. A card can carry both — headroom for boost, a cap to hold it under load. Set the
-cap at or above the ceiling and it caps nothing.
+Voltage is two independent levers on NVIDIA, as in Afterburner: **Voltage Boost (%)** raises how far
+the core may be driven above the top of the V/F table, and a **cap** holds it at or below a chosen
+voltage. A card can carry both — headroom for boost, a cap to hold it under load. The cap has no
+slider of its own: the curve editor's *flatten* is the same setting expressed where you can see what
+it does to the curve, so it lives there.
 
 The clock offsets snap to the driver's own granularity, so the number on the slider is the number
-that reaches the card rather than one that gets quietly rounded on the way. That also means the top
-of the core range is +990 rather than +1000, which is the nearest step below the driver's limit.
+that reaches the card rather than one that gets quietly rounded on the way. The sliders are also
+narrowed to a range worth dragging: **−150 to +495 MHz** on core and crossbar, against the ±1000 the
+driver reports. That figure is the width of the driver's delta field, not a claim about the silicon —
+no Ada or Blackwell card holds a plain +750 offset. Both ends sit on the 15 MHz grid so they stay
+reachable; the memory offset is capped by the driver itself at exactly +3000.
 
 Plus, on both: a hardware monitor in its own window (core/memory clock, voltage, power, edge and
 hot-spot and memory temperatures, load, fan % and RPM, with a session peak for core clock), five
@@ -51,8 +58,8 @@ profile slots, apply-at-logon via Task Scheduler, tray operation, and a CLI.
 
 ### The V/F curve editor
 
-Reads the card's real table — 103 points spanning 450–1090 mV on a 4070 Ti — and plots what the card
-will actually do rather than what is stored:
+Reads the card's real table — 103 points spanning 450–1090 mV on a 4070 Ti, 127 points spanning
+450–1240 mV on a 5070 Ti — and plots what the card will actually do rather than what is stored:
 
 - **Drag a point**, or click one and use **↑/↓** to nudge it by one 5 MHz driver step (Shift for 25,
   Ctrl also flattens everything above it, ←/→ walk the selection along the curve).
@@ -62,6 +69,24 @@ will actually do rather than what is stored:
   hardware and a boost adds no points to it, so that stretch is extrapolation, not data.
 - Ctrl+drag flattens from a point rightwards; double-click returns one point to stock; right-click
   returns all of them.
+- **A marker shows where the card actually stops.** The table describes voltages well above anything
+  a given card selects — a 5070 Ti's runs to 1240 mV while the card tops out around 1035 — so the
+  unreachable stretch is shaded rather than left looking tunable. Where a cap is what stops it, the
+  cap marker says so instead of drawing a second line on the same millivolt.
+
+### Extreme OC (XOC)
+
+The **XOC** button opens the levers that can brown a card out rather than merely fail: the NVVDD and
+MSVDD rail ranges, and the crossbar clock. They sit behind an **Enable / Disable** pair rather than in
+the main column, and are off by default.
+
+Enable and Disable write the card immediately and touch nothing else — no clocks, power, temp or fan —
+so arming the gate cannot push a half-finished slider edit onto the hardware. The gate travels with
+the profile, so an ordinary **Apply** respects it: armed writes your values, disarmed puts the rails
+and crossbar back to the driver's own. That matters more than it sounds. A rail ceiling left standing
+from an earlier session is exactly the state that browns a card out on the next boot, and a rail
+offset survives a reboot, so each ceiling is recorded the first time a GPU is seen and restored from
+there. A default the tool never saw is left alone rather than guessed at.
 
 ---
 
@@ -156,7 +181,7 @@ The solution contains five projects:
 dotnet run --project tests/GpuTuner.Core.Tests -c Release
 ```
 
-Expected output is `164 passed, 0 failed`, exit code 0. The runner is dependency-free — no xunit, no
+Expected output is `215 passed, 0 failed`, exit code 0. The runner is dependency-free — no xunit, no
 NuGet restore beyond the SDK — so it builds offline and runs anywhere. It covers the V/F curve
 maths, the voltage levers, clock-step snapping, profile clamping, the fan-curve controller, the
 background-poll paths and apply ordering against a mock backend, so most of the engine can be
@@ -208,6 +233,10 @@ exactly what the driver reported, which is usually the answer.
 rochoc info                          what was detected, and every limit the driver reports
 rochoc monitor [--interval 1000]     live telemetry in the terminal, until Ctrl+C
 rochoc apply --core 120 --mem 800 --power 110 --temp 85 --fan 60
+rochoc apply --volt 25 --uv -100      voltage boost %, and an undervolt in mV under the ceiling
+rochoc apply --nvvdd 1100 --nvvdd-min 800 --msvdd 1050 --msvdd-min 800 --xbar 30
+                                     the gated levers; passing any one of them arms XOC for that
+                                     apply, passing none returns them to driver defaults
 rochoc apply-profile "Slot 1"        apply a profile saved in the GUI
 rochoc list-profiles                 names of the saved profiles
 rochoc reset                         everything back to driver defaults
@@ -341,7 +370,7 @@ setup.ps1                  as above, plus SDK install and launch (driven by SETU
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
 src/GpuTuner.App           WPF GUI (RochGpuOC.exe)
 src/GpuTuner.Cli           rochoc.exe, same engine headless
-tests/GpuTuner.Core.Tests  dependency-free test runner (164 checks, no hardware needed)
+tests/GpuTuner.Core.Tests  dependency-free test runner (215 checks, no hardware needed)
 tools/amd                  read-only PowerShell probes used to map the AMD driver surface
 .github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
@@ -372,18 +401,19 @@ GUI alone into `gui-build.log`, and `DIAG.bat` self-elevates and dumps `rochoc-d
 - Multi-GPU is implemented but untested — GPU 0 is used unless `--gpu` says otherwise.
 - The V/F curve editor is NVIDIA-only.
 - vBIOS flashing is deliberately out of scope.
-- **The XBAR (crossbar) clock is not tunable, and not readable either.** Every published interface
-  omits the domain, checked on a 5070 Ti (driver 610.88): NVAPI reports only Graphics and Memory
-  across all 32 clock slots, PStates20 adds a read-only Video and nothing else, NVML lists
-  Graphics/SM/Memory/Video, and NVIDIA's open kernel modules carry no `CLK_CLK_DOMAINS_*` control at
-  all — their one open clock command, `PMUMON_CLK_DOMAINS_GET_SAMPLES` (0x20801037), samples GPC,
-  DRAM, NVD and active-GPC, with no crossbar field. Tools that do move it drive the proprietary
-  clock-domain control block (XBAR is domain index 1) through kernel RM calls, and raise the
-  frequency indirectly by offsetting the shared MSVDD rail rather than setting a clock. Reaching that
-  needs an undocumented Windows RM transport plus a control-block layout pinned to a specific driver
-  build, and MSVDD is a shared rail with no vendor-sanctioned safe range — so it stays out for the
-  same reason vBIOS flashing does. `\\.\NvAdminDevice` does open, so the transport is the missing
-  piece rather than the permissions.
+- **The crossbar (XBAR) clock is tunable on Blackwell and read-only on Ada.** It is not a PStates20
+  domain and appears in no public interface, so it goes through a private control family, and every
+  write is checked against the GPU's own frequency counter rather than trusted. On a 5070 Ti (610.88)
+  a +30 MHz offset lands and reads back. On a 4070 Ti (591.86) the domain is present and running —
+  the counter measures it at 2258 MHz against a 2666 MHz core — and the driver reports a ±1000 MHz
+  range, but every non-zero offset is refused while 0 succeeds. The refusal is a rejection of the
+  value, not of the request shape: a wrong struct size answers with a different status entirely, and
+  a shape sweep in `rochoc diag` demonstrates that rather than assuming it. So on Ada that reported
+  range is the width of the delta field, the same way its ±1000 MHz core offset is.
+- **Live MSVDD voltage is not readable.** The rail's ceiling and floor are set and read back, but the
+  voltage it is actually running at is not — third-party monitoring tools do report it, so it is
+  obtainable, and the lead is an ADC family this build does not yet call. Until then MSVDD is the one
+  control here without read-back verification.
 - No signed release binaries yet; build from source.
 
 ---
