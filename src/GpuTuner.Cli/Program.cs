@@ -287,7 +287,7 @@ public static class CommandLine
         if (o.TryGetValue("enable", out var prof))
         {
             var exe = Environment.ProcessPath ?? throw new InvalidOperationException("cannot resolve own path");
-            StartupTaskService.Register(Path.ChangeExtension(exe, ".exe"), prof, stayResident: false);
+            StartupTaskService.Register(Path.ChangeExtension(exe, ".exe"), prof);
             Console.WriteLine($"Startup task registered: apply '{prof}' at logon (elevated).");
             return 0;
         }

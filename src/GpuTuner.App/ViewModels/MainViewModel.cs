@@ -65,7 +65,9 @@ public sealed class MainViewModel : ObservableObject
         RefreshProfiles();
         RefreshSlots();
 
-        _applyOnStartup = settings.ApplyOnStartup && StartupTaskService.Exists();
+        // The registered task is the truth, not the saved flag: if the two ever disagree the box
+        // must show what will actually happen at logon.
+        _applyOnStartup = StartupTaskService.Exists();
         _startupProfile = settings.StartupProfile;
 
         // Light up the slot that was applied last session, so the bar reflects what the card is running.
@@ -861,7 +863,6 @@ public sealed class MainViewModel : ObservableObject
 
     private void UpdateStartupTask()
     {
-        App.Settings.ApplyOnStartup = _applyOnStartup;
         try
         {
             if (_applyOnStartup)
@@ -869,13 +870,14 @@ public sealed class MainViewModel : ObservableObject
                 if (string.IsNullOrEmpty(StartupProfile))
                 {
                     Status = "Pick a startup profile first"; StatusIsError = true;
-                    _applyOnStartup = false; OnPropertyChanged(nameof(ApplyOnStartup));
-                    return;
                 }
-                var exe = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot resolve exe path");
-                // Stay resident (tray) so fan curves keep running; use --exit if you only want clocks/limits.
-                StartupTaskService.Register(exe, StartupProfile, stayResident: true);
-                Status = $"Startup task registered for '{StartupProfile}'"; StatusIsError = false;
+                else
+                {
+                    var exe = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot resolve exe path");
+                    // Applies and quits - nothing left resident. Same call the CLI makes.
+                    StartupTaskService.Register(exe, StartupProfile);
+                    Status = $"Startup task registered for '{StartupProfile}'"; StatusIsError = false;
+                }
             }
             else
             {
@@ -884,6 +886,18 @@ public sealed class MainViewModel : ObservableObject
             }
         }
         catch (Exception e) { Status = "Startup task: " + e.Message; StatusIsError = true; }
+
+        // Settle the tick on what is actually registered, not on what was asked for. schtasks can
+        // fail or be refused, and a box that reads "off" while the task still runs at every logon is
+        // worse than an error message - so this puts the tick back when a removal did not take, and
+        // clears it when a registration did not.
+        bool registered = StartupTaskService.Exists();
+        if (registered != _applyOnStartup)
+        {
+            _applyOnStartup = registered;
+            OnPropertyChanged(nameof(ApplyOnStartup));
+        }
+        App.Settings.ApplyOnStartup = _applyOnStartup;
         App.Store.SaveSettings(App.Settings);
     }
 
