@@ -569,6 +569,114 @@ internal static class NvApiPrivate
             : 0u;
 
     /// <summary>Read every rail the GPU reports. Empty when unsupported.</summary>
+    /// <summary>
+    /// Every non-zero word of each rail's status entry, so a field that differs between rails can be
+    /// found rather than guessed at. The first attempt at reading a per-rail voltage took +0x04 and
+    /// got the same number for both rails, which would have labelled the core voltage as MSVDD.
+    /// </summary>
+    public static List<(int Rail, string Words)> DumpRailStatus(PhysicalGPUHandle handle)
+    {
+        var outp = new List<(int, string)>();
+        uint mask = ReadRailMask(handle);
+        if (mask == 0) return outp;
+        var status = RailCall(handle, FnVoltRailsGetStatus, VoltRailsStatusSize, mask);
+        if (status == null) return outp;
+
+        for (int r = 0, slot = 0; r < 32; r++)
+        {
+            if ((mask & (1u << r)) == 0) continue;
+            int s = StatusEntries + slot * StatusStride;
+            slot++;
+            if (s + StatusStride > status.Length) break;
+            var words = new List<string>();
+            for (int off = 0; off + 4 <= StatusStride; off += 4)
+            {
+                int w = BitConverter.ToInt32(status, s + off);
+                if (w != 0) words.Add($"+0x{off:X2}={w}");
+            }
+            outp.Add((r, string.Join(" ", words)));
+        }
+        return outp;
+    }
+
+    /// <summary>
+    /// Find the struct size an entry point wants by trying every one in a range. A wrong size answers
+    /// -9 and nothing else happens, so the sweep is cheap and the first status of 0 is the answer —
+    /// which is how the crossbar's 0x61A4 was found rather than guessed.
+    /// </summary>
+    public static List<(int Size, int Version, string Words)> SweepShapes(
+        PhysicalGPUHandle handle, uint id, int minSize, int maxSize, int[] versions, int maxWords = 20)
+    {
+        var hits = new List<(int, int, string)>();
+        var ptr = QueryInterface64(id);
+        if (ptr == IntPtr.Zero) return hits;
+        var fn = Marshal.GetDelegateForFunctionPointer<RawDelegate>(ptr);
+
+        foreach (int version in versions)
+            for (int size = minSize; size <= maxSize; size += 4)
+            {
+                var buf = Marshal.AllocHGlobal(size);
+                try
+                {
+                    for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+                    Marshal.WriteInt32(buf, 0, size | (version << 16));
+                    int status;
+                    try { status = fn(handle.MemoryAddress, buf); }
+                    catch { continue; }
+                    if (status != 0) continue;
+
+                    var words = new List<string>();
+                    for (int off = 4; off + 4 <= size && words.Count < maxWords; off += 4)
+                    {
+                        int w = Marshal.ReadInt32(buf, off);
+                        if (w != 0) words.Add($"+0x{off:X3}={w}");
+                    }
+                    hits.Add((size, version, words.Count == 0 ? "(all zero)" : string.Join(" ", words)));
+                }
+                finally { Marshal.FreeHGlobal(buf); }
+            }
+        return hits;
+    }
+
+    /// <summary>
+    /// Call an arbitrary private entry point with a set of shapes and report what comes back. The
+    /// same sweep that identified the crossbar's struct, made reusable: a status of 0 with non-zero
+    /// words is a live call, and everything else narrows the search.
+    /// </summary>
+    public static List<(int Size, int Version, int Status, string Words)> ProbeUnknown(
+        PhysicalGPUHandle handle, uint id, int[] sizes, int[] versions, int maxWords = 24)
+    {
+        var results = new List<(int, int, int, string)>();
+        var ptr = QueryInterface64(id);
+        if (ptr == IntPtr.Zero) return results;
+        var fn = Marshal.GetDelegateForFunctionPointer<RawDelegate>(ptr);
+
+        foreach (int size in sizes)
+            foreach (int version in versions)
+            {
+                var buf = Marshal.AllocHGlobal(size);
+                try
+                {
+                    for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+                    Marshal.WriteInt32(buf, 0, size | (version << 16));
+                    int status;
+                    try { status = fn(handle.MemoryAddress, buf); }
+                    catch { status = -99; }
+
+                    var words = new List<string>();
+                    if (status == 0)
+                        for (int off = 4; off + 4 <= size && words.Count < maxWords; off += 4)
+                        {
+                            int w = Marshal.ReadInt32(buf, off);
+                            if (w != 0) words.Add($"+0x{off:X3}={w}");
+                        }
+                    results.Add((size, version, status, words.Count == 0 ? "(none)" : string.Join(" ", words)));
+                }
+                finally { Marshal.FreeHGlobal(buf); }
+            }
+        return results;
+    }
+
     public static IReadOnlyList<VoltRail> ReadVoltRails(PhysicalGPUHandle handle)
     {
         uint mask = ReadRailMask(handle);

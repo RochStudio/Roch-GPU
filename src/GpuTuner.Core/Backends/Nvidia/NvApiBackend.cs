@@ -389,6 +389,10 @@ public sealed class NvApiBackend : IGpuBackend
         try { voltage = GPUApi.GetCurrentVoltage(g.Handle).ValueInMicroVolt / 1000.0; } catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
 
+        // Board watts. NVAPI's power families report per-cent-mille of the limit and no watts at
+        // all, so this is the one figure that has to come from NVML.
+        double watts = Nvml.PowerWatts(NvmlIndexFor(gpuIndex));
+
         double power = 0;
         try
         {
@@ -446,7 +450,7 @@ public sealed class NvApiBackend : IGpuBackend
         {
             CoreClockMhz = core, MemoryClockMhz = mem,
             TemperatureC = temp, HotSpotC = hotspot, MemoryTemperatureC = memTemp,
-            VoltageMv = voltage, PowerPercent = power,
+            VoltageMv = voltage, PowerPercent = power, PowerWatts = double.IsNaN(watts) ? 0 : watts,
             GpuLoadPercent = load, MemoryLoadPercent = memLoad, MemoryUsedMb = memUsed,
             FanPercent = fanPcts.Count > 0 ? fanPcts.Max() : 0,
             FanRpm = fanRpms.Count > 0 ? fanRpms.Max() : 0,
@@ -663,6 +667,9 @@ public sealed class NvApiBackend : IGpuBackend
         var d = new Dictionary<string, double>(3);
         try
         {
+            // The core's own counter, which is not the requested clock: at idle the card reports a
+            // boost figure it is not running. This is the one a monitoring tool calls "effective".
+            d["coremeasured"] = NvApiPrivate.MeasureClockKhz(g.Handle, NvApiPrivate.DomainCore) / 1000.0;
             d["xbar"] = NvApiPrivate.MeasureClockKhz(g.Handle, NvApiPrivate.DomainXbar) / 1000.0;
             d["sys"] = NvApiPrivate.MeasureClockKhz(g.Handle, 2) / 1000.0;
             d["video"] = NvApiPrivate.MeasureClockKhz(g.Handle, 21) / 1000.0;
@@ -1701,6 +1708,28 @@ public sealed class NvApiBackend : IGpuBackend
                 if (basePts[i].VoltageUv == 0 || basePts[i].FrequencyKhz == 0) continue;
                 sb.AppendLine($"  [{i,2}] {basePts[i].VoltageUv / 1000.0,6:0} mV  stock {basePts[i].FrequencyKhz / 1000,5} MHz  " +
                               $"live {eff[i].FrequencyKhz / 1000,5} MHz");
+            }
+        });
+
+        Section("Voltage rail status entries (looking for a per-rail voltage)", () =>
+        {
+            foreach (var (rail, words) in NvApiPrivate.DumpRailStatus(g.Handle))
+                sb.AppendLine($"  rail {rail}: {words}");
+        });
+
+        Section("Client power topology probe (looking for board watts)", () =>
+        {
+            // Two entry points monitoring tools use for per-rail power. Shapes unknown on this
+            // driver, so sweep rather than assume; a status of 0 with non-zero words is a live call.
+            foreach (var (id, name) in new[] { (0xEDCF624Eu, "ClientPowerTopologyGetStatus"),
+                                               (0xA4DFD3F2u, "ClientPowerTopologyGetInfo"),
+                                               (0x34206D86u, "ClientPowerPoliciesGetInfo") })
+            {
+                sb.AppendLine($"  {name} (0x{id:X8}):");
+                var hits = NvApiPrivate.SweepShapes(g.Handle, id, 0x08, 0x900, new[] { 1, 2, 3 });
+                if (hits.Count == 0) { sb.AppendLine("    no size in 0x08..0x900 accepted"); continue; }
+                foreach (var h in hits)
+                    sb.AppendLine($"    0x{h.Size:X3} x v{h.Version}  {h.Words}");
             }
         });
 

@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace GpuTuner.Core.Backends.Nvidia;
 
@@ -27,6 +27,7 @@ internal static class Nvml
     [DllImport(Dll, EntryPoint = "nvmlDeviceResetGpuLockedClocks")] private static extern int ResetLocked(IntPtr device);
     [DllImport(Dll, EntryPoint = "nvmlErrorString")] private static extern IntPtr ErrorString(int result);
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetName")] private static extern int GetNameRaw(IntPtr device, [Out] byte[] name, uint length);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetPowerUsage")] private static extern int GetPowerUsage(IntPtr device, out uint milliwatts);
 
     private static bool _initTried, _initOk;
     private static readonly object Gate = new();
@@ -92,6 +93,28 @@ internal static class Nvml
     }
 
     /// <summary>Device name as NVML sees it — used to confirm the index lines up with the NVAPI one.</summary>
+    /// <summary>
+    /// Board power draw in watts, or NaN when NVML cannot say.
+    ///
+    /// NVAPI has no watts on this card: its power families report per-cent-mille of the limit and
+    /// nothing else — the topology call, the policy status and the policy info all agree on that,
+    /// and a sweep of every struct size each accepts turned up no milliwatt field anywhere. NVML
+    /// reports the draw directly, so that is where this comes from.
+    /// </summary>
+    public static double PowerWatts(int gpuIndex)
+    {
+        if (!IsAvailable) return double.NaN;
+        lock (Gate)
+        {
+            try
+            {
+                if (GetHandle((uint)gpuIndex, out var dev) != Success) return double.NaN;
+                return GetPowerUsage(dev, out uint mw) == Success ? mw / 1000.0 : double.NaN;
+            }
+            catch (Exception) { return double.NaN; }
+        }
+    }
+
     public static string? DeviceName(int gpuIndex)
     {
         if (!IsAvailable) return null;

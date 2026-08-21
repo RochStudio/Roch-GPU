@@ -132,6 +132,7 @@ public sealed class TelemetryTable
 
         Group("Clocks");
         Sensor("core", "GPU core", "MHz");
+        Sensor("coremeasured", "GPU core (effective)", "MHz");
         Sensor("mem", "Memory", "MHz");
         if (caps.CanSetXbarOffset) Sensor("xbar", "Crossbar", "MHz");
         if (caps.CanSetSysOffset) Sensor("sys", "SYS", "MHz");
@@ -142,7 +143,7 @@ public sealed class TelemetryTable
         Sensor("memload", "Memory controller", "%");
 
         Group("Power");
-        if (first.PowerWatts > 0) Sensor("watts", "Board", "W", 1);
+        if (first.PowerWatts > 0) Sensor("watts", "Board draw", "W", 1);
         Sensor("tdp", "Total, % of TDP", "%", 1);
 
         Group("Fans");
