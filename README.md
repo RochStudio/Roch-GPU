@@ -185,23 +185,6 @@ can be changed without a GPU in front of you.
 
 ---
 
-## What it costs while you game
-
-The tool polls the driver only while the **hardware monitor window is open**. Close it and there is
-no driver call at all — not a slower poll, none. The main window can sit on your second screen
-costing nothing.
-
-| | NVIDIA (4070 Ti) | AMD (9070 XT) |
-|---|---|---|
-| Monitor open | 12.97 ms / poll | 1.0–1.6 ms / poll |
-| Monitor closed, fan curve running | 0.02 ms / poll | no driver call |
-| Monitor closed | **no driver call** | **no driver call** |
-
-AMD is ~10× cheaper per sample because ADL returns every sensor in one call. Tune with the monitor
-open, close it before you launch the game, and the fan curve keeps running.
-
----
-
 ## How it works
 
 `IGpuBackend` is the vendor-neutral seam, and `BackendFactory` picks a backend by *trying to
