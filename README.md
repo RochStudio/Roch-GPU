@@ -228,8 +228,9 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   family and both accept a write and read it back. Video moves — confirmed on a 5070 Ti against
   third-party monitoring. SYS does not: ten samples at +300 MHz gave the same distribution as ten
   at zero (mean 660 MHz either way), while the core domain, written through the identical code
-  path, shifts by exactly the amount asked at 45 MHz. So SYS is either inert on this card or binds
-  only under load, and idle measurement cannot tell those apart. The control is offered because the
+  path, shifts by exactly the amount asked at 45 MHz. Under load it makes no difference either:
+  3DMark 11 Graphics Test 2 at 1440p scored 74.99 with no offset and 75.01 at +105 MHz, a 0.03%
+  gap against run-to-run variance of roughly half a percent. The control is offered because the
   driver offers it, not because a gain has been demonstrated.
   `RochGPU.exe domains` reads each domain's own counter, which is how to check this on a card —
   monitoring tools do not expose the SYS clock.
