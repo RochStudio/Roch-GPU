@@ -644,6 +644,8 @@ internal static class NvApiPrivate
     /// <summary>The control request carries a 2 here; it comes back empty without it.</summary>
     private const int XbarControlSelector = 0x08;
     private const int XbarControlOffsetKhz = 0x53C;
+    /// <summary>Block layout of the control buffer; see <see cref="ControlOffsetFor"/>.</summary>
+    private const int XbarControlBlock0 = 0x0124, XbarControlBlockStride = 0x304, XbarControlOffsetInBlock = 0x114;
 
     /// <summary>Clock domain indices accepted by <see cref="MeasureClockKhz"/>, confirmed on hardware.</summary>
     public const int DomainCore = 0, DomainXbar = 1, DomainMemory = 4;
@@ -651,7 +653,7 @@ internal static class NvApiPrivate
     /// <summary>Crossbar offset range the driver reports; Supported is false when the family is absent.</summary>
     public readonly record struct XbarInfo(bool Supported, int MinOffsetMhz, int MaxOffsetMhz);
 
-    private static byte[]? XbarCall(PhysicalGPUHandle handle, uint id, int size, uint version, bool selector)
+    private static byte[]? XbarCall(PhysicalGPUHandle handle, uint id, int size, uint version, bool selector, int selectorValue = 2)
     {
         var fn = Resolve(id);
         if (fn == null) return null;
@@ -660,7 +662,7 @@ internal static class NvApiPrivate
         {
             for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
             Marshal.WriteInt32(buf, 0, unchecked((int)version));
-            if (selector) Marshal.WriteInt32(buf, XbarControlSelector, 2);
+            if (selector) Marshal.WriteInt32(buf, XbarControlSelector, selectorValue);
             int status;
             try { status = fn(handle.MemoryAddress, buf); }
             catch { return null; }
@@ -732,26 +734,58 @@ internal static class NvApiPrivate
             : 0;
 
     /// <summary>Apply a crossbar offset in MHz. Read-modify-write. Returns the NVAPI status (0 = Ok).</summary>
-    public static int WriteXbarOffsetMhz(PhysicalGPUHandle handle, int mhz)
+    /// <summary>Slots in the info list, which are also the domains this family will offset.</summary>
+    public const int SlotCore = 0, SlotXbar = 1, SlotSys = 3, SlotVideo = 4;
+
+    /// <summary>
+    /// Offset one clock domain, in MHz. A domain is named by its slot in the info list, and that slot
+    /// is also the bit that selects its block: the crossbar is slot 1, so its selector is 1 &lt;&lt; 1 = 2
+    /// and its offset lands at 0x53C — the one word that moved when a +30 MHz crossbar offset was
+    /// applied, which is what fixed the arithmetic the rest of these domains now reuse.
+    ///
+    /// Read-modify-write, because the driver refuses a request whose surrounding fields it did not
+    /// fill in itself. The status is returned rather than thrown on: -1 here means the value was
+    /// refused, which on some cards is the honest answer for a domain that reports a range and will
+    /// not move.
+    /// </summary>
+    public static int WriteDomainOffsetMhz(PhysicalGPUHandle handle, int slot, int mhz)
     {
         var fnSet = Resolve(FnXbarSetControl);
         var fnGet = Resolve(FnXbarGetControl);
         if (fnSet == null || fnGet == null) return -1;
+
+        int selector = 1 << slot;
+        int field = ControlOffsetFor(slot);
+        if (field + 4 > XbarControlSize) return -1;
+
         var buf = Marshal.AllocHGlobal(XbarControlSize);
         try
         {
             for (int i = 0; i < XbarControlSize; i += 4) Marshal.WriteInt32(buf, i, 0);
             Marshal.WriteInt32(buf, 0, unchecked((int)XbarControlVersion));
-            Marshal.WriteInt32(buf, XbarControlSelector, 2);
+            Marshal.WriteInt32(buf, XbarControlSelector, selector);
             try { fnGet(handle.MemoryAddress, buf); } catch { }
             Marshal.WriteInt32(buf, 0, unchecked((int)XbarControlVersion));
-            Marshal.WriteInt32(buf, XbarControlSelector, 2);
-            Marshal.WriteInt32(buf, XbarControlOffsetKhz, mhz * 1000);
+            Marshal.WriteInt32(buf, XbarControlSelector, selector);
+            Marshal.WriteInt32(buf, field, mhz * 1000);
             try { return fnSet(handle.MemoryAddress, buf); }
             catch { return -2; }
         }
         finally { Marshal.FreeHGlobal(buf); }
     }
+
+    /// <summary>The offset a domain is currently carrying, in MHz; 0 when it cannot be read.</summary>
+    public static int ReadDomainOffsetMhz(PhysicalGPUHandle handle, int slot)
+    {
+        int field = ControlOffsetFor(slot);
+        if (field + 4 > XbarControlSize) return 0;
+        var c = XbarCall(handle, FnXbarGetControl, XbarControlSize, XbarControlVersion,
+                         selector: true, selectorValue: 1 << slot);
+        return c == null ? 0 : BitConverter.ToInt32(c, field) / 1000;
+    }
+
+    public static int WriteXbarOffsetMhz(PhysicalGPUHandle handle, int mhz) =>
+        WriteDomainOffsetMhz(handle, SlotXbar, mhz);
 
     /// <summary>
     /// Why the crossbar came back unsupported. ReadXbarInfo collapses three different failures into
@@ -761,6 +795,54 @@ internal static class NvApiPrivate
     ///
     /// Read-only — GetInfo, GetControl and the frequency counter only, never SetControl.
     /// </summary>
+    /// <summary>
+    /// One clock domain as the info call describes it: which slot it sits in, the type word that
+    /// names it, and the offset range if the entry carries a recognisable one. A domain with a range
+    /// is one the driver will discuss; whether it accepts a write is a separate question.
+    /// </summary>
+    public readonly record struct DomainEntry(int Index, int Type, bool HasRange, int MinMhz, int MaxMhz);
+
+    /// <summary>
+    /// Every domain the info call lists, with its range. The crossbar reader looks only for type 1;
+    /// this is the same walk without that filter, which is what makes the other domains visible.
+    /// </summary>
+    public static List<DomainEntry> ReadDomainEntries(PhysicalGPUHandle handle)
+    {
+        var found = new List<DomainEntry>();
+        var info = XbarCall(handle, FnXbarGetInfo, XbarInfoSize, XbarInfoVersion, selector: false);
+        if (info == null) return found;
+
+        for (int i = 0; i < 32; i++)
+        {
+            int e = XbarInfoEntries + i * XbarInfoStride;
+            if (e + XbarRangeSearchEnd + 4 > info.Length) break;
+            int type = BitConverter.ToInt32(info, e);
+            if (type == 0 && i > 0) continue;      // an empty slot, not a domain numbered zero
+
+            bool has = false; int min = 0, max = 0;
+            for (int off = XbarRangeSearchStart; off <= XbarRangeSearchEnd; off += 2)
+            {
+                short lo = BitConverter.ToInt16(info, e + off);
+                short hi = BitConverter.ToInt16(info, e + off + 2);
+                if (lo < 0 && hi > 0 && lo >= -2000 && hi <= 2000) { has = true; min = lo; max = hi; break; }
+            }
+            found.Add(new DomainEntry(i, type, has, min, max));
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// Where a domain's offset is written in the control buffer, on the reading that the crossbar
+    /// confirmed: the buffer holds one block per entry slot at <c>0x124 + n * 0x304</c>, and the
+    /// offset sits <c>0x114</c> into its block. The crossbar is slot 1, giving 0x53C — which is the
+    /// word that moved from 0 to 30000 when a +30 MHz offset was applied, and the only one that did.
+    ///
+    /// Written as arithmetic rather than a constant so the same call reaches every domain; whether a
+    /// given one accepts the write is for the driver to say.
+    /// </summary>
+    public static int ControlOffsetFor(int entryIndex) =>
+        XbarControlBlock0 + entryIndex * XbarControlBlockStride + XbarControlOffsetInBlock;
+
     public readonly record struct XbarProbe(
         bool InfoResolved, bool ControlResolved, bool SetResolved, bool MeasureResolved,
         int InfoStatus, int ControlStatus,

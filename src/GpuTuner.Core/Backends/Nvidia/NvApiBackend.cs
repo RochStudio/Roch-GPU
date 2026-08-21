@@ -592,6 +592,30 @@ public sealed class NvApiBackend : IGpuBackend
     /// call's return: a +100 MHz offset moved the measured crossbar 2414 -> 2514 MHz with the core
     /// clock unchanged, which is what distinguishes this from a number the driver merely stored.
     /// </summary>
+    /// <summary>
+    /// Every clock domain this family lists, with the offset range it admits to and what its own
+    /// counter currently measures. The domains that carry a range are the ones worth offering.
+    /// </summary>
+    public IReadOnlyList<(int Slot, int Type, bool HasRange, int MinMhz, int MaxMhz, int MeasuredMhz, int OffsetMhz)>
+        ReadClockDomains(int gpuIndex)
+    {
+        var g = Gpu(gpuIndex);
+        var list = new List<(int, int, bool, int, int, int, int)>();
+        foreach (var d in NvApiPrivate.ReadDomainEntries(g.Handle))
+            list.Add((d.Index, d.Type, d.HasRange, d.MinMhz, d.MaxMhz,
+                      (int)(NvApiPrivate.MeasureClockKhz(g.Handle, d.Type) / 1000),
+                      NvApiPrivate.ReadDomainOffsetMhz(g.Handle, d.Index)));
+        return list;
+    }
+
+    /// <summary>
+    /// Offset one clock domain by slot. Returns the driver's status: 0 landed, anything else was
+    /// refused. Not thrown on, because "this domain reports a range and will not move" is a real
+    /// answer that the caller needs to be able to report rather than treat as a fault.
+    /// </summary>
+    public int SetClockDomainOffset(int gpuIndex, int slot, int offsetMhz) =>
+        NvApiPrivate.WriteDomainOffsetMhz(Gpu(gpuIndex).Handle, slot, offsetMhz);
+
     public void SetXbarOffset(int gpuIndex, int offsetMhz)
     {
         var g = Gpu(gpuIndex);
@@ -1459,6 +1483,19 @@ public sealed class NvApiBackend : IGpuBackend
                 ? "  info entry types  : <none read>"
                 : "  info entry types  : " + string.Join(",", x.EntryTypes));
             sb.AppendLine($"  type-1 entry index: {x.TypeOneIndex}");
+
+            // Every domain the family lists, not just the crossbar. The control offset is predicted
+            // from the block arithmetic the crossbar confirmed; a capture taken while another tool
+            // holds a domain at a known offset is what turns a prediction into a fact.
+            sb.AppendLine("  domains listed (slot / type / range / predicted control offset):");
+            foreach (var de in NvApiPrivate.ReadDomainEntries(g.Handle))
+                sb.AppendLine($"    slot {de.Index,2}  type {de.Type,3}  " +
+                              (de.HasRange ? $"{de.MinMhz,6}..{de.MaxMhz,-6} MHz" : "no range found    ") +
+                              $"  -> +0x{NvApiPrivate.ControlOffsetFor(de.Index):X4}" +
+                              // The measure family numbers domains the same way the info family types
+                              // them - 0 core, 1 crossbar, 4 memory all agree - so a domain that
+                              // reports a plausible frequency here is the one this slot describes.
+                              $"   measured {NvApiPrivate.MeasureClockKhz(g.Handle, de.Type) / 1000,6} MHz");
             if (x.TypeOneWords.Length > 0)
             {
                 sb.AppendLine("  type-1 entry words (offset: value  [signed lo/hi halves]):");

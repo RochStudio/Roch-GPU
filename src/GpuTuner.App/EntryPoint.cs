@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -25,9 +26,7 @@ public static class EntryPoint
     {
         if (WantsCommandLine(args))
         {
-            // A WinExe owns no console of its own, so borrow whichever one launched it. Without
-            // this every line the CLI prints goes nowhere and the command looks like it did nothing.
-            AttachConsole(AttachParentProcess);
+            AttachToOutput();
             return Cli.CommandLine.Run(args);
         }
 
@@ -40,6 +39,37 @@ public static class EntryPoint
         var app = new App();
         app.InitializeComponent();
         return app.Run();
+    }
+
+    /// <summary>
+    /// Point Console at wherever this run's output should go.
+    ///
+    /// A WinExe owns no console, so when one launched us we have to borrow it or every line the CLI
+    /// prints goes nowhere. But borrowing is exactly wrong when the caller redirected us: `diag >
+    /// file.txt` already hands us a valid handle, and attaching a console replaces it, which is why
+    /// redirection produced an empty file while piping happened to work.
+    ///
+    /// So the redirection test has to come first, before anything can change the handles under it.
+    /// Either way the streams are rebound afterwards, because .NET caches a writer on first use and
+    /// the one it cached may predate the console existing at all.
+    /// </summary>
+    private static void AttachToOutput()
+    {
+        bool redirected = Console.IsOutputRedirected;
+        if (!redirected) AttachConsole(AttachParentProcess);
+
+        Rebind(Console.OpenStandardOutput, Console.SetOut);
+        Rebind(Console.OpenStandardError, Console.SetError);
+
+        static void Rebind(Func<Stream> open, Action<TextWriter> set)
+        {
+            try
+            {
+                var s = open();
+                if (s != Stream.Null) set(new StreamWriter(s) { AutoFlush = true });
+            }
+            catch (IOException) { }   // no console and no redirection: nothing to write to, and that is fine
+        }
     }
 
     /// <summary>Help is the one word both halves answer to; the CLI's version is the useful one.</summary>

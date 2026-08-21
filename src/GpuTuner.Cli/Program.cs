@@ -1,4 +1,4 @@
-using GpuTuner.Core.Backends;
+﻿using GpuTuner.Core.Backends;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
@@ -60,7 +60,36 @@ public static class CommandLine
                     foreach (var n in store.ListProfileNames()) Console.WriteLine(n);
                     return 0;
                 case "reset": Start(); svc.ResetToDefaults(); Console.WriteLine("Reset to defaults."); return 0;
-                case "diag":
+                case "domains":
+            {
+                // The private clock-domain family, which is where the crossbar lives and where SYS
+                // and video turned out to live too. Read-only unless --slot is given, and even then
+                // the point is the measurement afterwards rather than the call's return: this family
+                // will accept a value and not move, which is exactly what a 4070 Ti's crossbar does.
+                if (svc.Backend is not NvApiBackend nv)
+                { Console.Error.WriteLine("Clock domains are an NVIDIA private family; this card uses " + svc.Backend.BackendName + "."); return 3; }
+
+                if (opts.TryGetValue("slot", out var slotText) && int.TryParse(slotText, out int slot))
+                {
+                    int mhz = opts.TryGetValue("offset", out var offText) && int.TryParse(offText, out int m) ? m : 0;
+                    int before = nv.ReadClockDomains(gpu).FirstOrDefault(d => d.Slot == slot).MeasuredMhz;
+                    int status = nv.SetClockDomainOffset(gpu, slot, mhz);
+                    System.Threading.Thread.Sleep(300);
+                    var after = nv.ReadClockDomains(gpu).FirstOrDefault(d => d.Slot == slot);
+                    Console.WriteLine($"slot {slot}: wrote {mhz:+#;-#;0} MHz, status {status} " +
+                                      $"({(status == 0 ? "accepted" : "refused")}); " +
+                                      $"measured {before} -> {after.MeasuredMhz} MHz, reads back {after.OffsetMhz:+#;-#;0} MHz");
+                }
+
+                Console.WriteLine("slot  type  range              measured   offset");
+                foreach (var d in nv.ReadClockDomains(gpu))
+                    Console.WriteLine($"{d.Slot,4}  {d.Type,4}  " +
+                                      (d.HasRange ? $"{d.MinMhz,6}..{d.MaxMhz,-6} MHz" : "no range          ") +
+                                      $"  {d.MeasuredMhz,6} MHz  {d.OffsetMhz,+6} MHz");
+                return 0;
+            }
+
+            case "diag":
                     svc.Initialize(gpu);
                     var dump = svc.Backend.GetDiagnostics(gpu);
                     Console.WriteLine(dump);
