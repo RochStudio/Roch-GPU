@@ -76,8 +76,12 @@ showing everything greyed out.
 | Zero RPM / memory timing | — | ✓ |
 | V/F curve editor | ✓ | no editable curve on RDNA 4 |
 
-Plus a hardware monitor in its own window, five profile slots, apply-at-logon, tray operation and
-the CLI.
+Plus a hardware monitor in its own window — graphs, or a **Telemetry** table of every sensor with
+its current, minimum, maximum and running average, grouped and foldable — five profile slots,
+apply-at-logon, tray operation and the CLI.
+
+The monitor is also the only thing that polls the driver. Close it and there is no driver call at
+all, so the main window can sit on a second screen costing nothing while you play.
 
 Offsets snap to the driver's own granularity, so the number on the slider is the number that reaches
 the card. The sliders are also narrowed to a range worth dragging — **−150 to +495 MHz** on core and
