@@ -10,7 +10,7 @@ namespace GpuTuner.Core.Services;
 /// </summary>
 public static class StartupTaskService
 {
-    public const string TaskName = "ROCH GPU Apply Profile";
+    public const string TaskName = "Roch GPU Apply Profile";
 
     public static bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
@@ -35,6 +35,14 @@ public static class StartupTaskService
     public static void Register(string exePath, string profileName)
     {
         if (!IsWindows) throw new PlatformNotSupportedException();
+
+        // Delete any existing entry first rather than leaning on /Create /F to replace it. Task names
+        // match case-insensitively, so one registered under the old spelling ("ROCH GPU Apply
+        // Profile") is found and overwritten either way - but Windows keeps the name the task was
+        // first created with, so the old casing would survive every rewrite. Removing it makes this
+        // create the one that decides the spelling.
+        if (Exists()) Run("schtasks", $"/Delete /F /TN \"{TaskName}\"");
+
         // /RL HIGHEST = run elevated; /SC ONLOGON; /DELAY gives the driver a few seconds to settle.
         string args = $"--apply-profile \"{profileName}\" --exit";
         string tr = $"\\\"{exePath}\\\" {args.Replace("\"", "\\\"")}";
