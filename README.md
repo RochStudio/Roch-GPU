@@ -21,11 +21,22 @@ command and you get the CLI. Nothing to install — no .NET runtime, no DLLs bes
 
 ## Screenshots
 
+**NVIDIA** — the full set, with the rails and crossbar behind XOC and the V/F curve editor.
+
 | Main window | Extreme OC (XOC) | Hardware monitor |
 |---|---|---|
-| <img src="assets/screenshots/main.png" alt="Main window" width="230"> | <img src="assets/screenshots/xoc.png" alt="Extreme OC window" width="250"> | <img src="assets/screenshots/monitor.png" alt="Hardware monitor" width="290"> |
+| <img src="assets/screenshots/main.png" alt="Main window on an NVIDIA card" width="230"> | <img src="assets/screenshots/xoc.png" alt="Extreme OC window" width="250"> | <img src="assets/screenshots/monitor.png" alt="Hardware monitor" width="290"> |
 
 <img src="assets/screenshots/curve.png" alt="V/F curve editor" width="840">
+
+**AMD (RX 9070 XT)** — the same binary against a different driver. The window is built from what
+the card reports, so it comes out differently: a voltage *offset* rather than a curve, an absolute
+memory clock rather than a delta, plus memory timing and zero RPM. XOC and the curve editor are
+missing entirely because RDNA 4 exposes neither — hidden rather than shown greyed out.
+
+| Main window | Hardware monitor |
+|---|---|
+| <img src="assets/screenshots/amd-main.png" alt="Main window on an RX 9070 XT" width="230"> | <img src="assets/screenshots/amd-monitor.png" alt="Hardware monitor on an RX 9070 XT" width="330"> |
 
 ---
 
@@ -39,7 +50,7 @@ are the ones actually run against hardware:
 | **RTX 5070 Ti** (Blackwell) | 610.88 | Full feature set, including the V/F curve editor and everything behind XOC — both rails, and a crossbar offset that lands and reads back. |
 | **RTX 4070 Ti** (Ada) | 591.86 | Everything except the two Blackwell-only levers: the MSVDD rail, and the crossbar *write* — that domain is present and measurable, but the driver refuses any non-zero offset. NVVDD works. |
 | **RTX 4070** (Ada) | — | Same as the 4070 Ti: works, without MSVDD or the crossbar write. |
-| **RX 9070 XT** (RDNA 4) | Adrenalin 25.x–26.x | The AMD feature set: clocks, undervolt offset, power limit, zero RPM, memory timing, hardware fan curve. No editable V/F curve or temperature limit on RDNA 4. |
+| **RX 9070 XT** (RDNA 4) | Adrenalin 25.x, 26.3.1 | The AMD feature set: clocks, undervolt offset, power limit, zero RPM, memory timing, hardware fan curve. No editable V/F curve or temperature limit on RDNA 4. |
 
 ---
 
@@ -132,6 +143,12 @@ startup --enable <profile> | --disable | --status
 
 `--gpu <n>` selects the card, `--mock` uses the simulated GPU. Anything that writes needs an elevated
 terminal; `info`, `monitor` and `--mock` do not.
+
+The **Startup** tick in the window registers the same task as `startup --enable`, and unticking it
+removes the task rather than only clearing the tick. The task applies the profile and exits, leaving
+nothing resident — so clocks, limits and voltages survive to the desktop, but a *software* fan curve
+(NVIDIA) does not, since no process is left to step it. AMD's fan curve is the driver's own and is
+unaffected.
 
 ---
 
