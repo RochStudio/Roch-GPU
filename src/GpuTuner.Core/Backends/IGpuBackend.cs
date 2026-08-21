@@ -1,4 +1,4 @@
-using GpuTuner.Core.Models;
+﻿using GpuTuner.Core.Models;
 
 namespace GpuTuner.Core.Backends;
 
@@ -111,6 +111,13 @@ public interface IGpuBackend : IDisposable
     /// Offset the crossbar (interconnect) clock, in MHz. Backends without the domain ignore this.
     /// </summary>
     void SetXbarOffset(int gpuIndex, int offsetMhz) { }
+
+    /// <summary>
+    /// Offset the SYS and video clocks, in MHz. Same private family as the crossbar; backends without
+    /// it ignore these.
+    /// </summary>
+    void SetSysOffset(int gpuIndex, int offsetMhz) { }
+    void SetVideoOffset(int gpuIndex, int offsetMhz) { }
 
     /// <summary>Force a fan to a fixed duty. fanIndex = -1 means all fans.</summary>
     void SetFanSpeed(int gpuIndex, int fanIndex, int percent);

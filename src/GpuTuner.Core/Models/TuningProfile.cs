@@ -1,4 +1,4 @@
-namespace GpuTuner.Core.Models;
+﻿namespace GpuTuner.Core.Models;
 
 public enum FanMode { Auto, Fixed, Curve }
 
@@ -31,6 +31,10 @@ public sealed class TuningProfile
 
     /// <summary>Crossbar clock offset in MHz.</summary>
     public int XbarOffsetMhz { get; set; }
+
+    /// <summary>SYS and video clock offsets in MHz. Gated with the crossbar; see XocEnabled.</summary>
+    public int SysOffsetMhz { get; set; }
+    public int VideoOffsetMhz { get; set; }
 
     /// <summary>
     /// Arms the three fields above - the two rails and the crossbar. They are off by default and
@@ -76,6 +80,8 @@ public sealed class TuningProfile
         VoltageRailFloorMv = VoltageRailFloorMv,
         MsvddRailFloorMv = MsvddRailFloorMv,
         XbarOffsetMhz = XbarOffsetMhz,
+        SysOffsetMhz = SysOffsetMhz,
+        VideoOffsetMhz = VideoOffsetMhz,
         XocEnabled = XocEnabled,
         TargetVoltageMv = TargetVoltageMv,
         ZeroRpm = ZeroRpm,
@@ -119,6 +125,10 @@ public sealed class TuningProfile
             MsvddRailFloorMv = Math.Clamp(MsvddRailFloorMv, caps.MsvddRailFloorMinMv, caps.MsvddRailFloorMaxMv);
         if (caps.CanSetXbarOffset)
             XbarOffsetMhz = Math.Clamp(XbarOffsetMhz, caps.XbarOffsetMinMhz, caps.XbarOffsetMaxMhz);
+        if (caps.CanSetSysOffset)
+            SysOffsetMhz = Math.Clamp(SysOffsetMhz, caps.SysOffsetMinMhz, caps.SysOffsetMaxMhz);
+        if (caps.CanSetVideoOffset)
+            VideoOffsetMhz = Math.Clamp(VideoOffsetMhz, caps.VideoOffsetMinMhz, caps.VideoOffsetMaxMhz);
         if (TargetVoltageMv > 0 && caps.MaxVoltageMv > 0)
             TargetVoltageMv = Math.Clamp(TargetVoltageMv, caps.MinVoltageMv, caps.MaxVoltageMv);
         FixedFanPercent = Math.Clamp(FixedFanPercent, caps.FanMinPercent, caps.FanMaxPercent);

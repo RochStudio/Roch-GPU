@@ -68,6 +68,8 @@ showing everything greyed out.
 | NVVDD rail | floor and ceiling, mV | — |
 | MSVDD rail | floor and ceiling, mV — Blackwell only | — |
 | XBAR clock | offset, MHz — writable on Blackwell only | — |
+| SYS clock | offset, MHz | — |
+| Video clock | offset, MHz | — |
 | Power limit | % of TDP | % offset |
 | Temperature limit | ✓ | driver-owned, hidden |
 | Fan | fixed %, or a software curve | fixed %, or a hardware curve |
@@ -97,7 +99,7 @@ given card selects, so the unreachable stretch is shaded rather than left lookin
 ### Extreme OC (XOC)
 
 The **XOC** button holds the levers that can brown a card out rather than merely fail: the NVVDD and
-MSVDD rail ranges, and the crossbar clock. They sit behind an **Enable / Disable** pair and are off
+MSVDD rail ranges, and the crossbar, SYS and video clocks. They sit behind an **Enable / Disable** pair and are off
 by default. On the 40-series cards tested only NVVDD is usable — the other two are Blackwell-only,
 and controls the card doesn't support are hidden rather than shown greyed out.
 
@@ -132,7 +134,7 @@ info                          what was detected, and every limit the driver repo
 monitor [--interval 1000]     live telemetry until Ctrl+C
 apply --core 120 --mem 800 --power 110 --fan 60
 apply --volt 25 --uv -100     voltage boost %, and an undervolt in mV under the ceiling
-apply --nvvdd 1100 --msvdd 1050 --xbar 30
+apply --nvvdd 1100 --msvdd 1050 --xbar 30 --sys 45 --video 30
                               the gated levers — passing any one arms XOC for that apply,
                               passing none returns them to driver defaults
 apply-profile "Slot 1"        apply a profile saved in the GUI
@@ -222,6 +224,11 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
 
 ## Known limitations
 
+- **SYS and video clock offsets are new and lightly tested.** They come from the same private
+  family as the crossbar, and the block arithmetic behind all three was verified by offsetting the
+  core domain in the same family and watching its own counter move by exactly the amount asked for.
+  Both accept a write and read it back on a 5070 Ti. Neither moves its counter much at idle, which
+  is what a demand-clocked domain does — so the gains, if any, are unmeasured here.
 - **The crossbar clock is tunable on Blackwell, read-only on Ada.** A 5070 Ti takes a +30 MHz offset
   and reads it back. A 4070 Ti reports a ±1000 MHz range and refuses every non-zero value while 0
   succeeds — a rejection of the value, not of the request shape, so that range is the width of the

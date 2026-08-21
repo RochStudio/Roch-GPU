@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -123,8 +123,11 @@ public sealed class MainViewModel : ObservableObject
     public bool HasMsvddRail => Caps.CanSetMsvddRail;
     /// <summary>The interconnect clock, which no public NVAPI surface exposes.</summary>
     public bool HasXbar => Caps.CanSetXbarOffset;
+    /// <summary>SYS and video: the other two offsettable domains in the crossbar's family.</summary>
+    public bool HasSys => Caps.CanSetSysOffset;
+    public bool HasVideo => Caps.CanSetVideoOffset;
     /// <summary>Whether the card exposes any of the gated levers, and so whether the XOC button appears.</summary>
-    public bool HasXoc => HasVoltageRail || HasMsvddRail || HasXbar;
+    public bool HasXoc => HasVoltageRail || HasMsvddRail || HasXbar || HasSys || HasVideo;
     public bool HasTempLimit => Caps.CanSetTempLimit;
     public bool HasZeroRpm => Caps.CanSetZeroRpm;
     public bool HasMemoryTiming => Caps.CanSetMemoryTiming && Caps.MemoryTimingOptions.Count > 0;
@@ -149,7 +152,7 @@ public sealed class MainViewModel : ObservableObject
     public string TempRangeText => $"{Caps.TempLimitMinC} … {Caps.TempLimitMaxC} °C (default {Caps.TempLimitDefaultC})";
 
     // ------------------------------------------------------------------ editor values (sliders)
-    private int _core, _mem, _power, _temp, _volt, _uv, _vTarget, _rail, _railFloor, _msvdd, _msvddFloor, _xbar, _fanFixed, _fanModeIndex;
+    private int _core, _mem, _power, _temp, _volt, _uv, _vTarget, _rail, _railFloor, _msvdd, _msvddFloor, _xbar, _sys, _video, _fanFixed, _fanModeIndex;
     private bool _pendingChanges;
 
     // Each numeric property clamps to the driver range on set, so typing "+9999" or dragging past the end is safe,
@@ -194,6 +197,8 @@ public sealed class MainViewModel : ObservableObject
     public int MsvddRailMax { get => _msvdd; set { if (SetTuned(ref _msvdd, value, Caps.MsvddRailMinMv, Math.Max(Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv), nameof(MsvddRailMax))) OnPropertyChanged(nameof(MsvddRangeText)); } }
 
     /// <summary>Crossbar clock offset in MHz. Snaps to the same 15 MHz grid as the core clock.</summary>
+    public int SysOffset { get => _sys; set => SetTuned(ref _sys, ClockStep.SnapWithin(value, CoreStepMhz, Caps.SysOffsetMinMhz, Caps.SysOffsetMaxMhz), Caps.SysOffsetMinMhz, Caps.SysOffsetMaxMhz, nameof(SysOffset)); }
+    public int VideoOffset { get => _video; set => SetTuned(ref _video, ClockStep.SnapWithin(value, CoreStepMhz, Caps.VideoOffsetMinMhz, Caps.VideoOffsetMaxMhz), Caps.VideoOffsetMinMhz, Caps.VideoOffsetMaxMhz, nameof(VideoOffset)); }
     public int XbarOffset { get => _xbar; set => SetTuned(ref _xbar, ClockStep.SnapWithin(value, CoreStepMhz, Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz), Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz, nameof(XbarOffset)); }
 
     /// <summary>Fixed fan duty. Snaps to the 5% grid — see <see cref="ClockStep.FanPercent"/>.</summary>
@@ -240,6 +245,8 @@ public sealed class MainViewModel : ObservableObject
             case "railfloor": VoltageRailFloor += 5 * dir; break;
             case "msvddfloor": MsvddRailFloor += 5 * dir; break;
             case "xbar": XbarOffset += CoreStepMhz * dir; break;
+            case "sys": SysOffset += CoreStepMhz * dir; break;
+            case "video": VideoOffset += CoreStepMhz * dir; break;
             case "fan": FixedFan += FanStepPercent * dir; break;
         }
     }
@@ -269,6 +276,8 @@ public sealed class MainViewModel : ObservableObject
     public string VoltageRailFloorInput { get => _railFloor.ToString(); set => ParseInto(value, v => VoltageRailFloor = v, nameof(VoltageRailFloor)); }
     public string MsvddRailFloorInput { get => _msvddFloor.ToString(); set => ParseInto(value, v => MsvddRailFloor = v, nameof(MsvddRailFloor)); }
     public string MsvddRailMaxInput { get => _msvdd.ToString(); set => ParseInto(value, v => MsvddRailMax = v, nameof(MsvddRailMax)); }
+    public string SysOffsetInput { get => Signed(_sys); set => ParseInto(value, v => SysOffset = v, nameof(SysOffset)); }
+    public string VideoOffsetInput { get => Signed(_video); set => ParseInto(value, v => VideoOffset = v, nameof(VideoOffset)); }
     public string XbarOffsetInput { get => Signed(_xbar); set => ParseInto(value, v => XbarOffset = v, nameof(XbarOffset)); }
     public string VoltageRailMaxInput { get => _rail.ToString(); set => ParseInto(value, v => VoltageRailMax = v, nameof(VoltageRailMax)); }
     public string FixedFanInput { get => _fanFixed.ToString(); set => ParseInto(value, v => FixedFan = v, nameof(FixedFan)); }
@@ -440,6 +449,12 @@ public sealed class MainViewModel : ObservableObject
             return $"{MsvddRailFloor} - {MsvddRailMax} mV" + (stock ? " (stock)" : "");
         }
     }
+    public string SysOffsetText => $"{SysOffset:+#;-#;0} MHz on the SYS clock";
+    public string VideoOffsetText => $"{VideoOffset:+#;-#;0} MHz on the video clock";
+    public string SysOffsetRangeText =>
+        $"{Caps.SysOffsetMinMhz:+#;-#;0} \u2026 {Caps.SysOffsetMaxMhz:+#;-#;0} MHz. The SYS domain, from the same private family as the crossbar.";
+    public string VideoOffsetRangeText =>
+        $"{Caps.VideoOffsetMinMhz:+#;-#;0} \u2026 {Caps.VideoOffsetMaxMhz:+#;-#;0} MHz. Drives the video encode/decode clock.";
     public string XbarOffsetText => $"{XbarOffset:+#;-#;0} MHz on the interconnect clock";
     public string XbarOffsetRangeText =>
         $"{Caps.XbarOffsetMinMhz:+#;-#;0} … {Caps.XbarOffsetMaxMhz:+#;-#;0} MHz. Offsets the crossbar, which no public "
@@ -710,6 +725,8 @@ public sealed class MainViewModel : ObservableObject
         VoltageRailFloorMv = HasVoltageRail ? VoltageRailFloor : 0,
         MsvddRailFloorMv = HasMsvddRail ? MsvddRailFloor : 0,
         XbarOffsetMhz = HasXbar ? XbarOffset : 0,
+        SysOffsetMhz = HasSys ? SysOffset : 0,
+        VideoOffsetMhz = HasVideo ? VideoOffset : 0,
         XocEnabled = XocEnabled,
         // The cap has no slider any more — the curve editor's flatten owns it. Carry whatever lock is
         // actually on the card so pressing Apply here preserves a flatten set over there instead of
@@ -735,6 +752,8 @@ public sealed class MainViewModel : ObservableObject
         VoltageRailFloor = p.VoltageRailFloorMv > 0 ? p.VoltageRailFloorMv : Caps.VoltageRailStockFloorMv;
         MsvddRailFloor = p.MsvddRailFloorMv > 0 ? p.MsvddRailFloorMv : Caps.MsvddRailStockFloorMv;
         XbarOffset = p.XbarOffsetMhz;
+        SysOffset = p.SysOffsetMhz;
+        VideoOffset = p.VideoOffsetMhz;
         XocEnabled = p.XocEnabled;
         TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : StockCeilingMv;
         ZeroRpm = p.ZeroRpm;
@@ -793,6 +812,8 @@ public sealed class MainViewModel : ObservableObject
             VoltageRailFloor = Caps.VoltageRailStockFloorMv;
             MsvddRailFloor = Caps.MsvddRailStockFloorMv;
             XbarOffset = 0;
+            SysOffset = 0;
+            VideoOffset = 0;
         }
         OnPropertyChanged(nameof(BoostCeilingMv));   // the NVVDD ceiling feeds it
         RefreshAppliedSummary();
@@ -904,7 +925,7 @@ public sealed class MainViewModel : ObservableObject
     private void RaiseTexts()
     {
         foreach (var p in new[] { nameof(CoreOffset), nameof(MemoryOffset), nameof(PowerLimit),
-                                  nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(VoltageRailMax), nameof(VoltageRailFloor), nameof(MsvddRailMax), nameof(MsvddRailFloor), nameof(XbarOffset), nameof(FixedFan) })
+                                  nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(VoltageRailMax), nameof(VoltageRailFloor), nameof(MsvddRailMax), nameof(MsvddRailFloor), nameof(XbarOffset), nameof(SysOffset), nameof(VideoOffset), nameof(FixedFan) })
             RaiseVal(p);
         OnPropertyChanged(nameof(VoltageCapText));
        

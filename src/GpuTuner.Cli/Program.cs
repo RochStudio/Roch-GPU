@@ -159,6 +159,8 @@ public static class CommandLine
         Console.WriteLine($"Core rail     : {(c.CanSetVoltageRail ? $"{c.VoltageRailMinMv}..{c.VoltageRailMaxMv} mV ceiling (now {c.VoltageRailStockMaxMv} mV), floor {c.VoltageRailFloorMinMv}..{c.VoltageRailFloorMaxMv} mV (stock {c.VoltageRailStockFloorMv} mV)" : "not supported")}");
         Console.WriteLine($"MSVDD rail    : {(c.CanSetMsvddRail ? $"{c.MsvddRailMinMv}..{c.MsvddRailMaxMv} mV ceiling (now {c.MsvddRailStockMaxMv} mV), floor {c.MsvddRailFloorMinMv}..{c.MsvddRailFloorMaxMv} mV (stock {c.MsvddRailStockFloorMv} mV)" : "not supported")}");
         Console.WriteLine($"Crossbar      : {(c.CanSetXbarOffset ? $"{c.XbarOffsetMinMhz}..{c.XbarOffsetMaxMhz} MHz offset" : "not supported")}");
+        Console.WriteLine($"SYS clock     : {(c.CanSetSysOffset ? $"{c.SysOffsetMinMhz}..{c.SysOffsetMaxMhz} MHz offset" : "not supported")}");
+        Console.WriteLine($"Video clock   : {(c.CanSetVideoOffset ? $"{c.VideoOffsetMinMhz}..{c.VideoOffsetMaxMhz} MHz offset" : "not supported")}");
         Console.WriteLine($"Fans          : {(c.CanSetFanSpeed ? $"{c.FanCount} fan(s), {c.FanMinPercent}..{c.FanMaxPercent} %" : "not supported")}");
         var s = svc.Backend.ReadTuningState(svc.GpuIndex);
         Console.WriteLine();
@@ -183,7 +185,7 @@ public static class CommandLine
             int lockMv = svc.Backend.ReadVoltageLockMv(svc.GpuIndex);
             uvMv = lockMv > 0 && svc.StockCeilingMv > 0 ? lockMv - svc.StockCeilingMv : 0;
         }
-        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {tempLimit}, vboost {s.VoltageBoostPercent}%, uv {uvMv} mV, rail {(s.VoltageRailMaxMv > 0 ? s.VoltageRailFloorMv + "-" + s.VoltageRailMaxMv + " mV" : "n/a")}, msvdd {(s.MsvddRailMaxMv > 0 ? s.MsvddRailFloorMv + "-" + s.MsvddRailMaxMv + " mV" : "n/a")}, xbar {s.XbarOffsetMhz:+#;-#;0} MHz, fan {fan}");
+        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {tempLimit}, vboost {s.VoltageBoostPercent}%, uv {uvMv} mV, rail {(s.VoltageRailMaxMv > 0 ? s.VoltageRailFloorMv + "-" + s.VoltageRailMaxMv + " mV" : "n/a")}, msvdd {(s.MsvddRailMaxMv > 0 ? s.MsvddRailFloorMv + "-" + s.MsvddRailMaxMv + " mV" : "n/a")}, xbar {s.XbarOffsetMhz:+#;-#;0} MHz, sys {s.SysOffsetMhz:+#;-#;0} MHz, video {s.VideoOffsetMhz:+#;-#;0} MHz, fan {fan}");
         var t = svc.Backend.ReadTelemetry(svc.GpuIndex);
         Console.WriteLine(Fmt(t));
         return 0;
@@ -251,6 +253,18 @@ public static class CommandLine
         }
         if (o.TryGetValue("volt", out var vb)) p.VoltageBoostPercent = int.Parse(vb);
         if (o.TryGetValue("uv", out var uv)) p.VoltageOffsetMv = int.Parse(uv);
+        if (o.TryGetValue("sys", out var sysText))
+        {
+            p.SysOffsetMhz = int.Parse(sysText);
+            if (!svc.Capabilities.CanSetSysOffset)
+                notes.Add($"{TuningService.NotePrefix} this card exposes no SYS clock — {sysText} MHz ignored.");
+        }
+        if (o.TryGetValue("video", out var vidText))
+        {
+            p.VideoOffsetMhz = int.Parse(vidText);
+            if (!svc.Capabilities.CanSetVideoOffset)
+                notes.Add($"{TuningService.NotePrefix} this card exposes no video clock — {vidText} MHz ignored.");
+        }
         if (o.TryGetValue("xbar", out var xb))
         {
             p.XbarOffsetMhz = int.Parse(xb);
@@ -275,8 +289,9 @@ public static class CommandLine
         // any of them the profile carries the gate shut, and the apply puts the rails and crossbar
         // back to the driver's own values rather than leaving an earlier tune half-standing.
         p.XocEnabled = o.ContainsKey("nvvdd") || o.ContainsKey("nvvdd-min")
-                    || o.ContainsKey("msvdd") || o.ContainsKey("msvdd-min") || o.ContainsKey("xbar");
-        if (p.XocEnabled) notes.Add($"{TuningService.NotePrefix} XOC armed for this apply (rails/crossbar written).");
+                    || o.ContainsKey("msvdd") || o.ContainsKey("msvdd-min") || o.ContainsKey("xbar")
+                    || o.ContainsKey("sys") || o.ContainsKey("video");
+        if (p.XocEnabled) notes.Add($"{TuningService.NotePrefix} XOC armed for this apply (rails and private clocks written).");
         if (o.TryGetValue("fan", out var fan))
         {
             if (fan.Equals("auto", StringComparison.OrdinalIgnoreCase)) p.FanMode = FanMode.Auto;
@@ -346,7 +361,7 @@ public static class CommandLine
 
           RochGPU.exe info
           RochGPU.exe monitor [--interval 1000]
-          RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--fan 60|auto]
+          RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--sys +50] [--video +50] [--fan 60|auto]
             the rail and crossbar flags are gated: pass one to arm them, pass none and they go back to driver defaults
           RochGPU.exe apply-profile <name> [--gpu 0]
           RochGPU.exe list-profiles

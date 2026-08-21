@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Extreme OC" Height="470" Width="380" ResizeMode="NoResize"
+        Title="Extreme OC" Height="570" Width="380" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
@@ -33,7 +33,7 @@
 
         <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="10,7" Margin="0,8,0,0">
             <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
-                       Text="Rail ceilings raise the voltage the whole card runs at and the crossbar is an undocumented clock domain, so move both in small steps and test between each one. Nothing here survives a reboot."/>
+                       Text="Rail ceilings raise the voltage the whole card runs at, and the crossbar, SYS and video clocks are undocumented domains with no driver-side sanity check. Move one at a time, in small steps, and test between each. Nothing here survives a reboot."/>
         </Border>
 
         <Border Style="{StaticResource Panel}" Padding="12,10">
@@ -100,6 +100,50 @@
                     </Grid>
                     <TextBlock Text="{Binding XbarOffsetText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding XbarOffsetRangeText}"/>
+                </StackPanel>
+
+                <!-- 1b3. Crossbar clock offset â€” private domain, not in PStates20 -->
+                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasSys, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="SYS Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                 ToolTip="{Binding SysOffsetRangeText}"
+                                 Text="{Binding SysOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                    <Grid Margin="0,1,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                      Command="{Binding NudgeCommand}" CommandParameter="sys:-1"/>
+                        <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.SysOffsetMinMhz}" Maximum="{Binding Caps.SysOffsetMaxMhz}"
+                                Value="{Binding SysOffset, Mode=TwoWay}" TickFrequency="15"/>
+                        <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                      Command="{Binding NudgeCommand}" CommandParameter="sys:1"/>
+                    </Grid>
+                    <TextBlock Text="{Binding SysOffsetText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding SysOffsetRangeText}"/>
+                </StackPanel>
+
+                <!-- 1b3. Crossbar clock offset â€” private domain, not in PStates20 -->
+                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasVideo, Converter={StaticResource BoolToVis}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="Video Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                 ToolTip="{Binding VideoOffsetRangeText}"
+                                 Text="{Binding VideoOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                    </Grid>
+                    <Grid Margin="0,1,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                      Command="{Binding NudgeCommand}" CommandParameter="video:-1"/>
+                        <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VideoOffsetMinMhz}" Maximum="{Binding Caps.VideoOffsetMaxMhz}"
+                                Value="{Binding VideoOffset, Mode=TwoWay}" TickFrequency="15"/>
+                        <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                      Command="{Binding NudgeCommand}" CommandParameter="video:1"/>
+                    </Grid>
+                    <TextBlock Text="{Binding VideoOffsetText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
+                               TextTrimming="CharacterEllipsis" ToolTip="{Binding VideoOffsetRangeText}"/>
                 </StackPanel>
 
             </StackPanel>

@@ -253,6 +253,34 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
 
+        // SYS and video sit in the same info list as the crossbar, in their own slots. A slot that
+        // reports an offset range is one the driver will discuss; the practical narrowing is the
+        // crossbar's, because the reasoning is the same — the +/-1000 is the delta field's width
+        // rather than a claim about the domain.
+        bool canSys = false, canVideo = false;
+        int sysMin = 0, sysMax = 0, vidMin = 0, vidMax = 0;
+        try
+        {
+            foreach (var d in NvApiPrivate.ReadDomainEntries(g.Handle))
+            {
+                if (!d.HasRange) continue;
+                if (d.Index == NvApiPrivate.SlotSys)
+                {
+                    canSys = true;
+                    (sysMin, sysMax) = ClockStep.Narrow(d.MinMhz, d.MaxMhz,
+                        ClockStep.XbarOffsetPracticalMinMhz, ClockStep.XbarOffsetPracticalMaxMhz);
+                }
+                else if (d.Index == NvApiPrivate.SlotVideo)
+                {
+                    canVideo = true;
+                    (vidMin, vidMax) = ClockStep.Narrow(d.MinMhz, d.MaxMhz,
+                        ClockStep.XbarOffsetPracticalMinMhz, ClockStep.XbarOffsetPracticalMaxMhz);
+                }
+            }
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+
         var coreRange = ClockStep.Narrow(coreMin, coreMax,
             ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreOffsetPracticalMaxMhz);
         var memRange = ClockStep.Narrow(memMin, memMax,
@@ -284,7 +312,9 @@ public sealed class NvApiBackend : IGpuBackend
             CanSetMsvddRail = msvdd.Supported,
             MsvddRailMinMv = msvdd.MinMv, MsvddRailMaxMv = msvdd.MaxMv, MsvddRailStockMaxMv = msvdd.StockMv,
             MsvddRailFloorMinMv = msvdd.FloorMinMv, MsvddRailFloorMaxMv = msvdd.FloorMaxMv, MsvddRailStockFloorMv = msvdd.FloorStockMv,
-            CanSetXbarOffset = canXbar, XbarOffsetMinMhz = xbarMin, XbarOffsetMaxMhz = xbarMax
+            CanSetXbarOffset = canXbar, XbarOffsetMinMhz = xbarMin, XbarOffsetMaxMhz = xbarMax,
+            CanSetSysOffset = canSys, SysOffsetMinMhz = sysMin, SysOffsetMaxMhz = sysMax,
+            CanSetVideoOffset = canVideo, VideoOffsetMinMhz = vidMin, VideoOffsetMaxMhz = vidMax
         };
         _capsCache[gpuIndex] = caps;
         return caps;
@@ -527,7 +557,14 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
 
-        int xbarMhz = 0;
+        int xbarMhz = 0, sysMhz = 0, videoMhz = 0;
+        try
+        {
+            sysMhz = NvApiPrivate.ReadDomainOffsetMhz(g.Handle, NvApiPrivate.SlotSys);
+            videoMhz = NvApiPrivate.ReadDomainOffsetMhz(g.Handle, NvApiPrivate.SlotVideo);
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
         try { xbarMhz = NvApiPrivate.ReadXbarOffsetMhz(g.Handle); }
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
@@ -537,7 +574,7 @@ public sealed class NvApiBackend : IGpuBackend
             CoreOffsetMhz = core, MemoryOffsetMhz = mem,
             VoltageRailMaxMv = railMaxMv, MsvddRailMaxMv = msvddMaxMv,
             VoltageRailFloorMv = railFloorMv, MsvddRailFloorMv = msvddFloorMv,
-            XbarOffsetMhz = xbarMhz,
+            XbarOffsetMhz = xbarMhz, SysOffsetMhz = sysMhz, VideoOffsetMhz = videoMhz,
             PowerLimitPercent = power, TempLimitC = temp,
             VoltageBoostPercent = voltBoost, VoltageOffsetMv = voltOffset,
             FanManual = fanManual, FanPercent = fanPct
@@ -615,6 +652,22 @@ public sealed class NvApiBackend : IGpuBackend
     /// </summary>
     public int SetClockDomainOffset(int gpuIndex, int slot, int offsetMhz) =>
         NvApiPrivate.WriteDomainOffsetMhz(Gpu(gpuIndex).Handle, slot, offsetMhz);
+
+    public void SetSysOffset(int gpuIndex, int offsetMhz) =>
+        SetDomain(gpuIndex, NvApiPrivate.SlotSys, offsetMhz, "SYS");
+
+    public void SetVideoOffset(int gpuIndex, int offsetMhz) =>
+        SetDomain(gpuIndex, NvApiPrivate.SlotVideo, offsetMhz, "video");
+
+    /// <summary>As <see cref="SetXbarOffset"/>, for the other domains in the same family.</summary>
+    private void SetDomain(int gpuIndex, int slot, int offsetMhz, string name)
+    {
+        int status = NvApiPrivate.WriteDomainOffsetMhz(Gpu(gpuIndex).Handle, slot, offsetMhz);
+        if (status == 0) return;
+        throw new GpuBackendException(
+            $"Failed to set the {name} clock offset to {offsetMhz:+#;-#;0} MHz: status {status}." +
+            (status == -1 ? " The request was accepted and the value refused." : ""));
+    }
 
     public void SetXbarOffset(int gpuIndex, int offsetMhz)
     {

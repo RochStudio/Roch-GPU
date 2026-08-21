@@ -119,7 +119,8 @@ using (var svc = new TuningService(new MockBackend()))
     {
         XocEnabled = true,
         VoltageRailMaxMv = 1075, MsvddRailMaxMv = 1050,
-        VoltageRailFloorMv = 850, MsvddRailFloorMv = 850, XbarOffsetMhz = 100
+        VoltageRailFloorMv = 850, MsvddRailFloorMv = 850, XbarOffsetMhz = 100,
+        SysOffsetMhz = 45, VideoOffsetMhz = 30
     };
     svc.Apply(armed);
     var st = svc.Backend.ReadTuningState(0);
@@ -127,6 +128,8 @@ using (var svc = new TuningService(new MockBackend()))
     Check("xoc armed writes msvdd", st.MsvddRailMaxMv == 1050);
     Check("xoc armed writes floors", st.VoltageRailFloorMv == 850 && st.MsvddRailFloorMv == 850);
     Check("xoc armed writes xbar", st.XbarOffsetMhz == 100);
+    // SYS and video ride the same gate as the crossbar: same private family, same kind of lever.
+    Check("xoc armed writes sys and video", st.SysOffsetMhz == 45 && st.VideoOffsetMhz == 30);
 
     // Same values, gate shut: every one of them goes back to the driver's own figure, and the two
     // ceilings go to their own separate defaults rather than a shared one.
@@ -134,13 +137,15 @@ using (var svc = new TuningService(new MockBackend()))
     {
         XocEnabled = false,
         VoltageRailMaxMv = 1075, MsvddRailMaxMv = 1050,
-        VoltageRailFloorMv = 850, MsvddRailFloorMv = 850, XbarOffsetMhz = 100
+        VoltageRailFloorMv = 850, MsvddRailFloorMv = 850, XbarOffsetMhz = 100,
+        SysOffsetMhz = 45, VideoOffsetMhz = 30
     });
     st = svc.Backend.ReadTuningState(0);
     Check("xoc disarmed restores nvvdd default", st.VoltageRailMaxMv == 1035);
     Check("xoc disarmed restores msvdd default", st.MsvddRailMaxMv == 985);
     Check("xoc disarmed zeroes floors", st.VoltageRailFloorMv == 0 && st.MsvddRailFloorMv == 0);
     Check("xoc disarmed zeroes xbar", st.XbarOffsetMhz == 0);
+    Check("xoc disarmed zeroes sys and video", st.SysOffsetMhz == 0 && st.VideoOffsetMhz == 0);
 
     // SetXocEnabled is the window's Enable/Disable: the gated levers move, nothing else does.
     svc.Apply(new TuningProfile { CoreOffsetMhz = 150, PowerLimitPercent = 110 });

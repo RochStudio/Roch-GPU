@@ -1,4 +1,4 @@
-namespace GpuTuner.Core.Models;
+﻿namespace GpuTuner.Core.Models;
 
 /// <summary>One editable point of the voltage/frequency curve, in display units (mV, MHz).</summary>
 public readonly record struct VfCurveSample(int Index, int VoltageMv, int StockMhz, int LiveMhz);
@@ -105,6 +105,17 @@ public sealed record GpuCapabilities
     public int MsvddRailFloorMaxMv { get; init; }
     public int MsvddRailStockFloorMv { get; init; }
 
+    /// <summary>
+    /// SYS and video clocks. Same private family as the crossbar and the same kind of lever, so they
+    /// live behind the same gate; separate flags because a card can expose one and not the others.
+    /// </summary>
+    public bool CanSetSysOffset { get; init; }
+    public int SysOffsetMinMhz { get; init; }
+    public int SysOffsetMaxMhz { get; init; }
+    public bool CanSetVideoOffset { get; init; }
+    public int VideoOffsetMinMhz { get; init; }
+    public int VideoOffsetMaxMhz { get; init; }
+
     public bool CanSetXbarOffset { get; init; }
     public int XbarOffsetMinMhz { get; init; }
     public int XbarOffsetMaxMhz { get; init; }
@@ -197,6 +208,9 @@ public sealed record GpuTuningState
     public int MsvddRailFloorMv { get; init; }
     /// <summary>Crossbar clock offset currently applied, in MHz.</summary>
     public int XbarOffsetMhz { get; init; }
+    /// <summary>SYS and video clock offsets currently applied, in MHz.</summary>
+    public int SysOffsetMhz { get; init; }
+    public int VideoOffsetMhz { get; init; }
     public bool FanManual { get; init; }
     public int FanPercent { get; init; }
 

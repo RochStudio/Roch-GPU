@@ -1,4 +1,4 @@
-using GpuTuner.Core.Backends;
+﻿using GpuTuner.Core.Backends;
 using GpuTuner.Core.Models;
 
 namespace GpuTuner.Core.Services;
@@ -510,6 +510,10 @@ public sealed class TuningService : IDisposable
                 Note("MSVDD floor", asked.MsvddRailFloorMv, applied.MsvddRailFloorMv, " mV");
             if (Capabilities.CanSetXbarOffset)
                 Note("crossbar offset", asked.XbarOffsetMhz, applied.XbarOffsetMhz, " MHz");
+            if (Capabilities.CanSetSysOffset)
+                Note("SYS clock offset", asked.SysOffsetMhz, applied.SysOffsetMhz, " MHz");
+            if (Capabilities.CanSetVideoOffset)
+                Note("video clock offset", asked.VideoOffsetMhz, applied.VideoOffsetMhz, " MHz");
         }
         // Only meaningful when a cap was actually asked for; 0 means "no cap" and never clamps.
         if (asked.TargetVoltageMv > 0)
@@ -542,6 +546,10 @@ public sealed class TuningService : IDisposable
                 Try("MSVDD floor", () => Backend.SetMsvddRailFloor(GpuIndex, p.MsvddRailFloorMv));
             if (Capabilities.CanSetXbarOffset)
                 Try("Crossbar offset", () => Backend.SetXbarOffset(GpuIndex, p.XbarOffsetMhz));
+            if (Capabilities.CanSetSysOffset)
+                Try("SYS clock offset", () => Backend.SetSysOffset(GpuIndex, p.SysOffsetMhz));
+            if (Capabilities.CanSetVideoOffset)
+                Try("Video clock offset", () => Backend.SetVideoOffset(GpuIndex, p.VideoOffsetMhz));
             return;
         }
 
@@ -558,6 +566,10 @@ public sealed class TuningService : IDisposable
             Try("MSVDD floor", () => Backend.SetMsvddRailFloor(GpuIndex, 0));
         if (Capabilities.CanSetXbarOffset)
             Try("Crossbar offset", () => Backend.SetXbarOffset(GpuIndex, 0));
+        if (Capabilities.CanSetSysOffset)
+            Try("SYS clock offset", () => Backend.SetSysOffset(GpuIndex, 0));
+        if (Capabilities.CanSetVideoOffset)
+            Try("Video clock offset", () => Backend.SetVideoOffset(GpuIndex, 0));
     }
 
     /// <summary>
@@ -668,6 +680,8 @@ public sealed class TuningService : IDisposable
             VoltageRailFloorMv = s.VoltageRailFloorMv,
             MsvddRailFloorMv = s.MsvddRailFloorMv,
             XbarOffsetMhz = s.XbarOffsetMhz,
+            SysOffsetMhz = s.SysOffsetMhz,
+            VideoOffsetMhz = s.VideoOffsetMhz,
             ZeroRpm = s.ZeroRpm,
             MemoryTimingLevel = s.MemoryTimingLevel,
             // The cap is whatever lock is actually on the card, not something inferred from the boost:
