@@ -214,6 +214,32 @@
                                 </Grid>
                             </StackPanel>
 
+                            <!-- 1c. Core voltage as a signed offset (AMD: applied to the whole curve).
+                                 Belongs here, not in the XOC window: this is the everyday undervolt
+                                 lever on AMD, and XOC is hidden unless a rail or the crossbar is
+                                 available - neither of which RDNA offers, so it was unreachable. -->
+                            <StackPanel Visibility="{Binding IsVoltageOffset, Converter={StaticResource BoolToVis}}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="Voltage Offset (mV)" Style="{StaticResource RowLabel}"/>
+                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                             ToolTip="{Binding VoltageOffsetRangeText}"
+                                             Text="{Binding VoltageOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                                </Grid>
+                                <Grid Margin="0,1,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                                  Command="{Binding NudgeCommand}" CommandParameter="voltoffset:-1"/>
+                                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageOffsetMinMv}" Maximum="{Binding Caps.VoltageOffsetMaxMv}"
+                                            Value="{Binding VoltageOffset, Mode=TwoWay}" TickFrequency="5"
+                                            SmallChange="5" LargeChange="5"/>
+                                    <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                                  Command="{Binding NudgeCommand}" CommandParameter="voltoffset:1"/>
+                                </Grid>
+                                <TextBlock Text="Undervolt: 0 is stock, more negative drops the whole curve."
+                                           Style="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+
                             <!-- 2. Core clock -->
                             <Grid Margin="0,14,0,0" IsEnabled="{Binding Caps.CanSetCoreOffset}">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

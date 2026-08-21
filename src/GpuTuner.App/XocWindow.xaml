@@ -102,27 +102,6 @@
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding XbarOffsetRangeText}"/>
                 </StackPanel>
 
-                <!-- 1c. Core voltage as a signed offset (AMD: applied to the whole curve) -->
-                <StackPanel Margin="0,4,0,0" Visibility="{Binding IsVoltageOffset, Converter={StaticResource BoolToVis}}">
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="Voltage Offset (mV)" Style="{StaticResource RowLabel}"/>
-                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                 ToolTip="{Binding VoltageOffsetRangeText}"
-                                 Text="{Binding VoltageOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                    </Grid>
-                    <Grid Margin="0,1,0,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                  Command="{Binding NudgeCommand}" CommandParameter="voltoffset:-1"/>
-                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageOffsetMinMv}" Maximum="{Binding Caps.VoltageOffsetMaxMv}"
-                            Value="{Binding VoltageOffset, Mode=TwoWay}" TickFrequency="5"/>
-                    <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                  Command="{Binding NudgeCommand}" CommandParameter="voltoffset:1"/>
-                </Grid>
-                    <TextBlock Text="Undervolt: 0 is stock, more negative drops the whole curve."
-                               Style="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
             </StackPanel>
         </Border>
     </DockPanel>
