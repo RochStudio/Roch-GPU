@@ -1,17 +1,21 @@
-﻿<img src="assets/logo.svg" alt="Roch GPU OC" width="560">
+﻿<img src="assets/logo.svg" alt="Roch GPU" width="560">
 
-# Roch GPU OC — beta
+# Roch GPU
 
 [![CI](https://github.com/RochStudio/roch-gpu-oc-beta/actions/workflows/ci.yml/badge.svg)](https://github.com/RochStudio/roch-gpu-oc-beta/actions/workflows/ci.yml)
 
-An Afterburner-style GPU tuning tool for Windows that drives **both NVIDIA and AMD** cards from one
-binary. Clocks, voltage, power limit, fan control, live monitoring, a V/F curve editor, and five
-profile slots.
+An Afterburner-style GPU tuning tool for Windows that drives **both NVIDIA and AMD** cards from
+**one executable**. Clocks, voltage, power limit, fan control, live monitoring, a V/F curve editor,
+and five profile slots.
 
 No kernel driver — everything goes through the vendors' own user-mode libraries (`nvapi64.dll`,
 `atiadlxx.dll`), the same route Afterburner and Adrenalin take.
 
-> **Beta.** Read the [warning](#a-word-of-warning) before using it.
+**`Roch GPU.exe` is the whole program.** Run it with nothing and you get the window; run it with a
+command and you get the CLI. Nothing to install — no .NET runtime, no DLLs beside it.
+
+> Writing clocks and voltages to a GPU can crash, corrupt work in progress, and in the extreme
+> damage hardware. Read the [warning](#a-word-of-warning) before using it.
 
 ---
 
@@ -59,8 +63,8 @@ showing everything greyed out.
 | Zero RPM / memory timing | — | ✓ |
 | V/F curve editor | ✓ | no editable curve on RDNA 4 |
 
-Plus a hardware monitor in its own window, five profile slots, apply-at-logon, tray operation and a
-CLI.
+Plus a hardware monitor in its own window, five profile slots, apply-at-logon, tray operation and
+the CLI.
 
 Offsets snap to the driver's own granularity, so the number on the slider is the number that reaches
 the card. The sliders are also narrowed to a range worth dragging — **−150 to +495 MHz** on core and
@@ -94,10 +98,47 @@ each default is recorded the first time a GPU is seen and restored from there.
 
 ---
 
-## Build and run
+## Running it
 
-No prebuilt release yet. You need **Windows 10/11 x64**, the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-(`winget install Microsoft.DotNet.SDK.8`) and your existing GPU driver.
+Grab `Roch GPU.exe` from the [latest release](../../releases/latest) and run it. That's the whole
+install — it is self-contained, so no .NET runtime is needed.
+
+It asks for administrator rights when the window opens, because writing clocks needs them. The CLI
+half does not ask, so read-only commands work from any terminal:
+
+```powershell
+& '.\Roch GPU.exe' info          # what was detected, and every limit the driver reports
+& '.\Roch GPU.exe' info --mock   # a simulated GPU, for a machine with no supported card
+```
+
+### Command line
+
+Same executable, same engine, no window. The first word decides which half runs — a command gives
+you the CLI, no arguments gives you the window.
+
+```
+info                          what was detected, and every limit the driver reports
+monitor [--interval 1000]     live telemetry until Ctrl+C
+apply --core 120 --mem 800 --power 110 --fan 60
+apply --volt 25 --uv -100     voltage boost %, and an undervolt in mV under the ceiling
+apply --nvvdd 1100 --msvdd 1050 --xbar 30
+                              the gated levers — passing any one arms XOC for that apply,
+                              passing none returns them to driver defaults
+apply-profile "Slot 1"        apply a profile saved in the GUI
+reset                         everything back to driver defaults
+diag                          full dump: capabilities, raw tables, sensors
+startup --enable <profile> | --disable | --status
+```
+
+`--gpu <n>` selects the card, `--mock` uses the simulated GPU. Anything that writes needs an elevated
+terminal; `info`, `monitor` and `--mock` do not.
+
+---
+
+## Building from source
+
+You need **Windows 10/11 x64**, the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+(`winget install Microsoft.DotNet.SDK.10`) and your existing GPU driver.
 
 ```powershell
 git clone https://github.com/RochStudio/roch-gpu-oc-beta.git
@@ -105,56 +146,25 @@ cd roch-gpu-oc-beta
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-That builds, tests and publishes both executables into `dist\`. Then, from an **elevated** terminal:
-
-```powershell
-.\dist\RochGpuOC.exe
-```
-
-Writing clocks needs administrator rights; building does not. If you don't have the SDK, `SETUP.bat`
-does the lot in one double-click.
-
-**No GPU?** Add `--mock` to any CLI command to run against a simulated card.
+That builds, tests and publishes `dist\Roch GPU.exe`. If you don't have the SDK, `SETUP.bat` does the
+lot in one double-click.
 
 **Tests:** `dotnet run --project tests/GpuTuner.Core.Tests -c Release` → `215 passed, 0 failed`. The
-runner is dependency-free, so most of the engine can be changed without a GPU in front of you.
+runner is dependency-free — the whole project has no NuGet packages at all — so most of the engine
+can be changed without a GPU in front of you.
 
 <details>
 <summary>If the build fails</summary>
 
 | Symptom | Cause |
 |---|---|
-| `does not support targeting .NET 8.0` | SDK older than 8.0 — check `dotnet --list-sdks`. |
-| `RochGpuOC.exe` missing from `dist\` | Publishing by hand in the wrong order. The CLI must publish **before** the GUI; both share `dist\` and the second publish cleans the first. |
-| `...\dist\... is denied` | The GUI is still running, tray icon included. |
+| `does not support targeting .NET 10.0` | SDK older than 10.0 — check `dotnet --list-sdks`. |
+| `...\dist\... is denied` | The app is still running, tray icon included. |
 | Builds fine, writes silently do nothing | Not elevated. |
 
-`.\dist\rochoc.exe diag` prints exactly what the driver reported, which is usually the answer.
+`& '.\dist\Roch GPU.exe' diag` prints exactly what the driver reported, which is usually the answer.
 
 </details>
-
----
-
-## Command line
-
-`rochoc.exe` is the same engine without the window.
-
-```
-rochoc info                          what was detected, and every limit the driver reports
-rochoc monitor [--interval 1000]     live telemetry until Ctrl+C
-rochoc apply --core 120 --mem 800 --power 110 --fan 60
-rochoc apply --volt 25 --uv -100     voltage boost %, and an undervolt in mV under the ceiling
-rochoc apply --nvvdd 1100 --msvdd 1050 --xbar 30
-                                     the gated levers — passing any one arms XOC for that apply,
-                                     passing none returns them to driver defaults
-rochoc apply-profile "Slot 1"        apply a profile saved in the GUI
-rochoc reset                         everything back to driver defaults
-rochoc diag                          full dump: capabilities, raw tables, sensors
-rochoc startup --enable <profile> | --disable | --status
-```
-
-`--gpu <n>` selects the card, `--mock` uses the simulated GPU. Anything that writes needs an elevated
-terminal; `info`, `monitor` and `--mock` do not.
 
 ---
 
@@ -178,7 +188,8 @@ open, close it before you launch the game, and the fan curve keeps running.
 ## How it works
 
 `IGpuBackend` is the vendor-neutral seam, and `BackendFactory` picks a backend by *trying to
-initialise each one* rather than sniffing device IDs.
+initialise each one* rather than sniffing device IDs — which is why one executable covers both
+vendors with no per-card build.
 
 On NVIDIA, clocks go through `SetPStates20` and limits through the client policy calls. Voltage is
 the awkward one — NVIDIA exposes no voltage slider, so an undervolt is a V/F curve operation,
@@ -219,42 +230,42 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   cards tested, where NVVDD works on its own.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
+- **Nothing guards an apply-at-logon that crashed the machine.** If a tune hangs the card on boot,
+  the logon task will apply it again on the next one. Hold Shift during logon to skip it, or clear it
+  with `startup --disable` from another account or safe mode.
 - The AMD core-clock offset is a **ceiling**, not a shift. A power-limited card will ignore it —
   check the limiter line before concluding it's broken.
 - Clock snapping applies to **offsets**. A card reporting an absolute memory clock (AMD) is left
   unsnapped, since rounding its stock clock would overclock it just from reading its state.
 - RDNA 4 exposes no editable V/F curve and no temperature limit; both are hidden rather than faked.
 - The V/F curve editor is NVIDIA-only. Multi-GPU is implemented but untested.
-- vBIOS flashing is deliberately out of scope. No signed release binaries yet.
+- vBIOS flashing is deliberately out of scope. The release binary is unsigned, so SmartScreen will
+  warn on first run.
 
 ---
 
 ## Repository layout
 
 ```
-roch-gpu-oc-beta.sln       solution
-assets/                    logo.svg (banner), icon.png, RochGpuOC.ico, screenshots/
+roch-gpu.sln               solution
+assets/                    logo.svg (banner), icon.png, RochGPU.ico, screenshots/
 build.ps1                  build + test + publish to dist\
 setup.ps1                  as above, plus SDK install and launch (driven by SETUP.bat)
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
-src/GpuTuner.App           WPF GUI (RochGpuOC.exe)
-src/GpuTuner.Cli           rochoc.exe, same engine headless
+src/GpuTuner.App           the executable — WPF window, and the entry point that picks a half
+src/GpuTuner.Cli           the command-line half, compiled into the same executable
 tests/GpuTuner.Core.Tests  dependency-free test runner (215 checks, no hardware needed)
 tools/amd                  read-only PowerShell probes used to map the AMD driver surface
 .github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
 ```
 
-The loose `.bat` files are development conveniences: `REBUILD-AND-RUN.bat` wipes `bin`/`obj`/`dist`
-and republishes when an incremental build goes wrong, `BUILD-GUI.bat` builds the GUI alone, and
-`DIAG.bat` self-elevates and dumps `rochoc-diag.txt`. Use `build.ps1` for an ordinary build.
-
 ---
 
 ## Credits
 
 - [NvAPIWrapper](https://github.com/falahati/NvAPIWrapper) by Soroush Falahati — the NVAPI binding,
-  vendored and retargeted to .NET 8.
+  vendored and retargeted to .NET 10.
 - [RadeonTuner](https://github.com/dumbie/RadeonTuner) by dumbie — its Overdrive 8 code revealed the
   in/out parameter convention that had blocked the AMD backend.
 - AMD's [ADL](https://gpuopen-librariesandsdks.github.io/adl/) and

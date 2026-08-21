@@ -1,23 +1,24 @@
-using GpuTuner.Core.Backends;
+﻿using GpuTuner.Core.Backends;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
 using GpuTuner.Core.Services;
 
-// rochoc — headless companion to the GUI. Same engine, no window.
+// "Roch GPU.exe" — headless companion to the GUI. Same engine, no window.
 //
-//   rochoc info                       show GPUs, capabilities, current tuning
-//   rochoc monitor [--interval 1000]  live telemetry until Ctrl+C
-//   rochoc apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--fan 60|auto]
-//   rochoc apply-profile <name> [--gpu 0]     apply a saved GUI profile
-//   rochoc list-profiles
-//   rochoc reset [--gpu 0]
-//   rochoc startup --enable <profile> | --disable | --status
+//   "Roch GPU.exe" info                       show GPUs, capabilities, current tuning
+//   "Roch GPU.exe" monitor [--interval 1000]  live telemetry until Ctrl+C
+//   "Roch GPU.exe" apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--fan 60|auto]
+//   "Roch GPU.exe" apply-profile <name> [--gpu 0]     apply a saved GUI profile
+//   "Roch GPU.exe" list-profiles
+//   "Roch GPU.exe" reset [--gpu 0]
+//   "Roch GPU.exe" startup --enable <profile> | --disable | --status
 //   add --mock anywhere to use the simulated GPU
 
-return Cli.Run(args);
+namespace GpuTuner.Cli;
 
-static class Cli
+/// <summary>The command-line half of the one executable. See <c>EntryPoint</c> for which half runs.</summary>
+public static class CommandLine
 {
     public static int Run(string[] args)
     {
@@ -65,7 +66,7 @@ static class Cli
                     Console.WriteLine(dump);
                     try
                     {
-                        var path = Path.Combine(Directory.GetCurrentDirectory(), "rochoc-diag.txt");
+                        var path = Path.Combine(Directory.GetCurrentDirectory(), "roch-gpu-diag.txt");
                         File.WriteAllText(path, dump);
                         Console.WriteLine($"(also written to {path})");
                     }
@@ -82,7 +83,7 @@ static class Cli
         }
         catch (ArgumentOutOfRangeException)
         {
-            Console.Error.WriteLine("No GPU at that --gpu index. Run 'rochoc info' to list what was found.");
+            Console.Error.WriteLine("No GPU at that --gpu index. Run 'Roch GPU.exe info' to list what was found.");
             return 2;
         }
         catch (GpuBackendException e) { Console.Error.WriteLine("ERROR: " + e.Message); return 1; }
@@ -312,17 +313,17 @@ static class Cli
     }
 
     static void Usage() => Console.WriteLine("""
-        rochoc — Roch GPU OC command line / undervolt CLI (needs admin for writes)
+        "Roch GPU.exe" — Roch GPU command line / undervolt CLI (needs admin for writes)
 
-          rochoc info
-          rochoc monitor [--interval 1000]
-          rochoc apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--fan 60|auto]
+          "Roch GPU.exe" info
+          "Roch GPU.exe" monitor [--interval 1000]
+          "Roch GPU.exe" apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--fan 60|auto]
             the rail and crossbar flags are gated: pass one to arm them, pass none and they go back to driver defaults
-          rochoc apply-profile <name> [--gpu 0]
-          rochoc list-profiles
-          rochoc reset [--gpu 0]
-          rochoc diag                       dump everything the driver reports (for bug reports)
-          rochoc startup --enable <profile> | --disable | --status
+          "Roch GPU.exe" apply-profile <name> [--gpu 0]
+          "Roch GPU.exe" list-profiles
+          "Roch GPU.exe" reset [--gpu 0]
+          "Roch GPU.exe" diag                       dump everything the driver reports (for bug reports)
+          "Roch GPU.exe" startup --enable <profile> | --disable | --status
           (add --mock to any command to use a simulated GPU)
         """);
 }

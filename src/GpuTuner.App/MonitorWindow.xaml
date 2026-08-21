@@ -1,9 +1,9 @@
-<Window x:Class="GpuTuner.App.MonitorWindow"
+﻿<Window x:Class="GpuTuner.App.MonitorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU OC — Hardware Monitor" Height="730" Width="560" MinWidth="380" MinHeight="360"
+        Title="Roch GPU — Hardware Monitor" Height="730" Width="560" MinWidth="380" MinHeight="360"
         WindowStartupLocation="Manual"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>

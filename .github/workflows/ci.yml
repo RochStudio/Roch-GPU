@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  # The engine and its tests are plain net8.0 with no NuGet dependencies and no GPU calls, so they
+  # The engine and its tests are plain net10.0 with no NuGet dependencies and no GPU calls, so they
   # run anywhere. Linux is the cheap, fast gate that catches the common breakage.
   build-and-test:
     name: Build and test (ubuntu)
@@ -20,12 +20,12 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       # GpuTuner.App is WPF. It only compiles off Windows because the csproj sets
       # EnableWindowsTargeting; if that is ever dropped, this step is what notices.
       - name: Build
-        run: dotnet build roch-gpu-oc-beta.sln -c Release --nologo
+        run: dotnet build roch-gpu.sln -c Release --nologo
 
       # The runner is a dependency-free console app: exit code 0 and "N passed, 0 failed".
       - name: Test
@@ -42,17 +42,16 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Build, test and publish
         shell: pwsh
         run: ./build.ps1
 
-      - name: Check both executables landed
+      - name: Check the executable landed
         shell: pwsh
         run: |
-          $missing = @('dist/RochGpuOC.exe', 'dist/rochoc.exe') | Where-Object { -not (Test-Path $_) }
-          if ($missing) { throw "missing after publish: $($missing -join ', ')" }
+          if (-not (Test-Path 'dist/Roch GPU.exe')) { throw "'dist/Roch GPU.exe' missing after publish" }
           Get-ChildItem dist/*.exe | Select-Object Name, Length
 
       # The CLI's --mock backend touches no driver, so the published binary can be smoke-tested on a
@@ -60,13 +59,13 @@ jobs:
       - name: Smoke-test the CLI against the mock GPU
         shell: pwsh
         run: |
-          $out = & ./dist/rochoc.exe info --mock 2>&1 | Out-String
+          $out = & './dist/Roch GPU.exe' info --mock 2>&1 | Out-String
           Write-Host $out
-          if ($LASTEXITCODE -ne 0) { throw "rochoc info --mock exited $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "'Roch GPU.exe' info --mock exited $LASTEXITCODE" }
           if ($out -notmatch 'Simulated') { throw "mock backend did not report a simulated GPU" }
 
       - uses: actions/upload-artifact@v7
         with:
-          name: roch-gpu-oc-dist
+          name: roch-gpu-dist
           path: dist/
           retention-days: 14

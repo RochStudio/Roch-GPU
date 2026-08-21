@@ -1,5 +1,5 @@
 @echo off
-:: GpuTuner one-click setup: installs .NET 8 SDK (if needed), builds, publishes to dist\, launches.
+:: GpuTuner one-click setup: installs the .NET 10 SDK (if needed), builds, publishes to dist\, launches.
 :: Re-launches itself elevated because winget/UAC and the app itself need admin.
 net session >nul 2>&1
 if %errorlevel% neq 0 (

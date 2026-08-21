@@ -1,14 +1,17 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Product>Roch GPU OC</Product>
-    <Version>0.9.0</Version>
-    <InformationalVersion>0.9.0-beta</InformationalVersion>
+    <Product>Roch GPU</Product>
+    <Version>1.0.0</Version>
+    <InformationalVersion>1.0.0</InformationalVersion>
     <Copyright>Copyright (c) 2026</Copyright>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <RootNamespace>GpuTuner.Core</RootNamespace>
+    <!-- Symbols inside the exe rather than beside it: one file to ship, and the crash log
+         still names a line. -->
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\third_party\NvAPIWrapper\NvAPIWrapper.csproj" />

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using GpuTuner.Core.Models;
 
@@ -21,7 +21,7 @@ public sealed class ProfileStore
     public ProfileStore(string? rootDirectory = null)
     {
         RootDirectory = rootDirectory ??
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RochGpuOC");
+            StorageRoot.Resolve();
         Directory.CreateDirectory(ProfilesDirectory);
     }
 
@@ -77,6 +77,25 @@ public sealed class ProfileStore
     {
         foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
         return Path.Combine(ProfilesDirectory, name + ".json");
+    }
+}
+
+/// <summary>
+/// Where profiles and settings live. The folder was named for the tool's old name, and renaming it
+/// outright would orphan every saved profile — and, worse, the recorded rail defaults, which are the
+/// only record of where a card's voltage rails sat before anything touched them. So the old folder
+/// is moved across once, rather than left behind.
+/// </summary>
+internal static class StorageRoot
+{
+    public static string Resolve()
+    {
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        string current = Path.Combine(appData, "Roch GPU");
+        string legacy = Path.Combine(appData, "RochGpuOC");
+        if (!Directory.Exists(current) && Directory.Exists(legacy))
+            try { Directory.Move(legacy, current); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        return current;
     }
 }
 

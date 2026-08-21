@@ -1,26 +1,25 @@
-# Roch GPU OC - build everything and publish a single-folder GUI + CLI into .\dist
-# Requires .NET 8 SDK on Windows: winget install Microsoft.DotNet.SDK.8
+# Roch GPU - build, test, and publish the single executable into .\dist
+# Requires the .NET 10 SDK on Windows: winget install Microsoft.DotNet.SDK.10
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 # $ErrorActionPreference does not apply to native commands: dotnet failing sets $LASTEXITCODE and
-# nothing else. Without these checks a failed build would sail on and publish the previous binaries,
+# nothing else. Without these checks a failed build would sail on and publish the previous binary,
 # reporting success while shipping stale output.
-dotnet build roch-gpu-oc-beta.sln -c Release
+dotnet build roch-gpu.sln -c Release
 if ($LASTEXITCODE -ne 0) { throw "Build failed - see the errors above." }
 
 dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw "Tests failed - see the failures above." }
 
-# CLI first, GUI last: on case-insensitive NTFS the two publishes must not clean each other up.
-dotnet publish src/GpuTuner.Cli/GpuTuner.Cli.csproj -c Release -r win-x64 --self-contained false -o dist
-if ($LASTEXITCODE -ne 0) { throw "CLI publish failed - see the errors above." }
+# One publish, one file. The window and the command line are the same executable: run it with a verb
+# for the CLI, with nothing for the GUI. Self-contained, so no runtime has to be installed.
+dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -o dist
+if ($LASTEXITCODE -ne 0) { throw "Publish failed - is 'Roch GPU.exe' still running? Close it (check the tray) and re-run." }
 
-dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -r win-x64 --self-contained false -o dist
-if ($LASTEXITCODE -ne 0) { throw "GUI publish failed - is RochGpuOC.exe still running? Close it (check the tray) and re-run." }
+if (-not (Test-Path "dist\Roch GPU.exe")) { throw "'dist\Roch GPU.exe' missing after publish." }
+$mb = [math]::Round((Get-Item "dist\Roch GPU.exe").Length / 1MB, 1)
 
-foreach ($exe in "dist\rochoc.exe", "dist\RochGpuOC.exe") {
-    if (-not (Test-Path $exe)) { throw "$exe missing after publish - the publish order may have clobbered it." }
-}
-
-Write-Host "`nDone. Run dist\RochGpuOC.exe (GUI, asks for admin) or dist\rochoc.exe info (CLI)."
+Write-Host "`nDone. dist\Roch GPU.exe ($mb MB)"
+Write-Host "  GUI:  .\dist\'Roch GPU.exe'"
+Write-Host "  CLI:  .\dist\'Roch GPU.exe' info"

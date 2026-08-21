@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -26,7 +26,7 @@ public partial class App : Application
 
     /// <summary>True for the --exit startup-task run: no window, no user, so no modal dialogs.</summary>
     private static bool _headless;
-    public static string LogPath => Path.Combine(Store.RootDirectory, "rochgpuoc.log");
+    public static string LogPath => Path.Combine(Store.RootDirectory, "roch-gpu.log");
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -78,7 +78,7 @@ public partial class App : Application
             {
                 var r = MessageBox.Show(
                     ex.Message + "\n\nStart with a simulated GPU instead (UI demo only)?",
-                    "Roch GPU OC — no supported GPU", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    "Roch GPU — no supported GPU", MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (r == MessageBoxResult.Yes)
                 {
                     Service.Dispose();
@@ -125,7 +125,7 @@ public partial class App : Application
         LogLine("Unhandled: " + e.Exception);
         // A message box in the logon-task run would wait forever on a desktop nobody is looking at.
         if (!_headless)
-            MessageBox.Show(e.Exception.Message, "Roch GPU OC error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(e.Exception.Message, "Roch GPU error", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
         // ShutdownMode is OnExplicitShutdown: if the crash happened before the main window existed
         // (e.g. inside OnStartup), swallowing it would leave a windowless zombie process behind.

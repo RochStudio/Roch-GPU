@@ -1,4 +1,4 @@
-# ROCH GPU OC - AMD probe 4: does the GFX clock offset actually stick?
+﻿# ROCH GPU - AMD probe 4: does the GFX clock offset actually stick?
 #
 # Writes GFXCLK_FMAX = +200, reads it back, and restores it to 0. Four different write shapes are
 # tried; the first that reads back correctly wins. Also samples the live core clock either side, so
@@ -19,7 +19,7 @@ $ID_FMIN   = 1
 $ID_UCLK   = 8
 $ID_VOLT   = 37
 
-W "===== ROCH GPU OC - AMD probe 4 (core clock offset) ====="
+W "===== ROCH GPU - AMD probe 4 (core clock offset) ====="
 W (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
 W ""
 

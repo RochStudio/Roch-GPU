@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace GpuTuner.Core.Services;
@@ -10,7 +10,7 @@ namespace GpuTuner.Core.Services;
 /// </summary>
 public static class StartupTaskService
 {
-    public const string TaskName = "Roch GPU OC Apply Profile";
+    public const string TaskName = "Roch GPU Apply Profile";
 
     public static bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
