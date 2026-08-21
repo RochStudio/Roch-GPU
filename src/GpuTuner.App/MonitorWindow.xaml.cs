@@ -2,7 +2,6 @@
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using GpuTuner.App.Native;
 using GpuTuner.App.ViewModels;
 using GpuTuner.Core.Models;
@@ -100,14 +99,6 @@ public partial class MonitorWindow : Window
     {
         _table?.ResetStats();
         _statsSince = DateTime.UtcNow;
-    }
-
-    /// <summary>Clicking a group heading folds it; clicking a sensor does nothing.</summary>
-    private void Row_Click(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is not FrameworkElement { DataContext: TelemetryRow { IsHeader: true } row }) return;
-        // The title is drawn in caps; the group is keyed by its original spelling.
-        if (_table?.GroupForTitle(row.Name) is { } group) _table.Toggle(group);
     }
 
     private void Render(GpuTelemetry t)

@@ -43,21 +43,19 @@
                         <ItemsControl x:Name="TableRows" HorizontalContentAlignment="Stretch">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border x:Name="band" Padding="0,1" Tag="{Binding Name}" MouseLeftButtonDown="Row_Click"
+                                    <Border x:Name="band" Padding="0,1"
                                             Background="Transparent"
-                                            Visibility="{Binding IsVisible, Converter={StaticResource BoolToVis}}">
+                                           >
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/><ColumnDefinition Width="78"/>
-                                                <ColumnDefinition Width="78"/><ColumnDefinition Width="78"/><ColumnDefinition Width="78"/>
+                                                <ColumnDefinition Width="170"/><ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock x:Name="nm" FontSize="11.5" Margin="4,0,0,0" Foreground="{StaticResource TextBrush}">
-                                                <Run Text="{Binding Marker, Mode=OneWay}"/><Run Text="{Binding Name, Mode=OneWay}"/>
-                                            </TextBlock>
-                                            <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource AccentBrush}"/>
-                                            <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
-                                            <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
-                                            <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock x:Name="nm" Text="{Binding Name}" FontSize="11.5" Margin="4,0,0,0" Foreground="{StaticResource TextBrush}"/>
+                                            <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" FontSize="11.5" Margin="6,0,6,0" Foreground="{StaticResource AccentBrush}"/>
+                                            <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" FontSize="11.5" Margin="6,0,6,0" Foreground="{StaticResource MutedBrush}"/>
                                         </Grid>
                                     </Border>
                                     <DataTemplate.Triggers>
@@ -76,7 +74,6 @@
                                             <Setter TargetName="band" Property="Background" Value="{StaticResource PanelAltBrush}"/>
                                             <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
                                             <Setter TargetName="nm" Property="Foreground" Value="{StaticResource TextBrush}"/>
-                                            <Setter TargetName="band" Property="Cursor" Value="Hand"/>
                                             <Setter TargetName="band" Property="Margin" Value="0,4,0,0"/>
                                         </DataTrigger>
                                     </DataTemplate.Triggers>
