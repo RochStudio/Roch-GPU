@@ -642,6 +642,19 @@ public sealed class TuningService : IDisposable
     // so the curve editor must go through these rather than calling Backend directly from the UI thread.
 
     /// <summary>Read the editable V/F curve points. Empty when the card/driver doesn't expose them.</summary>
+    /// <summary>
+    /// The extra clock counters, taken under the same lock as everything else: the vendor libraries
+    /// are not re-entrant and the poll thread is already in there.
+    /// </summary>
+    public IReadOnlyDictionary<string, double> MeasureExtraClocks()
+    {
+        lock (_lock)
+        {
+            try { return Backend.MeasureExtraClocks(GpuIndex); }
+            catch (GpuBackendException) { return new Dictionary<string, double>(); }
+        }
+    }
+
     public IReadOnlyList<VfCurveSample> ReadVfCurve()
     {
         lock (_lock) { return Backend.ReadVfCurve(GpuIndex); }

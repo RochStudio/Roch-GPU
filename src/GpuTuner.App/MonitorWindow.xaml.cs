@@ -1,6 +1,8 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using GpuTuner.App.Native;
 using GpuTuner.App.ViewModels;
 using GpuTuner.Core.Models;
@@ -71,8 +73,41 @@ public partial class MonitorWindow : Window
 
     private void OnTelemetry(GpuTelemetry t) => Dispatcher.BeginInvoke(() => Render(t));
 
+    /// <summary>
+    /// The sensor table, built from the first sample because that is when the card has said which
+    /// sensors it actually reports. A row for one it never reports would sit at an em dash all
+    /// session, which reads as a fault rather than an absence.
+    /// </summary>
+    private TelemetryTable? _table;
+
+    /// <summary>Only worth reading while the table is on screen; the graphs do not show them.</summary>
+    private System.Collections.Generic.IReadOnlyDictionary<string, double>? ReadDomainClocks() =>
+        ViewTable?.IsChecked == true ? _svc.MeasureExtraClocks() : null;
+
+    private void View_Changed(object sender, RoutedEventArgs e)
+    {
+        if (GraphScroll == null || TableScroll == null) return;   // fires during InitializeComponent
+        bool table = ViewTable.IsChecked == true;
+        TableScroll.Visibility = table ? Visibility.Visible : Visibility.Collapsed;
+        GraphScroll.Visibility = table ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>Clicking a group heading folds it; clicking a sensor does nothing.</summary>
+    private void Row_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: TelemetryRow { IsHeader: true } row })
+            _table?.Toggle(row.Name);
+    }
+
     private void Render(GpuTelemetry t)
     {
+        if (_table == null)
+        {
+            _table = new TelemetryTable(t, _svc.Capabilities);
+            TableRows.ItemsSource = _table.Rows;
+        }
+        _table.Add(t, ReadDomainClocks());
+
         VCore.Text = t.CoreClockMhz.ToString("0");
         if (t.CoreClockMhz > _peakCore)
         {

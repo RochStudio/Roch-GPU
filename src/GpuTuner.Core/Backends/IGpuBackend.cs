@@ -1,5 +1,7 @@
 ﻿using GpuTuner.Core.Models;
 
+using System.Collections.Generic;
+
 namespace GpuTuner.Core.Backends;
 
 /// <summary>
@@ -118,6 +120,13 @@ public interface IGpuBackend : IDisposable
     /// </summary>
     void SetSysOffset(int gpuIndex, int offsetMhz) { }
     void SetVideoOffset(int gpuIndex, int offsetMhz) { }
+
+    /// <summary>
+    /// Clock domains beyond the core and memory ones every card reports, keyed for display. Empty
+    /// by default: these come from a vendor-private counter and most backends have none.
+    /// </summary>
+    IReadOnlyDictionary<string, double> MeasureExtraClocks(int gpuIndex) =>
+        new Dictionary<string, double>();
 
     /// <summary>Force a fan to a fixed duty. fanIndex = -1 means all fans.</summary>
     void SetFanSpeed(int gpuIndex, int fanIndex, int percent);

@@ -653,6 +653,25 @@ public sealed class NvApiBackend : IGpuBackend
     public int SetClockDomainOffset(int gpuIndex, int slot, int offsetMhz) =>
         NvApiPrivate.WriteDomainOffsetMhz(Gpu(gpuIndex).Handle, slot, offsetMhz);
 
+    /// <summary>
+    /// The crossbar, SYS and video counters, for the monitor's table. Three small private calls, so
+    /// this is cheap enough for the poll loop; the full domain walk in ReadClockDomains is not.
+    /// </summary>
+    public IReadOnlyDictionary<string, double> MeasureExtraClocks(int gpuIndex)
+    {
+        var g = Gpu(gpuIndex);
+        var d = new Dictionary<string, double>(3);
+        try
+        {
+            d["xbar"] = NvApiPrivate.MeasureClockKhz(g.Handle, NvApiPrivate.DomainXbar) / 1000.0;
+            d["sys"] = NvApiPrivate.MeasureClockKhz(g.Handle, 2) / 1000.0;
+            d["video"] = NvApiPrivate.MeasureClockKhz(g.Handle, 21) / 1000.0;
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+        return d;
+    }
+
     public void SetSysOffset(int gpuIndex, int offsetMhz) =>
         SetDomain(gpuIndex, NvApiPrivate.SlotSys, offsetMhz, "SYS");
 

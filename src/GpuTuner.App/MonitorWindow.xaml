@@ -18,8 +18,71 @@
 
         <Border Style="{StaticResource Panel}" Padding="12,10">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="HARDWARE MONITOR" Style="{StaticResource SectionTitle}"/>
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <Grid DockPanel.Dock="Top">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="HARDWARE MONITOR" Style="{StaticResource SectionTitle}"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                        <RadioButton x:Name="ViewGraphs" Content="Graphs" IsChecked="True" GroupName="MonView"
+                                     Checked="View_Changed" Margin="0,0,10,0" Foreground="{StaticResource MutedBrush}"/>
+                        <RadioButton x:Name="ViewTable" Content="Telemetry" GroupName="MonView"
+                                     Checked="View_Changed" Foreground="{StaticResource MutedBrush}"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Every sensor with its running figures, the way a monitoring tool shows them:
+                     four columns, grouped, and each group folds away. -->
+                <ScrollViewer x:Name="TableScroll" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                    <StackPanel Margin="0,0,10,0">
+                        <Grid Margin="0,0,0,3">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/><ColumnDefinition Width="78"/>
+                                <ColumnDefinition Width="78"/><ColumnDefinition Width="78"/><ColumnDefinition Width="78"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Parameter" Style="{StaticResource SectionTitle}" Margin="4,0,0,0"/>
+                            <TextBlock Grid.Column="1" Text="Current" Style="{StaticResource SectionTitle}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                            <TextBlock Grid.Column="2" Text="Min" Style="{StaticResource SectionTitle}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                            <TextBlock Grid.Column="3" Text="Max" Style="{StaticResource SectionTitle}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                            <TextBlock Grid.Column="4" Text="Average" Style="{StaticResource SectionTitle}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
+                        </Grid>
+                        <ItemsControl x:Name="TableRows">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border x:Name="band" Padding="0,1" Tag="{Binding Name}" MouseLeftButtonDown="Row_Click"
+                                            Background="Transparent"
+                                            Visibility="{Binding IsVisible, Converter={StaticResource BoolToVis}}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/><ColumnDefinition Width="78"/>
+                                                <ColumnDefinition Width="78"/><ColumnDefinition Width="78"/><ColumnDefinition Width="78"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="nm" FontSize="11.5" Margin="4,0,0,0" Foreground="{StaticResource TextBrush}">
+                                                <Run Text="{Binding Marker, Mode=OneWay}"/><Run Text="{Binding Name, Mode=OneWay}"/>
+                                            </TextBlock>
+                                            <TextBlock Grid.Column="1" Text="{Binding Current}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource AccentBrush}"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock Grid.Column="4" Text="{Binding Average}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                        </Grid>
+                                    </Border>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IsBanded}" Value="True">
+                                            <Setter TargetName="band" Property="Background" Value="{StaticResource PanelAltBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                                            <Setter TargetName="band" Property="Background" Value="{StaticResource PanelAltBrush}"/>
+                                            <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
+                                            <Setter TargetName="nm" Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                            <Setter TargetName="band" Property="Cursor" Value="Hand"/>
+                                            <Setter TargetName="band" Property="Margin" Value="0,4,0,0"/>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="GraphScroll" VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="GraphStack" Margin="0,0,10,0">
 
                         <!-- Each row: title + live value on top, graph under. -->
