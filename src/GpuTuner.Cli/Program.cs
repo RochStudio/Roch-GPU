@@ -1,4 +1,4 @@
-﻿using GpuTuner.Core.Backends;
+using GpuTuner.Core.Backends;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
@@ -313,7 +313,7 @@ public static class CommandLine
     }
 
     static void Usage() => Console.WriteLine("""
-        RochGPU.exe — ROCH GPU command line / undervolt CLI (needs admin for writes)
+        RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
 
           RochGPU.exe info
           RochGPU.exe monitor [--interval 1000]

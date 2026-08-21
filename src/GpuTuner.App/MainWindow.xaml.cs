@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
@@ -76,7 +76,7 @@ public partial class MainWindow : Window
             // the limiter line, which is the one thing on this window fed by telemetry.
             if (_svc.BackgroundMode) return;
             _vm.Telemetry = t;
-            if (_tray != null) _tray.Text = $"ROCH GPU — {t.TemperatureC:0}°C, {t.CoreClockMhz:0} MHz, fan {t.FanPercent:0}%";
+            if (_tray != null) _tray.Text = $"Roch GPU — {t.TemperatureC:0}°C, {t.CoreClockMhz:0} MHz, fan {t.FanPercent:0}%";
         });
     }
 
@@ -159,7 +159,7 @@ public partial class MainWindow : Window
                 // Falls back to the generic Windows icon rather than failing the tray entirely, which
                 // is what SetupTray's catch would otherwise do to the Show/Exit menu.
                 Icon = _trayIcon ?? System.Drawing.SystemIcons.Application,
-                Text = "ROCH GPU",
+                Text = "Roch GPU",
                 Visible = true
             };
             var menu = new WinForms.ContextMenuStrip();
@@ -246,7 +246,7 @@ public partial class MainWindow : Window
         // Nothing will arrive to refresh these now, so don't leave the last sample on screen
         // pretending to still be current.
         _vm.Telemetry = null;
-        if (_tray != null) _tray.Text = "ROCH GPU";
+        if (_tray != null) _tray.Text = "Roch GPU";
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
@@ -261,7 +261,7 @@ public partial class MainWindow : Window
         {
             var r = MessageBox.Show(
                 "Fan control is active. Minimize to tray to keep it running?\n\nYes = minimize to tray\nNo = exit (fans return to automatic)",
-                "ROCH GPU", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                "Roch GPU", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
             if (r == MessageBoxResult.Cancel) { e.Cancel = true; return; }
             if (r == MessageBoxResult.Yes) { e.Cancel = true; MinimizeToTray(); return; }
         }
