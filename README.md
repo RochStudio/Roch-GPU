@@ -224,16 +224,15 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
 
 ## Known limitations
 
-- **The video clock offset works; the SYS one may not.** Both come from the crossbar's private
-  family and both accept a write and read it back. Video moves — confirmed on a 5070 Ti against
-  third-party monitoring. SYS does not: ten samples at +300 MHz gave the same distribution as ten
-  at zero (mean 660 MHz either way), while the core domain, written through the identical code
-  path, shifts by exactly the amount asked at 45 MHz. Under load it makes no difference either:
-  3DMark 11 Graphics Test 2 at 1440p scored 74.99 with no offset and 75.01 at +105 MHz, a 0.03%
-  gap against run-to-run variance of roughly half a percent. The control is offered because the
-  driver offers it, not because a gain has been demonstrated.
-  `RochGPU.exe domains` reads each domain's own counter, which is how to check this on a card —
-  monitoring tools do not expose the SYS clock.
+- **The SYS and video clock offsets both work, and neither is worth much yet.** Video was confirmed
+  against third-party monitoring. SYS is idle-gated, which made it look inert at first: the domain
+  sits pinned near 660 MHz with nothing to do, and an offset of +300 changes that by nothing at all.
+  Under load it runs about 2378 MHz and the offset lands on the MHz — +105 measured +104, +300
+  measured +299, and returning to zero came back to 2374. It buys no frames on the one workload
+  tested, 3DMark 11 Graphics Test 2 at 1440p scoring 74.99 against 75.01, so the clock moves and the
+  bottleneck is elsewhere.
+  Check a domain with `RochGPU.exe domains`, which reads each one's own counter — but **check it
+  under load**. Monitoring tools do not expose the SYS clock, and an idle reading of it says nothing.
 - **The crossbar clock is tunable on Blackwell, read-only on Ada.** A 5070 Ti takes a +30 MHz offset
   and reads it back. A 4070 Ti reports a ±1000 MHz range and refuses every non-zero value while 0
   succeeds — a rejection of the value, not of the request shape, so that range is the width of the
