@@ -2,7 +2,7 @@
 
 # Roch GPU
 
-[![CI](https://github.com/RochStudio/roch-gpu-oc-beta/actions/workflows/ci.yml/badge.svg)](https://github.com/RochStudio/roch-gpu-oc-beta/actions/workflows/ci.yml)
+[![CI](https://github.com/RochStudio/roch-gpu/actions/workflows/ci.yml/badge.svg)](https://github.com/RochStudio/roch-gpu/actions/workflows/ci.yml)
 
 An Afterburner-style GPU tuning tool for Windows that drives **both NVIDIA and AMD** cards from
 **one executable**. Clocks, voltage, power limit, fan control, live monitoring, a V/F curve editor,
@@ -141,8 +141,8 @@ You need **Windows 10/11 x64**, the [.NET 10 SDK](https://dotnet.microsoft.com/d
 (`winget install Microsoft.DotNet.SDK.10`) and your existing GPU driver.
 
 ```powershell
-git clone https://github.com/RochStudio/roch-gpu-oc-beta.git
-cd roch-gpu-oc-beta
+git clone https://github.com/RochStudio/roch-gpu.git
+cd roch-gpu
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
