@@ -244,13 +244,14 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   delta field rather than a promise.
 - **MSVDD is Blackwell-only.** The rail control is present on a 5070 Ti and absent on the 40-series
   cards tested, where NVVDD works on its own.
-- **Hot spot and memory chip temperature are not read on Blackwell.** The private thermal call returns exactly two
-  sensors on a 5070 Ti — one tracking the public GPU reading within half a degree, one about eight
-  degrees above it where memory junction sits — and neither hot spot nor a separate chip reading
-  among them. Established rather than
-  assumed: every struct version and mask width the call accepts returns the same two slots, and a
-  three-bit mask returns as much as a nineteen-bit one, so the mask is not selecting sensors at all.
-  A monitoring tool that shows hot spot on this card is reading it somewhere this build does not.
+- **Hot spot and memory chip temperature are not exposed on Blackwell.** Not a gap in the reading:
+  the thermal call has three versions, and the driver names them itself when handed a wrong one
+  (`Ver-1:1003c Ver-2:200a8 Ver-3:334c8`, packing as version|size). v2 is the 0xA8 struct already in
+  use; v3 is 0x34C8 bytes and wants its mask at +0x08 rather than +0x04, laying out eight channels
+  of 0x8C as a reading plus a type. Read that way, a 5070 Ti populates exactly two of the eight —
+  GPU and memory junction — with 255 °C in the rest, the same marker v2 uses for an absent sensor.
+  Hot spot and the memory chip reading are in neither version. `RochGPU.exe diag` prints all eight
+  slots, so a card that populates more will show it.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **Nothing guards an apply-at-logon that crashed the machine.** If a tune hangs the card on boot,

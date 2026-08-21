@@ -11,7 +11,7 @@ Driver 610.88   vBIOS 98.03.58.00.43
 --- Thermal policy ---
 
 --- Voltage ---
-  current      = 810 mV
+  current      = 800 mV
   boost percent= 0
   lock (cap)   = 1000 mV   (0 = none)
   mechanism    = none
@@ -38,20 +38,20 @@ Driver 610.88   vBIOS 98.03.58.00.43
   entry points resolved: info=True control=True set=True measure=True
   GetInfo status    : 0 (Ok)
   GetControl status : 0 (Ok)
-  measured clocks   : core 496 MHz, xbar 885 MHz, memory 404 MHz
-  xbar : core ratio = 1.7859
+  measured clocks   : core 495 MHz, xbar 885 MHz, memory 405 MHz
+  xbar : core ratio = 1.7863
   info entry types  : 0,1,4,2,21,20,31,6,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
   type-1 entry index: 1
   domains listed (slot / type / range / predicted control offset):
     slot  0  type   0   -1000..1000   MHz  -> +0x0238   measured    494 MHz
-    slot  1  type   1   -1000..1000   MHz  -> +0x053C   measured    885 MHz
-    slot  2  type   4  no range found      -> +0x0840   measured    404 MHz
+    slot  1  type   1   -1000..1000   MHz  -> +0x053C   measured    884 MHz
+    slot  2  type   4  no range found      -> +0x0840   measured    403 MHz
     slot  3  type   2   -1000..1000   MHz  -> +0x0B44   measured    660 MHz
-    slot  4  type  21   -1000..1000   MHz  -> +0x0E48   measured    449 MHz
-    slot  5  type  20  no range found      -> +0x114C   measured   1693 MHz
+    slot  4  type  21   -1000..1000   MHz  -> +0x0E48   measured    441 MHz
+    slot  5  type  20  no range found      -> +0x114C   measured   1695 MHz
     slot  6  type  31  no range found      -> +0x1450   measured      0 MHz
-    slot  7  type   6  no range found      -> +0x1754   measured    675 MHz
-    slot  8  type   3  no range found      -> +0x1A58   measured    539 MHz
+    slot  7  type   6  no range found      -> +0x1754   measured    674 MHz
+    slot  8  type   3  no range found      -> +0x1A58   measured    541 MHz
   type-1 entry words (offset: value  [signed lo/hi halves]):
       +0x000             1  0x00000001  [     1 /      0]
       +0x004             0  0x00000000  [     0 /      0]
@@ -117,7 +117,7 @@ Driver 610.88   vBIOS 98.03.58.00.43
 
 --- Clock domains (all 32 slots, not just the named ones) ---
   current  2 of 32 slots populated: [0, 4]
-      slot  0      667.0 MHz  Graphics
+      slot  0      495.0 MHz  Graphics
       slot  4      405.0 MHz  Memory
   base     2 of 32 slots populated: [0, 4]
       slot  0    2,295.0 MHz  Graphics
@@ -305,35 +305,27 @@ Driver 610.88   vBIOS 98.03.58.00.43
   [126]   1240 mV  stock  3247 MHz  live  3547 MHz
 
 --- Voltage rail status entries (looking for a per-rail voltage) ---
-  rail 0: +0x00=3 +0x04=810000 +0x08=1035000 +0x0C=1055000 +0x10=1200000 +0x14=1035000 +0x18=800000 +0x20=800000 +0x6C=810000
-  rail 1: +0x00=3 +0x04=810000 +0x08=985000 +0x0C=1005000 +0x10=1200000 +0x14=985000 +0x18=800000 +0x20=800000 +0x6C=810000
+  rail 0: +0x00=3 +0x04=800000 +0x08=1035000 +0x0C=1055000 +0x10=1200000 +0x14=1035000 +0x18=800000 +0x20=800000 +0x6C=800000
+  rail 1: +0x00=3 +0x04=800000 +0x08=985000 +0x0C=1005000 +0x10=1200000 +0x14=985000 +0x18=800000 +0x20=800000 +0x6C=800000
 
 --- Client power topology probe (looking for board watts) ---
   ClientPowerTopologyGetStatus (0xEDCF624E):
-    0x048 x v1  +0x004=2 +0x010=7058 +0x018=1 +0x020=7148
+    0x048 x v1  +0x004=2 +0x010=5820 +0x018=1 +0x020=5869
   ClientPowerTopologyGetInfo (0xA4DFD3F2):
     0x018 x v1  +0x004=513 +0x00C=1
   ClientPowerPoliciesGetInfo (0x34206D86):
     0x0B8 x v1  +0x004=257 +0x014=83333 +0x020=100000 +0x02C=116667
     0x8C8 x v2  +0x004=257 +0x018=83333 +0x024=100000 +0x030=116667
 
---- Other sensor entry points (which this driver exposes at all) ---
-  0x65FE3AAD GetThermalSensors (in use)     exposed, no size in 0x08..0x600 accepted
-  0xE3640A56 GetThermalSettings             exposed, no size in 0x08..0x600 accepted
-  0x0D258BB5 ClientThermalPoliciesGetInfo   0x058 x v1  (all zero)
-  0x0D258BB5 ClientThermalPoliciesGetInfo   0x068 x v2  (all zero)
-  0x0D258BB5 ClientThermalPoliciesGetInfo   0x578 x v3  (all zero)
-  0xE9C425A1 ClientThermalPoliciesGetStatus 0x028 x v1  (all zero)
-  0xE9C425A1 ClientThermalPoliciesGetStatus 0x038 x v2  (all zero)
-  0xE9C425A1 ClientThermalPoliciesGetStatus 0x548 x v3  (all zero)
-  0x465F9BCF ClientVoltRailsGetStatus       0x04C x v1  +0x028=810000
-  0x43D9B26A voltage ADC (lead)             0x340 x v1  (all zero)
-  0xC16C7E2C GetVoltageDomainsStatus        exposed, no size in 0x08..0x600 accepted
-  0x2AE9D80A GetVoltageStep                 not exposed
-
---- ADC family with a mask (looking for a per-rail voltage) ---
-  mask 0x00000001 at +0x04: +0x048=-1 +0x04C=800000 +0x050=54165376
-  mask 0x00000003 at +0x04: +0x048=-1 +0x04C=800000 +0x050=54165376 +0x094=-1 +0x098=800000 +0x09C=54099840
+--- Thermal channels (v3, all slots) ---
+  slot 0  type 2  no sensor
+  slot 1  type 2  25.7 °C
+  slot 2  type 4  34.0 °C
+  slot 3  type 2  no sensor
+  slot 4  type 2  no sensor
+  slot 5  type 2  no sensor
+  slot 6  type 2  no sensor
+  slot 7  type 2  no sensor
 
 --- Voltage lock (SetClockBoostLock) ---
   domain=Graphics mode=Manual voltage=1000 mV
@@ -346,17 +338,17 @@ Driver 610.88   vBIOS 98.03.58.00.43
   -> interpreted lock = 1000 mV (0 = unlocked)
 
 --- Coolers ---
-  id=1 policy=Manual level=50% rpm=1569 range=[30..100]
-  id=2 policy=Manual level=50% rpm=1573 range=[30..100]
-  id=3 policy=Manual level=50% rpm=1571 range=[30..100]
+  id=1 policy=Manual level=50% rpm=1572 range=[30..100]
+  id=2 policy=Manual level=50% rpm=1569 range=[30..100]
+  id=3 policy=Manual level=50% rpm=1572 range=[30..100]
 
 --- Thermal settings (public API sensors) ---
-  target=GPU ctrl=GPU temp=26
+  target=GPU ctrl=GPU temp=25
 
 --- Private thermal sensors (all 32 slots) ---
   probed mask = 0x7FFFF
   slot[ 0] = 255.0 °C
-  slot[ 1] = 26.8 °C
+  slot[ 1] = 25.7 °C
   slot[ 2] = 34.0 °C
   slot[ 3] = 255.0 °C
   slot[ 4] = 255.0 °C
@@ -377,19 +369,19 @@ Driver 610.88   vBIOS 98.03.58.00.43
   -> interpreted hotspot=NaN  memory=34.0
 
 --- Private thermal shapes (version x mask -> live slots) ---
-  v1  mask=0x0007FFFF  status=0     [1]=26.8 [2]=34.0
-  v1  mask=0x0000FFFF  status=0     [1]=26.8 [2]=34.0
+  v1  mask=0x0007FFFF  status=0     [1]=25.7 [2]=34.0
+  v1  mask=0x0000FFFF  status=0     [1]=25.7 [2]=34.0
   v1  mask=0xFFFFFFFF  status=-1    (none)
-  v1  mask=0x000001FF  status=0     [1]=26.8 [2]=34.0
-  v1  mask=0x00000007  status=0     [1]=26.8 [2]=34.0
-  v2  mask=0x0007FFFF  status=0     [1]=26.8 [2]=34.0
-  v2  mask=0x0000FFFF  status=0     [1]=26.8 [2]=34.0
+  v1  mask=0x000001FF  status=0     [1]=25.7 [2]=34.0
+  v1  mask=0x00000007  status=0     [1]=25.7 [2]=34.0
+  v2  mask=0x0007FFFF  status=0     [1]=25.7 [2]=34.0
+  v2  mask=0x0000FFFF  status=0     [1]=25.7 [2]=34.0
   v2  mask=0xFFFFFFFF  status=-1    (none)
-  v2  mask=0x000001FF  status=0     [1]=26.8 [2]=34.0
-  v2  mask=0x00000007  status=0     [1]=26.8 [2]=34.0
-  v3  mask=0x0007FFFF  status=0     [1]=26.8 [2]=34.0
-  v3  mask=0x0000FFFF  status=0     [1]=26.8 [2]=34.0
+  v2  mask=0x000001FF  status=0     [1]=25.7 [2]=34.0
+  v2  mask=0x00000007  status=0     [1]=25.7 [2]=34.0
+  v3  mask=0x0007FFFF  status=0     [1]=25.7 [2]=34.0
+  v3  mask=0x0000FFFF  status=0     [1]=25.7 [2]=34.0
   v3  mask=0xFFFFFFFF  status=-1    (none)
-  v3  mask=0x000001FF  status=0     [1]=26.8 [2]=34.0
-  v3  mask=0x00000007  status=0     [1]=26.8 [2]=34.0
+  v3  mask=0x000001FF  status=0     [1]=25.7 [2]=34.0
+  v3  mask=0x00000007  status=0     [1]=25.7 [2]=34.0
 

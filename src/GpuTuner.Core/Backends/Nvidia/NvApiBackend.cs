@@ -1746,41 +1746,19 @@ public sealed class NvApiBackend : IGpuBackend
             }
         });
 
-        Section("Other sensor entry points (which this driver exposes at all)", () =>
+        Section("Thermal channels (v3, all slots)", () =>
         {
-            // Hot spot is not in GetThermalSensors on Blackwell and MSVDD's own voltage is not in the
-            // rail status call, both shown above. Something reads them, so sweep the other documented
-            // sensor entry points: whether each resolves at all is already an answer.
-            (uint id, string name)[] candidates =
-            {
-                (0x65FE3AADu, "GetThermalSensors (in use)"),
-                (0xE3640A56u, "GetThermalSettings"),
-                (0x0D258BB5u, "ClientThermalPoliciesGetInfo"),
-                (0xE9C425A1u, "ClientThermalPoliciesGetStatus"),
-                (0x465F9BCFu, "ClientVoltRailsGetStatus"),
-                (0x43D9B26Au, "voltage ADC (lead)"),
-                (0xC16C7E2Cu, "GetVoltageDomainsStatus"),
-                (0x2AE9D80Au, "GetVoltageStep"),
-            };
-            foreach (var (id, name) in candidates)
-            {
-                var hits = NvApiPrivate.SweepShapes(g.Handle, id, 0x08, 0x600, new[] { 1, 2, 3 }, maxWords: 14);
-                if (!NvApiPrivate.Exposes(id)) { sb.AppendLine($"  0x{id:X8} {name,-30} not exposed"); continue; }
-                if (hits.Count == 0) { sb.AppendLine($"  0x{id:X8} {name,-30} exposed, no size in 0x08..0x600 accepted"); continue; }
-                foreach (var h in hits)
-                    sb.AppendLine($"  0x{id:X8} {name,-30} 0x{h.Size:X3} x v{h.Version}  {h.Words}");
-            }
-        });
-
-        Section("ADC family with a mask (looking for a per-rail voltage)", () =>
-        {
-            // 0x43D9B26A accepts 0x340 x v1 and answers with an empty buffer, which in this family
-            // means a mask has not been written. The offset differs per family, so try each.
-            var hits = NvApiPrivate.ProbeWithMask(g.Handle, 0x43D9B26Au, 0x340, 1,
-                new[] { -1, 0x04, 0x08, 0x0C }, new uint[] { 0x1, 0x3, 0xF, 0xFFFFFFFF });
-            if (hits.Count == 0) { sb.AppendLine("  no mask offset produced data"); return; }
-            foreach (var h in hits)
-                sb.AppendLine($"  mask 0x{h.Mask:X8} at +0x{h.MaskOffset:X2}: {h.Words}");
+            // The richest version of the thermal call. The driver names its own versions when handed
+            // a wrong one — Ver-1:1003c Ver-2:200a8 Ver-3:334c8 — which pack as version|size, so v3
+            // is 0x34C8 bytes and v2's 0xA8 is exactly the struct the reader already uses. v3 wants
+            // its mask at +0x08 where v2 wants it at +0x04, and lays out eight channels of 0x8C: a
+            // reading, then a type. 255.0 is the marker for a slot with no sensor behind it.
+            //
+            // On a 5070 Ti only two slots are ever populated, which is the answer to where hot spot
+            // is: not here, at any version.
+            foreach (var ch in NvApiPrivate.ReadThermalChannels(g.Handle))
+                sb.AppendLine($"  slot {ch.Slot}  type {ch.Type}  " +
+                              (ch.Present ? $"{ch.Celsius:0.0} °C" : "no sensor"));
         });
 
         Section("Voltage lock (SetClockBoostLock)", () =>

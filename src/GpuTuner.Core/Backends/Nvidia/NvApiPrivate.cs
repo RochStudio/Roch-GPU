@@ -704,6 +704,54 @@ internal static class NvApiPrivate
         finally { Marshal.FreeHGlobal(buf); }
     }
 
+    /// <summary>One call with an explicit shape and mask; returns the buffer as words.</summary>
+    public static int[] CallRaw(PhysicalGPUHandle handle, uint id, int size, int version,
+                                int maskOffset, uint mask, out int status)
+    {
+        status = -1;
+        var ptr = QueryInterface64(id);
+        if (ptr == IntPtr.Zero) return Array.Empty<int>();
+        var fn = Marshal.GetDelegateForFunctionPointer<RawDelegate>(ptr);
+        var buf = Marshal.AllocHGlobal(size);
+        try
+        {
+            for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, size | (version << 16));
+            if (maskOffset >= 0 && maskOffset + 4 <= size) Marshal.WriteInt32(buf, maskOffset, unchecked((int)mask));
+            try { status = fn(handle.MemoryAddress, buf); }
+            catch { return Array.Empty<int>(); }
+            var words = new int[size / 4];
+            for (int i = 0; i < words.Length; i++) words[i] = Marshal.ReadInt32(buf, i * 4);
+            return words;
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    /// <summary>One thermal channel from the v3 struct.</summary>
+    public readonly record struct ThermalChannel(int Slot, int Type, bool Present, double Celsius);
+
+    private const int ThermV3Size = 0x34C8, ThermV3Mask = 0x08, ThermV3Entry0 = 0x48, ThermV3Stride = 0x8C, ThermV3Channels = 8;
+
+    /// <summary>
+    /// The v3 thermal channels: eight slots, each a reading and a type, with 255 °C meaning no
+    /// sensor. v2 — the version the ordinary reader uses — exposes the same two live channels, so
+    /// this is here to record what the fuller struct holds rather than because it finds more.
+    /// </summary>
+    public static List<ThermalChannel> ReadThermalChannels(PhysicalGPUHandle handle)
+    {
+        var outp = new List<ThermalChannel>();
+        var w = CallRaw(handle, 0x65FE3AAD, ThermV3Size, 3, ThermV3Mask, 0xFF, out int status);
+        if (status != 0 || w.Length == 0) return outp;
+        for (int i = 0; i < ThermV3Channels; i++)
+        {
+            int at = (ThermV3Entry0 + i * ThermV3Stride) / 4;
+            if (at + 1 >= w.Length) break;
+            double c = w[at] / 256.0;
+            outp.Add(new ThermalChannel(i, w[at + 1], c < 200, c));
+        }
+        return outp;
+    }
+
     /// <summary>Whether the driver exports this private entry point at all.</summary>
     public static bool Exposes(uint id) => QueryInterface64(id) != IntPtr.Zero;
 
@@ -744,45 +792,6 @@ internal static class NvApiPrivate
                 finally { Marshal.FreeHGlobal(buf); }
             }
         return hits;
-    }
-
-    /// <summary>
-    /// Call an arbitrary private entry point with a set of shapes and report what comes back. The
-    /// same sweep that identified the crossbar's struct, made reusable: a status of 0 with non-zero
-    /// words is a live call, and everything else narrows the search.
-    /// </summary>
-    public static List<(int Size, int Version, int Status, string Words)> ProbeUnknown(
-        PhysicalGPUHandle handle, uint id, int[] sizes, int[] versions, int maxWords = 24)
-    {
-        var results = new List<(int, int, int, string)>();
-        var ptr = QueryInterface64(id);
-        if (ptr == IntPtr.Zero) return results;
-        var fn = Marshal.GetDelegateForFunctionPointer<RawDelegate>(ptr);
-
-        foreach (int size in sizes)
-            foreach (int version in versions)
-            {
-                var buf = Marshal.AllocHGlobal(size);
-                try
-                {
-                    for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
-                    Marshal.WriteInt32(buf, 0, size | (version << 16));
-                    int status;
-                    try { status = fn(handle.MemoryAddress, buf); }
-                    catch { status = -99; }
-
-                    var words = new List<string>();
-                    if (status == 0)
-                        for (int off = 4; off + 4 <= size && words.Count < maxWords; off += 4)
-                        {
-                            int w = Marshal.ReadInt32(buf, off);
-                            if (w != 0) words.Add($"+0x{off:X3}={w}");
-                        }
-                    results.Add((size, version, status, words.Count == 0 ? "(none)" : string.Join(" ", words)));
-                }
-                finally { Marshal.FreeHGlobal(buf); }
-            }
-        return results;
     }
 
     public static IReadOnlyList<VoltRail> ReadVoltRails(PhysicalGPUHandle handle)
