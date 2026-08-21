@@ -51,7 +51,7 @@ jobs:
       - name: Check the executable landed
         shell: pwsh
         run: |
-          if (-not (Test-Path 'dist/ROCH GPU.exe')) { throw "'dist/ROCH GPU.exe' missing after publish" }
+          if (-not (Test-Path 'dist/RochGPU.exe')) { throw "'dist/RochGPU.exe' missing after publish" }
           Get-ChildItem dist/*.exe | Select-Object Name, Length
 
       # The CLI's --mock backend touches no driver, so the published binary can be smoke-tested on a
@@ -59,9 +59,9 @@ jobs:
       - name: Smoke-test the CLI against the mock GPU
         shell: pwsh
         run: |
-          $out = & './dist/ROCH GPU.exe' info --mock 2>&1 | Out-String
+          $out = & './dist/RochGPU.exe' info --mock 2>&1 | Out-String
           Write-Host $out
-          if ($LASTEXITCODE -ne 0) { throw "'ROCH GPU.exe' info --mock exited $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "'RochGPU.exe' info --mock exited $LASTEXITCODE" }
           if ($out -notmatch 'Simulated') { throw "mock backend did not report a simulated GPU" }
 
       - uses: actions/upload-artifact@v7

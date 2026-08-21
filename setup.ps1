@@ -23,17 +23,17 @@ dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build
 if ($LASTEXITCODE -ne 0) { throw "Tests failed - see the failures above." }
 
 dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -o dist
-if ($LASTEXITCODE -ne 0) { throw "Publish failed - is 'ROCH GPU.exe' still running? Close it (check the tray) and re-run." }
-if (-not (Test-Path "dist\ROCH GPU.exe")) { throw "'dist\ROCH GPU.exe' missing after publish." }
+if ($LASTEXITCODE -ne 0) { throw "Publish failed - is 'RochGPU.exe' still running? Close it (check the tray) and re-run." }
+if (-not (Test-Path "dist\RochGPU.exe")) { throw "'dist\RochGPU.exe' missing after publish." }
 
 # --- Step 3: report what was detected, then launch
 Write-Host "`n=== ROCH GPU info ===" -ForegroundColor Green
-$info = & ".\dist\ROCH GPU.exe" info
+$info = & ".\dist\RochGPU.exe" info
 $info | Write-Host
 $info | Out-File -FilePath (Join-Path $PSScriptRoot "roch-gpu-info.txt") -Encoding utf8
 
 Write-Host "`nLaunching ROCH GPU..." -ForegroundColor Green
-Start-Process (Join-Path $PSScriptRoot "dist\ROCH GPU.exe")
+Start-Process (Join-Path $PSScriptRoot "dist\RochGPU.exe")
 Write-Host "Done."
-Write-Host "  CLI:         .\dist\'ROCH GPU.exe' info"
-Write-Host "  Diagnostics: .\dist\'ROCH GPU.exe' diag"
+Write-Host "  CLI:         .\dist\RochGPU.exe info"
+Write-Host "  Diagnostics: .\dist\RochGPU.exe diag"

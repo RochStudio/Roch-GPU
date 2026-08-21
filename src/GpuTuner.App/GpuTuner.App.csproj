@@ -14,7 +14,7 @@
          MouseEventArgs/Cursors ambiguous with the WPF types. Every file lists its usings explicitly. -->
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>ROCH GPU</AssemblyName>
+    <AssemblyName>RochGPU</AssemblyName>
     <StartupObject>GpuTuner.App.EntryPoint</StartupObject>
     <RootNamespace>GpuTuner.App</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>

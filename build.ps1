@@ -15,11 +15,11 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed - see the failures above." }
 # One publish, one file. The window and the command line are the same executable: run it with a verb
 # for the CLI, with nothing for the GUI. Self-contained, so no runtime has to be installed.
 dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -o dist
-if ($LASTEXITCODE -ne 0) { throw "Publish failed - is 'ROCH GPU.exe' still running? Close it (check the tray) and re-run." }
+if ($LASTEXITCODE -ne 0) { throw "Publish failed - is 'RochGPU.exe' still running? Close it (check the tray) and re-run." }
 
-if (-not (Test-Path "dist\ROCH GPU.exe")) { throw "'dist\ROCH GPU.exe' missing after publish." }
-$mb = [math]::Round((Get-Item "dist\ROCH GPU.exe").Length / 1MB, 1)
+if (-not (Test-Path "dist\RochGPU.exe")) { throw "'dist\RochGPU.exe' missing after publish." }
+$mb = [math]::Round((Get-Item "dist\RochGPU.exe").Length / 1MB, 1)
 
-Write-Host "`nDone. dist\ROCH GPU.exe ($mb MB)"
-Write-Host "  GUI:  .\dist\'ROCH GPU.exe'"
-Write-Host "  CLI:  .\dist\'ROCH GPU.exe' info"
+Write-Host "`nDone. dist\RochGPU.exe ($mb MB)"
+Write-Host "  GUI:  .\dist\RochGPU.exe"
+Write-Host "  CLI:  .\dist\RochGPU.exe info"

@@ -4,15 +4,15 @@ using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
 using GpuTuner.Core.Services;
 
-// "ROCH GPU.exe" — headless companion to the GUI. Same engine, no window.
+// RochGPU.exe — headless companion to the GUI. Same engine, no window.
 //
-//   "ROCH GPU.exe" info                       show GPUs, capabilities, current tuning
-//   "ROCH GPU.exe" monitor [--interval 1000]  live telemetry until Ctrl+C
-//   "ROCH GPU.exe" apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--fan 60|auto]
-//   "ROCH GPU.exe" apply-profile <name> [--gpu 0]     apply a saved GUI profile
-//   "ROCH GPU.exe" list-profiles
-//   "ROCH GPU.exe" reset [--gpu 0]
-//   "ROCH GPU.exe" startup --enable <profile> | --disable | --status
+//   RochGPU.exe info                       show GPUs, capabilities, current tuning
+//   RochGPU.exe monitor [--interval 1000]  live telemetry until Ctrl+C
+//   RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--fan 60|auto]
+//   RochGPU.exe apply-profile <name> [--gpu 0]     apply a saved GUI profile
+//   RochGPU.exe list-profiles
+//   RochGPU.exe reset [--gpu 0]
+//   RochGPU.exe startup --enable <profile> | --disable | --status
 //   add --mock anywhere to use the simulated GPU
 
 namespace GpuTuner.Cli;
@@ -83,7 +83,7 @@ public static class CommandLine
         }
         catch (ArgumentOutOfRangeException)
         {
-            Console.Error.WriteLine("No GPU at that --gpu index. Run 'ROCH GPU.exe info' to list what was found.");
+            Console.Error.WriteLine("No GPU at that --gpu index. Run 'RochGPU.exe info' to list what was found.");
             return 2;
         }
         catch (GpuBackendException e) { Console.Error.WriteLine("ERROR: " + e.Message); return 1; }
@@ -313,17 +313,17 @@ public static class CommandLine
     }
 
     static void Usage() => Console.WriteLine("""
-        "ROCH GPU.exe" — ROCH GPU command line / undervolt CLI (needs admin for writes)
+        RochGPU.exe — ROCH GPU command line / undervolt CLI (needs admin for writes)
 
-          "ROCH GPU.exe" info
-          "ROCH GPU.exe" monitor [--interval 1000]
-          "ROCH GPU.exe" apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--fan 60|auto]
+          RochGPU.exe info
+          RochGPU.exe monitor [--interval 1000]
+          RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--fan 60|auto]
             the rail and crossbar flags are gated: pass one to arm them, pass none and they go back to driver defaults
-          "ROCH GPU.exe" apply-profile <name> [--gpu 0]
-          "ROCH GPU.exe" list-profiles
-          "ROCH GPU.exe" reset [--gpu 0]
-          "ROCH GPU.exe" diag                       dump everything the driver reports (for bug reports)
-          "ROCH GPU.exe" startup --enable <profile> | --disable | --status
+          RochGPU.exe apply-profile <name> [--gpu 0]
+          RochGPU.exe list-profiles
+          RochGPU.exe reset [--gpu 0]
+          RochGPU.exe diag                       dump everything the driver reports (for bug reports)
+          RochGPU.exe startup --enable <profile> | --disable | --status
           (add --mock to any command to use a simulated GPU)
         """);
 }
