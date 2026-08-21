@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -155,7 +155,7 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>Core offsets snap to the driver's own 15 MHz grid — see <see cref="ClockStep"/>.</summary>
     private const int CoreStepMhz = ClockStep.CoreMhz;
 
-    public int CoreOffset { get => _core; set { if (SetClamped(ref _core, ClockStep.SnapWithin(value, CoreStepMhz, Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz), Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(CoreOffset)); } } }
+    public int CoreOffset { get => _core; set => SetTuned(ref _core, ClockStep.SnapWithin(value, CoreStepMhz, Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz), Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz, nameof(CoreOffset)); }
     /// <summary>
     /// Grid the memory value snaps to. An NVIDIA offset goes in 25 MHz steps; an absolute AMD memory
     /// clock is deliberately left alone (1 = no snapping), because its stock value sits wherever the
@@ -166,38 +166,38 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>How far one nudge or slider step moves memory. Bound by the slider too.</summary>
     public int MemoryStepMhz => Caps.MemoryClockIsAbsolute ? 5 : ClockStep.MemoryMhz;
 
-    public int MemoryOffset { get => _mem; set { if (SetClamped(ref _mem, ClockStep.SnapWithin(value, MemorySnapMhz, Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz), Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(MemoryOffset)); } } }
-    public int PowerLimit { get => _power; set { if (SetClamped(ref _power, value, Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent)) { Dirty(); RaiseVal(nameof(PowerLimit)); } } }
-    public int TempLimit { get => _temp; set { if (SetClamped(ref _temp, value, Caps.TempLimitMinC, Caps.TempLimitMaxC)) { Dirty(); RaiseVal(nameof(TempLimit)); } } }
+    public int MemoryOffset { get => _mem; set => SetTuned(ref _mem, ClockStep.SnapWithin(value, MemorySnapMhz, Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz), Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz, nameof(MemoryOffset)); }
+    public int PowerLimit { get => _power; set => SetTuned(ref _power, value, Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent, nameof(PowerLimit)); }
+    public int TempLimit { get => _temp; set => SetTuned(ref _temp, value, Caps.TempLimitMinC, Caps.TempLimitMaxC, nameof(TempLimit)); }
     /// <summary>Over-voltage percentage. Snaps to the 5% grid — see <see cref="ClockStep.VoltageBoostPercent"/>.</summary>
     private const int VoltageBoostStepPercent = ClockStep.VoltageBoostPercent;
-    public int VoltageBoost { get => _volt; set { if (SetClamped(ref _volt, ClockStep.SnapWithin(value, VoltageBoostStepPercent, Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent), Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent)) { Dirty(); RaiseVal(nameof(VoltageBoost)); } } }
-    public int VoltageOffset { get => _uv; set { if (SetClamped(ref _uv, value, Caps.VoltageOffsetMinMv, Caps.VoltageOffsetMaxMv)) { Dirty(); RaiseVal(nameof(VoltageOffset)); OnPropertyChanged(nameof(VoltageCapText)); } } }
+    public int VoltageBoost { get => _volt; set => SetTuned(ref _volt, ClockStep.SnapWithin(value, VoltageBoostStepPercent, Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent), Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent, nameof(VoltageBoost)); }
+    public int VoltageOffset { get => _uv; set { if (SetTuned(ref _uv, value, Caps.VoltageOffsetMinMv, Caps.VoltageOffsetMaxMv, nameof(VoltageOffset))) OnPropertyChanged(nameof(VoltageCapText)); } }
     /// <summary>Absolute ceiling in mV the core is held at — the "voltage cap" slider. Independent of
     /// <see cref="VoltageBoost"/>, which raises the top of the range this caps within.</summary>
-    public int TargetVoltage { get => _vTarget; set { if (SetClamped(ref _vTarget, value, Caps.MinVoltageMv, Math.Max(Caps.MinVoltageMv, BoostCeilingMv))) { Dirty(); RaiseVal(nameof(TargetVoltage)); OnPropertyChanged(nameof(VoltageCapText)); } } }
+    public int TargetVoltage { get => _vTarget; set { if (SetTuned(ref _vTarget, value, Caps.MinVoltageMv, Math.Max(Caps.MinVoltageMv, BoostCeilingMv), nameof(TargetVoltage))) OnPropertyChanged(nameof(VoltageCapText)); } }
     /// <summary>
     /// Ceiling of the core voltage rail, in mV. Raising it lets the card select voltages above its
     /// stock maximum — the boost and the cap both operate underneath whatever this allows.
     /// </summary>
-    public int VoltageRailMax { get => _rail; set { if (SetClamped(ref _rail, value, Caps.VoltageRailMinMv, Math.Max(Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv))) { Dirty(); RaiseVal(nameof(VoltageRailMax)); OnPropertyChanged(nameof(VoltageRailRangeText)); OnPropertyChanged(nameof(BoostCeilingMv)); } } }
+    public int VoltageRailMax { get => _rail; set { if (SetTuned(ref _rail, value, Caps.VoltageRailMinMv, Math.Max(Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv), nameof(VoltageRailMax))) { OnPropertyChanged(nameof(VoltageRailRangeText)); OnPropertyChanged(nameof(BoostCeilingMv)); } } }
 
     /// <summary>Floor of the core rail: the lowest voltage it may drop to.</summary>
-    public int VoltageRailFloor { get => _railFloor; set { if (SetClamped(ref _railFloor, value, Caps.VoltageRailFloorMinMv, Math.Max(Caps.VoltageRailFloorMinMv, Caps.VoltageRailFloorMaxMv))) { Dirty(); RaiseVal(nameof(VoltageRailFloor)); OnPropertyChanged(nameof(VoltageRailRangeText)); } } }
+    public int VoltageRailFloor { get => _railFloor; set { if (SetTuned(ref _railFloor, value, Caps.VoltageRailFloorMinMv, Math.Max(Caps.VoltageRailFloorMinMv, Caps.VoltageRailFloorMaxMv), nameof(VoltageRailFloor))) OnPropertyChanged(nameof(VoltageRailRangeText)); } }
 
     /// <summary>Floor of the MSVDD rail.</summary>
-    public int MsvddRailFloor { get => _msvddFloor; set { if (SetClamped(ref _msvddFloor, value, Caps.MsvddRailFloorMinMv, Math.Max(Caps.MsvddRailFloorMinMv, Caps.MsvddRailFloorMaxMv))) { Dirty(); RaiseVal(nameof(MsvddRailFloor)); OnPropertyChanged(nameof(MsvddRangeText)); } } }
+    public int MsvddRailFloor { get => _msvddFloor; set { if (SetTuned(ref _msvddFloor, value, Caps.MsvddRailFloorMinMv, Math.Max(Caps.MsvddRailFloorMinMv, Caps.MsvddRailFloorMaxMv), nameof(MsvddRailFloor))) OnPropertyChanged(nameof(MsvddRangeText)); } }
 
     /// <summary>Ceiling of the MSVDD rail, in mV. Separate supply from NVVDD.</summary>
-    public int MsvddRailMax { get => _msvdd; set { if (SetClamped(ref _msvdd, value, Caps.MsvddRailMinMv, Math.Max(Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv))) { Dirty(); RaiseVal(nameof(MsvddRailMax)); OnPropertyChanged(nameof(MsvddRangeText)); } } }
+    public int MsvddRailMax { get => _msvdd; set { if (SetTuned(ref _msvdd, value, Caps.MsvddRailMinMv, Math.Max(Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv), nameof(MsvddRailMax))) OnPropertyChanged(nameof(MsvddRangeText)); } }
 
     /// <summary>Crossbar clock offset in MHz. Snaps to the same 15 MHz grid as the core clock.</summary>
-    public int XbarOffset { get => _xbar; set { if (SetClamped(ref _xbar, ClockStep.SnapWithin(value, CoreStepMhz, Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz), Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz)) { Dirty(); RaiseVal(nameof(XbarOffset)); } } }
+    public int XbarOffset { get => _xbar; set => SetTuned(ref _xbar, ClockStep.SnapWithin(value, CoreStepMhz, Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz), Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz, nameof(XbarOffset)); }
 
     /// <summary>Fixed fan duty. Snaps to the 5% grid — see <see cref="ClockStep.FanPercent"/>.</summary>
     private const int FanStepPercent = ClockStep.FanPercent;
 
-    public int FixedFan { get => _fanFixed; set { if (SetClamped(ref _fanFixed, ClockStep.SnapWithin(value, FanStepPercent, Caps.FanMinPercent, Caps.FanMaxPercent), Caps.FanMinPercent, Caps.FanMaxPercent)) { Dirty(); RaiseVal(nameof(FixedFan)); } } }
+    public int FixedFan { get => _fanFixed; set => SetTuned(ref _fanFixed, ClockStep.SnapWithin(value, FanStepPercent, Caps.FanMinPercent, Caps.FanMaxPercent), Caps.FanMinPercent, Caps.FanMaxPercent, nameof(FixedFan)); }
 
     private bool _zeroRpm = true;
     /// <summary>AMD: let the fans stop entirely at idle.</summary>
@@ -254,22 +254,22 @@ public sealed class MainViewModel : ObservableObject
     // (Set returns false, so the property's own RaiseVal never runs) the box would otherwise keep the raw
     // text the user typed (e.g. "-5" or "150"). Notifying the target back never re-invokes this setter, so
     // there is no loop.
-    public string CoreOffsetInput { get => _core.ToString("+#;-#;0"); set { if (TryParseSigned(value, out var v)) CoreOffset = v; RaiseVal(nameof(CoreOffset)); } }
+    public string CoreOffsetInput { get => Signed(_core); set => ParseInto(value, v => CoreOffset = v, nameof(CoreOffset)); }
     public string MemoryOffsetInput
     {
-        get => Caps.MemoryClockIsAbsolute ? _mem.ToString() : _mem.ToString("+#;-#;0");
-        set { if (TryParseSigned(value, out var v)) MemoryOffset = v; RaiseVal(nameof(MemoryOffset)); }
+        get => Caps.MemoryClockIsAbsolute ? _mem.ToString() : Signed(_mem);
+        set => ParseInto(value, v => MemoryOffset = v, nameof(MemoryOffset));
     }
-    public string PowerLimitInput { get => _power.ToString(); set { if (TryParseSigned(value, out var v)) PowerLimit = v; RaiseVal(nameof(PowerLimit)); } }
-    public string TempLimitInput { get => _temp.ToString(); set { if (TryParseSigned(value, out var v)) TempLimit = v; RaiseVal(nameof(TempLimit)); } }    public string VoltageOffsetInput { get => _uv.ToString("+#;-#;0"); set { if (TryParseSigned(value, out var v)) VoltageOffset = v; RaiseVal(nameof(VoltageOffset)); OnPropertyChanged(nameof(VoltageCapText)); } }
-    public string TargetVoltageInput { get => _vTarget.ToString(); set { if (TryParseSigned(value, out var v)) TargetVoltage = v; RaiseVal(nameof(TargetVoltage)); OnPropertyChanged(nameof(VoltageCapText)); } }
-    public string VoltageBoostInput { get => _volt.ToString(); set { if (TryParseSigned(value, out var v)) VoltageBoost = v; RaiseVal(nameof(VoltageBoost)); } }
-    public string VoltageRailFloorInput { get => _railFloor.ToString(); set { if (TryParseSigned(value, out var v)) VoltageRailFloor = v; RaiseVal(nameof(VoltageRailFloor)); } }
-    public string MsvddRailFloorInput { get => _msvddFloor.ToString(); set { if (TryParseSigned(value, out var v)) MsvddRailFloor = v; RaiseVal(nameof(MsvddRailFloor)); } }
-    public string MsvddRailMaxInput { get => _msvdd.ToString(); set { if (TryParseSigned(value, out var v)) MsvddRailMax = v; RaiseVal(nameof(MsvddRailMax)); } }
-    public string XbarOffsetInput { get => _xbar.ToString("+#;-#;0"); set { if (TryParseSigned(value, out var v)) XbarOffset = v; RaiseVal(nameof(XbarOffset)); } }
-    public string VoltageRailMaxInput { get => _rail.ToString(); set { if (TryParseSigned(value, out var v)) VoltageRailMax = v; RaiseVal(nameof(VoltageRailMax)); } }
-    public string FixedFanInput { get => _fanFixed.ToString(); set { if (TryParseSigned(value, out var v)) FixedFan = v; RaiseVal(nameof(FixedFan)); } }
+    public string PowerLimitInput { get => _power.ToString(); set => ParseInto(value, v => PowerLimit = v, nameof(PowerLimit)); }
+    public string TempLimitInput { get => _temp.ToString(); set => ParseInto(value, v => TempLimit = v, nameof(TempLimit)); }    public string VoltageOffsetInput { get => Signed(_uv); set { ParseInto(value, v => VoltageOffset = v, nameof(VoltageOffset)); OnPropertyChanged(nameof(VoltageCapText)); } }
+    public string TargetVoltageInput { get => _vTarget.ToString(); set { ParseInto(value, v => TargetVoltage = v, nameof(TargetVoltage)); OnPropertyChanged(nameof(VoltageCapText)); } }
+    public string VoltageBoostInput { get => _volt.ToString(); set => ParseInto(value, v => VoltageBoost = v, nameof(VoltageBoost)); }
+    public string VoltageRailFloorInput { get => _railFloor.ToString(); set => ParseInto(value, v => VoltageRailFloor = v, nameof(VoltageRailFloor)); }
+    public string MsvddRailFloorInput { get => _msvddFloor.ToString(); set => ParseInto(value, v => MsvddRailFloor = v, nameof(MsvddRailFloor)); }
+    public string MsvddRailMaxInput { get => _msvdd.ToString(); set => ParseInto(value, v => MsvddRailMax = v, nameof(MsvddRailMax)); }
+    public string XbarOffsetInput { get => Signed(_xbar); set => ParseInto(value, v => XbarOffset = v, nameof(XbarOffset)); }
+    public string VoltageRailMaxInput { get => _rail.ToString(); set => ParseInto(value, v => VoltageRailMax = v, nameof(VoltageRailMax)); }
+    public string FixedFanInput { get => _fanFixed.ToString(); set => ParseInto(value, v => FixedFan = v, nameof(FixedFan)); }
 
     /// <summary>Parse a user-typed offset: leading +/- allowed, whitespace trimmed, trailing units ignored.</summary>
     public static bool TryParseSigned(string? s, out int value)
@@ -285,6 +285,32 @@ public sealed class MainViewModel : ObservableObject
         if (i == start) return false;                       // no digits
         if (!int.TryParse(s.Substring(start, i - start), out var mag)) return false;
         value = sign * mag;
+        return true;
+    }
+
+    /// <summary>Signed display, the way an offset reads on a slider: "+150", "-90", "0".</summary>
+    private static string Signed(int v) => v.ToString("+#;-#;0");
+
+    /// <summary>
+    /// Every "Input" setter: parse, hand it to the real property so its clamping runs, re-raise
+    /// either way — a clamped value has to replace the text, or the box shows a number the card
+    /// never got.
+    /// </summary>
+    private void ParseInto(string? text, Action<int> assign, string prop)
+    {
+        if (TryParseSigned(text, out var v)) assign(v);
+        RaiseVal(prop);
+    }
+
+    /// <summary>
+    /// Every tuning-value setter: clamp, and if that moved the value, mark dirty and raise its three
+    /// bindings. Forgetting half of that pairing is a silent binding bug, not a compile error.
+    /// </summary>
+    private bool SetTuned(ref int field, int value, int min, int max, string prop)
+    {
+        if (!SetClamped(ref field, value, min, max)) return false;
+        Dirty();
+        RaiseVal(prop);
         return true;
     }
 
