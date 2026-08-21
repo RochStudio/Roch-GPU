@@ -224,11 +224,15 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
 
 ## Known limitations
 
-- **SYS and video clock offsets are new and lightly tested.** They come from the same private
-  family as the crossbar, and the block arithmetic behind all three was verified by offsetting the
-  core domain in the same family and watching its own counter move by exactly the amount asked for.
-  Both accept a write and read it back on a 5070 Ti. Neither moves its counter much at idle, which
-  is what a demand-clocked domain does — so the gains, if any, are unmeasured here.
+- **The video clock offset works; the SYS one may not.** Both come from the crossbar's private
+  family and both accept a write and read it back. Video moves — confirmed on a 5070 Ti against
+  third-party monitoring. SYS does not: ten samples at +300 MHz gave the same distribution as ten
+  at zero (mean 660 MHz either way), while the core domain, written through the identical code
+  path, shifts by exactly the amount asked at 45 MHz. So SYS is either inert on this card or binds
+  only under load, and idle measurement cannot tell those apart. The control is offered because the
+  driver offers it, not because a gain has been demonstrated.
+  `RochGPU.exe domains` reads each domain's own counter, which is how to check this on a card —
+  monitoring tools do not expose the SYS clock.
 - **The crossbar clock is tunable on Blackwell, read-only on Ada.** A 5070 Ti takes a +30 MHz offset
   and reads it back. A 4070 Ti reports a ±1000 MHz range and refuses every non-zero value while 0
   succeeds — a rejection of the value, not of the request shape, so that range is the width of the
