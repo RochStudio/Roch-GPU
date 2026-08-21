@@ -1,4 +1,4 @@
-﻿# ROCH GPU - AMD probe 3
+﻿# Roch GPU - AMD probe 3
 #
 # Probe 2's OD8 getters failed with -9 because lpNumberOfFeatures is an IN/OUT parameter: it must be
 # pre-set to OD8_COUNT-2 (75) before the call. This round does that, and dumps the full feature table
@@ -48,7 +48,7 @@ $capBits = @{
   25='ACTIMING_PARAMETERS_TUNE'; 26='OVERDRIVE_INTERFACE'; 27='AUTO_UV_ENGINE_V2'; 28='POWER_GAUGE'
 }
 
-W "===== ROCH GPU - AMD probe 3 ====="
+W "===== Roch GPU - AMD probe 3 ====="
 W (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
 W ""
 

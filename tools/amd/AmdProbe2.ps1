@@ -1,4 +1,4 @@
-﻿# ROCH GPU - AMD probe 2
+﻿# Roch GPU - AMD probe 2
 #
 # Probe 1 said Overdrive VERSION=8 but the OD8 getters returned -9 (ADL_ERR_NULL_POINTER) while
 # PMLog succeeded on the same context and adapter. So this round tests the two things that would
@@ -12,7 +12,7 @@ $out = Join-Path ([Environment]::GetFolderPath('Desktop')) 'whats-amd2.txt'
 $lines = New-Object System.Collections.Generic.List[string]
 function W($s) { $lines.Add([string]$s) }
 
-W "===== ROCH GPU - AMD probe 2 ====="
+W "===== Roch GPU - AMD probe 2 ====="
 W (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
 W ""
 

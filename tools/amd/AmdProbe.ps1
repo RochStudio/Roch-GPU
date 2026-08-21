@@ -1,4 +1,4 @@
-﻿# ROCH GPU - AMD tuning-surface probe
+﻿# Roch GPU - AMD tuning-surface probe
 #
 # Read-only: every call here reads. Nothing on the card is changed.
 # Writes whats-amd.txt to your Desktop.
@@ -8,7 +8,7 @@ $out = Join-Path ([Environment]::GetFolderPath('Desktop')) 'whats-amd.txt'
 $lines = New-Object System.Collections.Generic.List[string]
 function W($s) { $lines.Add([string]$s) }
 
-W "===== ROCH GPU - AMD probe ====="
+W "===== Roch GPU - AMD probe ====="
 W (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
 W ""
 

@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
-Write-Host "=== ROCH GPU setup ===" -ForegroundColor Green
+Write-Host "=== Roch GPU setup ===" -ForegroundColor Green
 
 # --- Step 1: .NET 10 SDK
 $hasSdk = $false
@@ -27,12 +27,12 @@ if ($LASTEXITCODE -ne 0) { throw "Publish failed - is 'RochGPU.exe' still runnin
 if (-not (Test-Path "dist\RochGPU.exe")) { throw "'dist\RochGPU.exe' missing after publish." }
 
 # --- Step 3: report what was detected, then launch
-Write-Host "`n=== ROCH GPU info ===" -ForegroundColor Green
+Write-Host "`n=== Roch GPU info ===" -ForegroundColor Green
 $info = & ".\dist\RochGPU.exe" info
 $info | Write-Host
 $info | Out-File -FilePath (Join-Path $PSScriptRoot "roch-gpu-info.txt") -Encoding utf8
 
-Write-Host "`nLaunching ROCH GPU..." -ForegroundColor Green
+Write-Host "`nLaunching Roch GPU..." -ForegroundColor Green
 Start-Process (Join-Path $PSScriptRoot "dist\RochGPU.exe")
 Write-Host "Done."
 Write-Host "  CLI:         .\dist\RochGPU.exe info"

@@ -1,6 +1,6 @@
-﻿<img src="assets/logo.svg" alt="ROCH GPU" width="560">
+﻿<img src="assets/logo.svg" alt="Roch GPU" width="560">
 
-# ROCH GPU
+# Roch GPU
 
 [![CI](https://github.com/RochStudio/Roch-GPU/actions/workflows/ci.yml/badge.svg)](https://github.com/RochStudio/Roch-GPU/actions/workflows/ci.yml)
 

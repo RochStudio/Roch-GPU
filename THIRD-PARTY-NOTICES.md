@@ -1,6 +1,6 @@
 ﻿# Third-party notices
 
-ROCH GPU itself is MIT licensed (see `LICENSE`). It includes and depends on the following.
+Roch GPU itself is MIT licensed (see `LICENSE`). It includes and depends on the following.
 
 ---
 

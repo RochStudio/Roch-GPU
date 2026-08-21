@@ -1,4 +1,4 @@
-# ROCH GPU - build, test, and publish the single executable into .\dist
+# Roch GPU - build, test, and publish the single executable into .\dist
 # Requires the .NET 10 SDK on Windows: winget install Microsoft.DotNet.SDK.10
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
