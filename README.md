@@ -243,6 +243,12 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   delta field rather than a promise.
 - **MSVDD is Blackwell-only.** The rail control is present on a 5070 Ti and absent on the 40-series
   cards tested, where NVVDD works on its own.
+- **Hot spot temperature is not read on Blackwell.** The private thermal call returns exactly two
+  sensors on a 5070 Ti — one tracking the public GPU reading within half a degree, one about eight
+  degrees above it where memory junction sits — and no hot spot among them. Established rather than
+  assumed: every struct version and mask width the call accepts returns the same two slots, and a
+  three-bit mask returns as much as a nineteen-bit one, so the mask is not selecting sensors at all.
+  A monitoring tool that shows hot spot on this card is reading it somewhere this build does not.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **Nothing guards an apply-at-logon that crashed the machine.** If a tune hangs the card on boot,

@@ -69,6 +69,44 @@ internal static class NvApiPrivate
     }
 
     /// <summary>Raw temperature slots (°C, already divided by 256). Empty array on failure.</summary>
+    /// <summary>
+    /// What each (struct version, mask) pair returns: how many slots come back with a real reading
+    /// rather than the 255 that means "no sensor here". Two sensors on a 5070 Ti against the four a
+    /// monitoring tool shows means either a wider mask or a different struct version reaches the
+    /// rest — or that they are not in this call at all, which is equally worth knowing.
+    /// </summary>
+    public static List<(int Version, uint Mask, int Status, string Slots)> ProbeThermal(PhysicalGPUHandle handle)
+    {
+        var results = new List<(int, uint, int, string)>();
+        var fn = Resolve();
+        if (fn == null) return results;
+
+        foreach (int version in new[] { 1, 2, 3 })
+            foreach (uint mask in new uint[] { 0x7FFFF, 0xFFFF, 0xFFFFFFFF, 0x1FF, 0x7 })
+            {
+                var st = new NvThermalSensorsV2
+                {
+                    Version = (uint)Marshal.SizeOf<NvThermalSensorsV2>() | ((uint)version << 16),
+                    Mask = mask,
+                    Reserved = new int[8],
+                    Temperatures = new int[32]
+                };
+                int status;
+                try { status = fn(handle.MemoryAddress, ref st); }
+                catch { status = -99; }
+
+                var live = new List<string>();
+                if (status == 0)
+                    for (int i = 0; i < 32; i++)
+                    {
+                        double t = st.Temperatures[i] / 256.0;
+                        if (t > 0 && t < 200) live.Add($"[{i}]={t:0.0}");
+                    }
+                results.Add((version, mask, status, live.Count == 0 ? "(none)" : string.Join(" ", live)));
+            }
+        return results;
+    }
+
     public static double[] Read(PhysicalGPUHandle handle, uint mask)
     {
         var fn = Resolve();
@@ -1101,6 +1139,12 @@ internal static class NvApiPrivate
     {
         if (slots.Length < 32) return (double.NaN, double.NaN);
         double Pick(int i) => slots[i] > 0 && slots[i] < 200 ? slots[i] : double.NaN;
+        // Blackwell exposes exactly two sensors through this call, and no hot spot among them.
+        // Established rather than assumed: every struct version and mask width the call accepts
+        // returns the same two slots, and a three-bit mask returns as much as a nineteen-bit one, so
+        // the mask is not selecting sensors here at all. Slot 1 tracks the public GPU reading within
+        // half a degree; slot 2 sits about eight above it, which is where memory junction sits.
+        // A monitoring tool that shows hot spot on this card is reading it somewhere else.
         if (gpuName.Contains("RTX 50", StringComparison.OrdinalIgnoreCase)) return (double.NaN, Pick(2));
         if (gpuName.Contains("RTX 40", StringComparison.OrdinalIgnoreCase)) return (Pick(1), Pick(7));
         return (Pick(1), Pick(9));

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using GpuTuner.Core.Models;
 
 namespace GpuTuner.App.ViewModels;
@@ -13,6 +14,8 @@ public sealed class TelemetryRow : ObservableObject
 {
     public string Name { get; }
     public bool IsHeader { get; }
+    /// <summary>The Parameter/Current/Min/Max/Average strip repeated under each section title.</summary>
+    public bool IsColumnHeader { get; }
     /// <summary>Alternating band, recomputed as rows are shown and hidden.</summary>
     public bool IsBanded { get => _banded; set => Set(ref _banded, value); }
     private bool _banded;
@@ -38,10 +41,11 @@ public sealed class TelemetryRow : ObservableObject
     private readonly string _unit;
     private readonly int _decimals;
 
-    private TelemetryRow(string name, bool isHeader, string? group, SensorStat? stat, string unit, int decimals)
+    private TelemetryRow(string name, bool isHeader, string? group, SensorStat? stat, string unit, int decimals, bool isColumnHeader = false)
     {
-        Name = name; IsHeader = isHeader; Group = group;
+        Name = name; IsHeader = isHeader; Group = group; IsColumnHeader = isColumnHeader;
         _stat = stat; _unit = unit; _decimals = decimals;
+        if (isColumnHeader) { _current = "Current"; _min = "Min"; _max = "Max"; _avg = "Average"; return; }
         if (!isHeader) return;
         Marker = "▾ ";
         // A heading has no reading of its own, and an em dash in all four columns reads as four
@@ -50,6 +54,12 @@ public sealed class TelemetryRow : ObservableObject
     }
 
     public static TelemetryRow Header(string name) => new(name, true, null, null, "", 0);
+
+    /// <summary>
+    /// Repeated under every section rather than printed once at the top. A single strip scrolls away
+    /// and leaves four unlabelled columns of numbers for the rest of the table.
+    /// </summary>
+    public static TelemetryRow Columns(string group) => new("Parameter", false, group, null, "", 0, isColumnHeader: true);
 
     public static TelemetryRow Sensor(string name, string group, SensorStat stat, string unit, int decimals = 0) =>
         new(name, false, group, stat, unit, decimals);
@@ -97,7 +107,8 @@ public sealed class TelemetryTable
     {
         _group = name;
         _expanded[name] = true;
-        Add(TelemetryRow.Header(name));
+        Add(TelemetryRow.Header(name.ToUpperInvariant()));
+        Add(TelemetryRow.Columns(name));
     }
 
     private void Sensor(string key, string label, string unit, int decimals = 0) =>
@@ -148,6 +159,10 @@ public sealed class TelemetryTable
         Restripe();
     }
 
+    /// <summary>Section titles are shown in caps; this maps one back to its group key.</summary>
+    public string? GroupForTitle(string title) =>
+        _expanded.Keys.FirstOrDefault(k => k.ToUpperInvariant() == title);
+
     /// <summary>Fold a group open or shut.</summary>
     public void Toggle(string group)
     {
@@ -155,7 +170,7 @@ public sealed class TelemetryTable
         _expanded[group] = expanded;
         foreach (var r in _all)
         {
-            if (r.IsHeader && r.Name == group) r.SetExpanded(expanded);
+            if (r.IsHeader && r.Name == group.ToUpperInvariant()) r.SetExpanded(expanded);
             else if (r.Group == group) r.IsVisible = expanded;
         }
         Restripe();
@@ -168,7 +183,7 @@ public sealed class TelemetryTable
         foreach (var r in _all)
         {
             if (!r.IsVisible) continue;
-            r.IsBanded = !r.IsHeader && visible % 2 == 1;
+            r.IsBanded = !r.IsHeader && !r.IsColumnHeader && visible % 2 == 1;
             visible++;
         }
     }

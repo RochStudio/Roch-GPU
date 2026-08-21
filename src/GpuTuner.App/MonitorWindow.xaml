@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU — Hardware Monitor" Height="730" Width="560" MinWidth="380" MinHeight="360"
+        Title="Roch GPU — Hardware Monitor" Height="730" Width="640" MinWidth="460" MinHeight="360"
         WindowStartupLocation="Manual"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
@@ -31,20 +31,16 @@
 
                 <!-- Every sensor with its running figures, the way a monitoring tool shows them:
                      four columns, grouped, and each group folds away. -->
-                <ScrollViewer x:Name="TableScroll" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <Grid x:Name="TableFooter" DockPanel.Dock="Bottom" Margin="0,6,10,0" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="Elapsed" Text="Running 00:00:00" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="Reset stats" Click="ResetStats_Click" Padding="10,3"/>
+                </Grid>
+
+                <Grid>
+                <ScrollViewer x:Name="TableScroll" VerticalScrollBarVisibility="Auto" Visibility="Collapsed" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,10,0">
-                        <Grid Margin="0,0,0,3">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/><ColumnDefinition Width="78"/>
-                                <ColumnDefinition Width="78"/><ColumnDefinition Width="78"/><ColumnDefinition Width="78"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Parameter" Style="{StaticResource SectionTitle}" Margin="4,0,0,0"/>
-                            <TextBlock Grid.Column="1" Text="Current" Style="{StaticResource SectionTitle}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
-                            <TextBlock Grid.Column="2" Text="Min" Style="{StaticResource SectionTitle}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
-                            <TextBlock Grid.Column="3" Text="Max" Style="{StaticResource SectionTitle}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
-                            <TextBlock Grid.Column="4" Text="Average" Style="{StaticResource SectionTitle}" HorizontalAlignment="Right" Margin="0,0,6,0"/>
-                        </Grid>
-                        <ItemsControl x:Name="TableRows">
+                        <ItemsControl x:Name="TableRows" HorizontalContentAlignment="Stretch">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border x:Name="band" Padding="0,1" Tag="{Binding Name}" MouseLeftButtonDown="Row_Click"
@@ -58,15 +54,23 @@
                                             <TextBlock x:Name="nm" FontSize="11.5" Margin="4,0,0,0" Foreground="{StaticResource TextBrush}">
                                                 <Run Text="{Binding Marker, Mode=OneWay}"/><Run Text="{Binding Name, Mode=OneWay}"/>
                                             </TextBlock>
-                                            <TextBlock Grid.Column="1" Text="{Binding Current}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource AccentBrush}"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
-                                            <TextBlock Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
-                                            <TextBlock Grid.Column="4" Text="{Binding Average}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource AccentBrush}"/>
+                                            <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" FontSize="11.5" HorizontalAlignment="Right" Margin="0,0,6,0" Foreground="{StaticResource MutedBrush}"/>
                                         </Grid>
                                     </Border>
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IsBanded}" Value="True">
                                             <Setter TargetName="band" Property="Background" Value="{StaticResource PanelAltBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsColumnHeader}" Value="True">
+                                            <Setter TargetName="band" Property="Background" Value="Transparent"/>
+                                            <Setter TargetName="nm" Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                            <Setter TargetName="cur" Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                            <Setter TargetName="mn" Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                            <Setter TargetName="mx" Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                            <Setter TargetName="av" Property="Foreground" Value="{StaticResource MutedBrush}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsHeader}" Value="True">
                                             <Setter TargetName="band" Property="Background" Value="{StaticResource PanelAltBrush}"/>
@@ -81,6 +85,9 @@
                         </ItemsControl>
                     </StackPanel>
                 </ScrollViewer>
+
+                <!-- How long these figures cover, and a way to start them again: a maximum from an
+                     hour ago says nothing about the run happening now. -->
 
                 <ScrollViewer x:Name="GraphScroll" VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="GraphStack" Margin="0,0,10,0">
@@ -131,6 +138,7 @@
                         <c:LineGraph x:Name="GFan" Height="72" Stroke="{StaticResource FanBrush}" Minimum="0" Maximum="100" Unit="%"/>
                     </StackPanel>
                 </ScrollViewer>
+                </Grid>
             </DockPanel>
         </Border>
 

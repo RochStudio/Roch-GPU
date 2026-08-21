@@ -89,14 +89,25 @@ public partial class MonitorWindow : Window
         if (GraphScroll == null || TableScroll == null) return;   // fires during InitializeComponent
         bool table = ViewTable.IsChecked == true;
         TableScroll.Visibility = table ? Visibility.Visible : Visibility.Collapsed;
+        TableFooter.Visibility = table ? Visibility.Visible : Visibility.Collapsed;
         GraphScroll.Visibility = table ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>When the running figures were last started from nothing.</summary>
+    private DateTime _statsSince = DateTime.UtcNow;
+
+    private void ResetStats_Click(object sender, RoutedEventArgs e)
+    {
+        _table?.ResetStats();
+        _statsSince = DateTime.UtcNow;
     }
 
     /// <summary>Clicking a group heading folds it; clicking a sensor does nothing.</summary>
     private void Row_Click(object sender, MouseButtonEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: TelemetryRow { IsHeader: true } row })
-            _table?.Toggle(row.Name);
+        if (sender is not FrameworkElement { DataContext: TelemetryRow { IsHeader: true } row }) return;
+        // The title is drawn in caps; the group is keyed by its original spelling.
+        if (_table?.GroupForTitle(row.Name) is { } group) _table.Toggle(group);
     }
 
     private void Render(GpuTelemetry t)
@@ -107,6 +118,7 @@ public partial class MonitorWindow : Window
             TableRows.ItemsSource = _table.Rows;
         }
         _table.Add(t, ReadDomainClocks());
+        Elapsed.Text = "Running " + (DateTime.UtcNow - _statsSince).ToString(@"hh\:mm\:ss");
 
         VCore.Text = t.CoreClockMhz.ToString("0");
         if (t.CoreClockMhz > _peakCore)

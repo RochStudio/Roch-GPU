@@ -1737,6 +1737,12 @@ public sealed class NvApiBackend : IGpuBackend
             sb.AppendLine($"  -> interpreted hotspot={hs:0.0}  memory={mj:0.0}");
         });
 
+        Section("Private thermal shapes (version x mask -> live slots)", () =>
+        {
+            foreach (var r in NvApiPrivate.ProbeThermal(g.Handle))
+                sb.AppendLine($"  v{r.Version}  mask=0x{r.Mask:X8}  status={r.Status,-4}  {r.Slots}");
+        });
+
         return sb.ToString();
     }
 

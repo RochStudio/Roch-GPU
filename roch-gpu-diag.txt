@@ -6,16 +6,16 @@ Driver 610.88   vBIOS 98.03.58.00.43
 
 --- Power policy STATUS (raw entries) ---
   count=1
-  [0] pstate=P0_3DPerformance unk1=0 powerPCM=100000 unk2=0
+  [0] pstate=P0_3DPerformance unk1=0 powerPCM=116667 unk2=0
 
 --- Thermal policy ---
 
 --- Voltage ---
   current      = 815 mV
   boost percent= 0
-  lock (cap)   = 0 mV   (0 = none)
+  lock (cap)   = 1000 mV   (0 = none)
   mechanism    = none
-  lock entry   : domain=Graphics mode=None volt=0 mV
+  lock entry   : domain=Graphics mode=Manual volt=1000 mV
   lock entry   : domain=1 mode=None volt=0 mV
   lock entry   : domain=2 mode=None volt=0 mV
   lock entry   : domain=3 mode=None volt=0 mV
@@ -30,27 +30,27 @@ Driver 610.88   vBIOS 98.03.58.00.43
 
 --- PStates20 (P0 clock deltas) ---
   editable=True
-  Graphics  editable=True delta=0 MHz range=[-1000..1000]
-  Memory    editable=True delta=0 MHz range=[-1000..3000]
+  Graphics  editable=True delta=300 MHz range=[-1000..1000]
+  Memory    editable=True delta=3000 MHz range=[-1000..3000]
   Video     editable=False delta=0 MHz range=[0..0]
 
 --- Crossbar (XBAR) probe ---
   entry points resolved: info=True control=True set=True measure=True
   GetInfo status    : 0 (Ok)
   GetControl status : 0 (Ok)
-  measured clocks   : core 195 MHz, xbar 886 MHz, memory 404 MHz
-  xbar : core ratio = 4.5406
+  measured clocks   : core 495 MHz, xbar 886 MHz, memory 405 MHz
+  xbar : core ratio = 1.7900
   info entry types  : 0,1,4,2,21,20,31,6,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
   type-1 entry index: 1
   domains listed (slot / type / range / predicted control offset):
-    slot  0  type   0   -1000..1000   MHz  -> +0x0238   measured   2893 MHz
-    slot  1  type   1   -1000..1000   MHz  -> +0x053C   measured    884 MHz
+    slot  0  type   0   -1000..1000   MHz  -> +0x0238   measured    496 MHz
+    slot  1  type   1   -1000..1000   MHz  -> +0x053C   measured    885 MHz
     slot  2  type   4  no range found      -> +0x0840   measured    404 MHz
-    slot  3  type   2   -1000..1000   MHz  -> +0x0B44   measured    660 MHz
-    slot  4  type  21   -1000..1000   MHz  -> +0x0E48   measured    455 MHz
-    slot  5  type  20  no range found      -> +0x114C   measured   1694 MHz
+    slot  3  type   2   -1000..1000   MHz  -> +0x0B44   measured    659 MHz
+    slot  4  type  21   -1000..1000   MHz  -> +0x0E48   measured    442 MHz
+    slot  5  type  20  no range found      -> +0x114C   measured   1692 MHz
     slot  6  type  31  no range found      -> +0x1450   measured      0 MHz
-    slot  7  type   6  no range found      -> +0x1754   measured    673 MHz
+    slot  7  type   6  no range found      -> +0x1754   measured    675 MHz
     slot  8  type   3  no range found      -> +0x1A58   measured    540 MHz
   type-1 entry words (offset: value  [signed lo/hi halves]):
       +0x000             1  0x00000001  [     1 /      0]
@@ -117,7 +117,7 @@ Driver 610.88   vBIOS 98.03.58.00.43
 
 --- Clock domains (all 32 slots, not just the named ones) ---
   current  2 of 32 slots populated: [0, 4]
-      slot  0      375.0 MHz  Graphics
+      slot  0      705.0 MHz  Graphics
       slot  4      405.0 MHz  Memory
   base     2 of 32 slots populated: [0, 4]
       slot  0    2,295.0 MHz  Graphics
@@ -147,13 +147,13 @@ Driver 610.88   vBIOS 98.03.58.00.43
   struct sizes: curve=7208 table=9248
   boost mask = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF
   ReadCurve[driver mask] -> 103 valid point(s), 450–1090 mV
-  ReadDeltas[driver mask] -> 103 slot(s), 0 non-zero
+  ReadDeltas[driver mask] -> 103 slot(s), 83 non-zero
   ReadCurve[all-ones] -> 103 valid point(s), 450–1090 mV
-  ReadDeltas[all-ones] -> 103 slot(s), 0 non-zero
+  ReadDeltas[all-ones] -> 103 slot(s), 83 non-zero
   chosen mask = 0xFFFFFFFF
   layout probe (entries x version -> status / points / mV range / max MHz):
-      80 x v1  status=0   points= 127  450-1240 mV  max 3247 MHz
-      80 x v2  status=0   points= 127  450-1240 mV  max 3247 MHz
+      80 x v1  status=0   points= 127  450-1240 mV  max 3547 MHz
+      80 x v2  status=0   points= 127  450-1240 mV  max 3547 MHz
       80 x v3  status=-9  
      103 x v1  status=-9  
      103 x v2  status=-9  
@@ -168,165 +168,165 @@ Driver 610.88   vBIOS 98.03.58.00.43
      255 x v2  status=-9  
      255 x v3  status=-9  
   chosen layout = 80 entries, version 1, 127 curve points (buffer holds up to 128)
-  trailing array 0 = 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-  trailing array 1 = 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+  trailing array 0 = 0,0,0,0,0,300000,0,0,0,0,0,0,0,0,300000,0,0,0,0,0,0,0,0
+  trailing array 1 = 300000,0,0,0,0,0,0,0,0,300000,0,0,0,0,0,0,0,0,300000,0,0,0,0
   write recipe: not yet established (no curve write attempted this session)
 
 --- V/F curve (stock, valid points only) ---
   stock max voltage = 1240 mV
   delta range = [-1000..1000] MHz
   inferred cap = none (curve not flattened)
-  [ 0]    450 mV  stock   195 MHz  live   195 MHz
-  [ 1]    460 mV  stock   195 MHz  live   195 MHz
-  [ 2]    465 mV  stock   195 MHz  live   195 MHz
-  [ 3]    470 mV  stock   195 MHz  live   195 MHz
-  [ 4]    475 mV  stock   195 MHz  live   195 MHz
-  [ 5]    485 mV  stock   195 MHz  live   195 MHz
-  [ 6]    490 mV  stock   195 MHz  live   195 MHz
-  [ 7]    495 mV  stock   195 MHz  live   195 MHz
-  [ 8]    500 mV  stock   195 MHz  live   195 MHz
-  [ 9]    510 mV  stock   195 MHz  live   195 MHz
-  [10]    515 mV  stock   195 MHz  live   195 MHz
-  [11]    520 mV  stock   195 MHz  live   195 MHz
-  [12]    525 mV  stock   195 MHz  live   195 MHz
-  [13]    535 mV  stock   195 MHz  live   195 MHz
-  [14]    540 mV  stock   195 MHz  live   195 MHz
-  [15]    545 mV  stock   195 MHz  live   195 MHz
-  [16]    550 mV  stock   195 MHz  live   195 MHz
-  [17]    560 mV  stock   195 MHz  live   195 MHz
-  [18]    565 mV  stock   195 MHz  live   195 MHz
-  [19]    570 mV  stock   195 MHz  live   195 MHz
-  [20]    575 mV  stock   195 MHz  live   195 MHz
-  [21]    585 mV  stock   195 MHz  live   195 MHz
-  [22]    590 mV  stock   195 MHz  live   195 MHz
-  [23]    595 mV  stock   195 MHz  live   195 MHz
-  [24]    600 mV  stock   195 MHz  live   195 MHz
-  [25]    610 mV  stock   195 MHz  live   195 MHz
-  [26]    615 mV  stock   195 MHz  live   195 MHz
-  [27]    620 mV  stock   195 MHz  live   195 MHz
-  [28]    625 mV  stock   195 MHz  live   195 MHz
-  [29]    635 mV  stock   195 MHz  live   195 MHz
-  [30]    640 mV  stock   195 MHz  live   195 MHz
-  [31]    645 mV  stock   195 MHz  live   195 MHz
-  [32]    650 mV  stock   195 MHz  live   195 MHz
-  [33]    660 mV  stock   195 MHz  live   195 MHz
-  [34]    665 mV  stock   195 MHz  live   195 MHz
-  [35]    670 mV  stock   195 MHz  live   195 MHz
-  [36]    675 mV  stock   195 MHz  live   195 MHz
-  [37]    685 mV  stock   195 MHz  live   195 MHz
-  [38]    690 mV  stock   195 MHz  live   195 MHz
-  [39]    695 mV  stock   195 MHz  live   195 MHz
-  [40]    700 mV  stock   195 MHz  live   195 MHz
-  [41]    710 mV  stock   195 MHz  live   195 MHz
-  [42]    715 mV  stock   195 MHz  live   195 MHz
-  [43]    720 mV  stock   195 MHz  live   195 MHz
-  [44]    725 mV  stock   210 MHz  live   210 MHz
-  [45]    735 mV  stock   352 MHz  live   352 MHz
-  [46]    740 mV  stock   495 MHz  live   495 MHz
-  [47]    745 mV  stock   630 MHz  live   630 MHz
-  [48]    750 mV  stock   772 MHz  live   772 MHz
-  [49]    760 mV  stock   907 MHz  live   907 MHz
-  [50]    765 mV  stock  1050 MHz  live  1050 MHz
-  [51]    770 mV  stock  1192 MHz  live  1192 MHz
-  [52]    775 mV  stock  1327 MHz  live  1327 MHz
-  [53]    785 mV  stock  1470 MHz  live  1470 MHz
-  [54]    790 mV  stock  1605 MHz  live  1605 MHz
-  [55]    795 mV  stock  1747 MHz  live  1747 MHz
-  [56]    800 mV  stock  1890 MHz  live  1890 MHz
-  [57]    810 mV  stock  2025 MHz  live  2025 MHz
-  [58]    815 mV  stock  2062 MHz  live  2062 MHz
-  [59]    820 mV  stock  2092 MHz  live  2092 MHz
-  [60]    825 mV  stock  2122 MHz  live  2122 MHz
-  [61]    835 mV  stock  2145 MHz  live  2145 MHz
-  [62]    840 mV  stock  2175 MHz  live  2175 MHz
-  [63]    845 mV  stock  2205 MHz  live  2205 MHz
-  [64]    850 mV  stock  2235 MHz  live  2235 MHz
-  [65]    860 mV  stock  2257 MHz  live  2257 MHz
-  [66]    865 mV  stock  2287 MHz  live  2287 MHz
-  [67]    870 mV  stock  2317 MHz  live  2317 MHz
-  [68]    875 mV  stock  2340 MHz  live  2340 MHz
-  [69]    885 mV  stock  2370 MHz  live  2370 MHz
-  [70]    890 mV  stock  2392 MHz  live  2392 MHz
-  [71]    895 mV  stock  2422 MHz  live  2422 MHz
-  [72]    900 mV  stock  2445 MHz  live  2445 MHz
-  [73]    910 mV  stock  2475 MHz  live  2475 MHz
-  [74]    915 mV  stock  2497 MHz  live  2497 MHz
-  [75]    920 mV  stock  2520 MHz  live  2520 MHz
-  [76]    925 mV  stock  2542 MHz  live  2542 MHz
-  [77]    935 mV  stock  2572 MHz  live  2572 MHz
-  [78]    940 mV  stock  2595 MHz  live  2595 MHz
-  [79]    945 mV  stock  2617 MHz  live  2617 MHz
-  [80]    950 mV  stock  2640 MHz  live  2640 MHz
-  [81]    960 mV  stock  2662 MHz  live  2662 MHz
-  [82]    965 mV  stock  2685 MHz  live  2685 MHz
-  [83]    970 mV  stock  2700 MHz  live  2700 MHz
-  [84]    975 mV  stock  2722 MHz  live  2722 MHz
-  [85]    985 mV  stock  2745 MHz  live  2745 MHz
-  [86]    990 mV  stock  2760 MHz  live  2760 MHz
-  [87]    995 mV  stock  2782 MHz  live  2782 MHz
-  [88]   1000 mV  stock  2812 MHz  live  2812 MHz
-  [89]   1010 mV  stock  2835 MHz  live  2835 MHz
-  [90]   1015 mV  stock  2857 MHz  live  2857 MHz
-  [91]   1020 mV  stock  2872 MHz  live  2872 MHz
-  [92]   1025 mV  stock  2887 MHz  live  2887 MHz
-  [93]   1035 mV  stock  2902 MHz  live  2902 MHz
-  [94]   1040 mV  stock  2910 MHz  live  2910 MHz
-  [95]   1045 mV  stock  2925 MHz  live  2925 MHz
-  [96]   1050 mV  stock  2940 MHz  live  2940 MHz
-  [97]   1060 mV  stock  2947 MHz  live  2947 MHz
-  [98]   1065 mV  stock  2962 MHz  live  2962 MHz
-  [99]   1070 mV  stock  2977 MHz  live  2977 MHz
-  [100]   1075 mV  stock  2985 MHz  live  2985 MHz
-  [101]   1085 mV  stock  3000 MHz  live  3000 MHz
-  [102]   1090 mV  stock  3007 MHz  live  3007 MHz
-  [103]   1095 mV  stock  3022 MHz  live  3022 MHz
-  [104]   1100 mV  stock  3030 MHz  live  3030 MHz
-  [105]   1110 mV  stock  3045 MHz  live  3045 MHz
-  [106]   1115 mV  stock  3052 MHz  live  3052 MHz
-  [107]   1120 mV  stock  3067 MHz  live  3067 MHz
-  [108]   1125 mV  stock  3075 MHz  live  3075 MHz
-  [109]   1135 mV  stock  3090 MHz  live  3090 MHz
-  [110]   1140 mV  stock  3097 MHz  live  3097 MHz
-  [111]   1145 mV  stock  3112 MHz  live  3112 MHz
-  [112]   1150 mV  stock  3120 MHz  live  3120 MHz
-  [113]   1160 mV  stock  3127 MHz  live  3127 MHz
-  [114]   1165 mV  stock  3142 MHz  live  3142 MHz
-  [115]   1170 mV  stock  3150 MHz  live  3150 MHz
-  [116]   1175 mV  stock  3157 MHz  live  3157 MHz
-  [117]   1185 mV  stock  3172 MHz  live  3172 MHz
-  [118]   1190 mV  stock  3180 MHz  live  3180 MHz
-  [119]   1195 mV  stock  3187 MHz  live  3187 MHz
-  [120]   1200 mV  stock  3195 MHz  live  3195 MHz
-  [121]   1210 mV  stock  3210 MHz  live  3210 MHz
-  [122]   1215 mV  stock  3217 MHz  live  3217 MHz
-  [123]   1220 mV  stock  3225 MHz  live  3225 MHz
-  [124]   1225 mV  stock  3232 MHz  live  3232 MHz
-  [125]   1235 mV  stock  3240 MHz  live  3240 MHz
-  [126]   1240 mV  stock  3247 MHz  live  3247 MHz
+  [ 0]    450 mV  stock   195 MHz  live   495 MHz
+  [ 1]    460 mV  stock   195 MHz  live   495 MHz
+  [ 2]    465 mV  stock   195 MHz  live   495 MHz
+  [ 3]    470 mV  stock   195 MHz  live   495 MHz
+  [ 4]    475 mV  stock   195 MHz  live   495 MHz
+  [ 5]    485 mV  stock   195 MHz  live   495 MHz
+  [ 6]    490 mV  stock   195 MHz  live   495 MHz
+  [ 7]    495 mV  stock   195 MHz  live   495 MHz
+  [ 8]    500 mV  stock   195 MHz  live   495 MHz
+  [ 9]    510 mV  stock   195 MHz  live   495 MHz
+  [10]    515 mV  stock   195 MHz  live   495 MHz
+  [11]    520 mV  stock   195 MHz  live   495 MHz
+  [12]    525 mV  stock   195 MHz  live   495 MHz
+  [13]    535 mV  stock   195 MHz  live   495 MHz
+  [14]    540 mV  stock   195 MHz  live   495 MHz
+  [15]    545 mV  stock   195 MHz  live   495 MHz
+  [16]    550 mV  stock   195 MHz  live   495 MHz
+  [17]    560 mV  stock   195 MHz  live   495 MHz
+  [18]    565 mV  stock   195 MHz  live   495 MHz
+  [19]    570 mV  stock   195 MHz  live   495 MHz
+  [20]    575 mV  stock   195 MHz  live   495 MHz
+  [21]    585 mV  stock   195 MHz  live   495 MHz
+  [22]    590 mV  stock   195 MHz  live   495 MHz
+  [23]    595 mV  stock   195 MHz  live   495 MHz
+  [24]    600 mV  stock   195 MHz  live   495 MHz
+  [25]    610 mV  stock   195 MHz  live   495 MHz
+  [26]    615 mV  stock   195 MHz  live   495 MHz
+  [27]    620 mV  stock   195 MHz  live   495 MHz
+  [28]    625 mV  stock   195 MHz  live   495 MHz
+  [29]    635 mV  stock   195 MHz  live   495 MHz
+  [30]    640 mV  stock   195 MHz  live   495 MHz
+  [31]    645 mV  stock   195 MHz  live   495 MHz
+  [32]    650 mV  stock   195 MHz  live   495 MHz
+  [33]    660 mV  stock   195 MHz  live   495 MHz
+  [34]    665 mV  stock   195 MHz  live   495 MHz
+  [35]    670 mV  stock   195 MHz  live   495 MHz
+  [36]    675 mV  stock   195 MHz  live   495 MHz
+  [37]    685 mV  stock   195 MHz  live   495 MHz
+  [38]    690 mV  stock   195 MHz  live   495 MHz
+  [39]    695 mV  stock   195 MHz  live   495 MHz
+  [40]    700 mV  stock   195 MHz  live   495 MHz
+  [41]    710 mV  stock   195 MHz  live   495 MHz
+  [42]    715 mV  stock   195 MHz  live   495 MHz
+  [43]    720 mV  stock   195 MHz  live   495 MHz
+  [44]    725 mV  stock   210 MHz  live   510 MHz
+  [45]    735 mV  stock   352 MHz  live   652 MHz
+  [46]    740 mV  stock   495 MHz  live   795 MHz
+  [47]    745 mV  stock   630 MHz  live   930 MHz
+  [48]    750 mV  stock   772 MHz  live  1072 MHz
+  [49]    760 mV  stock   907 MHz  live  1207 MHz
+  [50]    765 mV  stock  1050 MHz  live  1350 MHz
+  [51]    770 mV  stock  1192 MHz  live  1492 MHz
+  [52]    775 mV  stock  1327 MHz  live  1627 MHz
+  [53]    785 mV  stock  1470 MHz  live  1770 MHz
+  [54]    790 mV  stock  1605 MHz  live  1905 MHz
+  [55]    795 mV  stock  1747 MHz  live  2047 MHz
+  [56]    800 mV  stock  1890 MHz  live  2190 MHz
+  [57]    810 mV  stock  2025 MHz  live  2325 MHz
+  [58]    815 mV  stock  2062 MHz  live  2362 MHz
+  [59]    820 mV  stock  2092 MHz  live  2392 MHz
+  [60]    825 mV  stock  2122 MHz  live  2422 MHz
+  [61]    835 mV  stock  2145 MHz  live  2445 MHz
+  [62]    840 mV  stock  2175 MHz  live  2475 MHz
+  [63]    845 mV  stock  2205 MHz  live  2505 MHz
+  [64]    850 mV  stock  2235 MHz  live  2535 MHz
+  [65]    860 mV  stock  2257 MHz  live  2557 MHz
+  [66]    865 mV  stock  2287 MHz  live  2587 MHz
+  [67]    870 mV  stock  2317 MHz  live  2617 MHz
+  [68]    875 mV  stock  2340 MHz  live  2640 MHz
+  [69]    885 mV  stock  2370 MHz  live  2670 MHz
+  [70]    890 mV  stock  2392 MHz  live  2692 MHz
+  [71]    895 mV  stock  2422 MHz  live  2722 MHz
+  [72]    900 mV  stock  2445 MHz  live  2745 MHz
+  [73]    910 mV  stock  2475 MHz  live  2775 MHz
+  [74]    915 mV  stock  2497 MHz  live  2797 MHz
+  [75]    920 mV  stock  2520 MHz  live  2820 MHz
+  [76]    925 mV  stock  2542 MHz  live  2842 MHz
+  [77]    935 mV  stock  2572 MHz  live  2872 MHz
+  [78]    940 mV  stock  2595 MHz  live  2895 MHz
+  [79]    945 mV  stock  2617 MHz  live  2917 MHz
+  [80]    950 mV  stock  2640 MHz  live  2940 MHz
+  [81]    960 mV  stock  2662 MHz  live  2962 MHz
+  [82]    965 mV  stock  2685 MHz  live  2985 MHz
+  [83]    970 mV  stock  2700 MHz  live  3000 MHz
+  [84]    975 mV  stock  2722 MHz  live  3022 MHz
+  [85]    985 mV  stock  2745 MHz  live  3045 MHz
+  [86]    990 mV  stock  2760 MHz  live  3060 MHz
+  [87]    995 mV  stock  2782 MHz  live  3082 MHz
+  [88]   1000 mV  stock  2812 MHz  live  3112 MHz
+  [89]   1010 mV  stock  2835 MHz  live  3135 MHz
+  [90]   1015 mV  stock  2857 MHz  live  3157 MHz
+  [91]   1020 mV  stock  2872 MHz  live  3172 MHz
+  [92]   1025 mV  stock  2887 MHz  live  3187 MHz
+  [93]   1035 mV  stock  2902 MHz  live  3202 MHz
+  [94]   1040 mV  stock  2910 MHz  live  3210 MHz
+  [95]   1045 mV  stock  2925 MHz  live  3225 MHz
+  [96]   1050 mV  stock  2940 MHz  live  3240 MHz
+  [97]   1060 mV  stock  2947 MHz  live  3247 MHz
+  [98]   1065 mV  stock  2962 MHz  live  3262 MHz
+  [99]   1070 mV  stock  2977 MHz  live  3277 MHz
+  [100]   1075 mV  stock  2985 MHz  live  3285 MHz
+  [101]   1085 mV  stock  3000 MHz  live  3300 MHz
+  [102]   1090 mV  stock  3007 MHz  live  3307 MHz
+  [103]   1095 mV  stock  3022 MHz  live  3322 MHz
+  [104]   1100 mV  stock  3030 MHz  live  3330 MHz
+  [105]   1110 mV  stock  3045 MHz  live  3345 MHz
+  [106]   1115 mV  stock  3052 MHz  live  3352 MHz
+  [107]   1120 mV  stock  3067 MHz  live  3367 MHz
+  [108]   1125 mV  stock  3075 MHz  live  3375 MHz
+  [109]   1135 mV  stock  3090 MHz  live  3390 MHz
+  [110]   1140 mV  stock  3097 MHz  live  3397 MHz
+  [111]   1145 mV  stock  3112 MHz  live  3412 MHz
+  [112]   1150 mV  stock  3120 MHz  live  3420 MHz
+  [113]   1160 mV  stock  3127 MHz  live  3427 MHz
+  [114]   1165 mV  stock  3142 MHz  live  3442 MHz
+  [115]   1170 mV  stock  3150 MHz  live  3450 MHz
+  [116]   1175 mV  stock  3157 MHz  live  3457 MHz
+  [117]   1185 mV  stock  3172 MHz  live  3472 MHz
+  [118]   1190 mV  stock  3180 MHz  live  3480 MHz
+  [119]   1195 mV  stock  3187 MHz  live  3487 MHz
+  [120]   1200 mV  stock  3195 MHz  live  3495 MHz
+  [121]   1210 mV  stock  3210 MHz  live  3510 MHz
+  [122]   1215 mV  stock  3217 MHz  live  3517 MHz
+  [123]   1220 mV  stock  3225 MHz  live  3525 MHz
+  [124]   1225 mV  stock  3232 MHz  live  3532 MHz
+  [125]   1235 mV  stock  3240 MHz  live  3540 MHz
+  [126]   1240 mV  stock  3247 MHz  live  3547 MHz
 
 --- Voltage lock (SetClockBoostLock) ---
-  domain=Graphics mode=None voltage=0 mV
+  domain=Graphics mode=Manual voltage=1000 mV
   domain=1 mode=None voltage=0 mV
   domain=2 mode=None voltage=0 mV
   domain=3 mode=None voltage=0 mV
   domain=Memory mode=None voltage=0 mV
   domain=5 mode=None voltage=0 mV
   domain=6 mode=None voltage=0 mV
-  -> interpreted lock = 0 mV (0 = unlocked)
+  -> interpreted lock = 1000 mV (0 = unlocked)
 
 --- Coolers ---
-  id=1 policy=None level=0% rpm=0 range=[30..100]
-  id=2 policy=None level=0% rpm=0 range=[30..100]
-  id=3 policy=None level=0% rpm=0 range=[30..100]
+  id=1 policy=Manual level=50% rpm=1570 range=[30..100]
+  id=2 policy=Manual level=50% rpm=1570 range=[30..100]
+  id=3 policy=Manual level=50% rpm=1571 range=[30..100]
 
 --- Thermal settings (public API sensors) ---
-  target=GPU ctrl=GPU temp=33
+  target=GPU ctrl=GPU temp=26
 
 --- Private thermal sensors (all 32 slots) ---
   probed mask = 0x7FFFF
   slot[ 0] = 255.0 °C
-  slot[ 1] = 33.5 °C
-  slot[ 2] = 42.0 °C
+  slot[ 1] = 26.5 °C
+  slot[ 2] = 34.0 °C
   slot[ 3] = 255.0 °C
   slot[ 4] = 255.0 °C
   slot[ 5] = 255.0 °C
@@ -343,5 +343,22 @@ Driver 610.88   vBIOS 98.03.58.00.43
   slot[16] = 255.0 °C
   slot[17] = 255.0 °C
   slot[18] = 255.0 °C
-  -> interpreted hotspot=NaN  memory=42.0
+  -> interpreted hotspot=NaN  memory=34.0
+
+--- Private thermal shapes (version x mask -> live slots) ---
+  v1  mask=0x0007FFFF  status=0     [1]=26.5 [2]=34.0
+  v1  mask=0x0000FFFF  status=0     [1]=26.5 [2]=34.0
+  v1  mask=0xFFFFFFFF  status=-1    (none)
+  v1  mask=0x000001FF  status=0     [1]=26.5 [2]=34.0
+  v1  mask=0x00000007  status=0     [1]=26.5 [2]=34.0
+  v2  mask=0x0007FFFF  status=0     [1]=26.5 [2]=34.0
+  v2  mask=0x0000FFFF  status=0     [1]=26.5 [2]=34.0
+  v2  mask=0xFFFFFFFF  status=-1    (none)
+  v2  mask=0x000001FF  status=0     [1]=26.5 [2]=34.0
+  v2  mask=0x00000007  status=0     [1]=26.5 [2]=34.0
+  v3  mask=0x0007FFFF  status=0     [1]=26.5 [2]=34.0
+  v3  mask=0x0000FFFF  status=0     [1]=26.5 [2]=34.0
+  v3  mask=0xFFFFFFFF  status=-1    (none)
+  v3  mask=0x000001FF  status=0     [1]=26.5 [2]=34.0
+  v3  mask=0x00000007  status=0     [1]=26.5 [2]=34.0
 
