@@ -111,7 +111,9 @@ public sealed class TelemetryTable
         if (!double.IsNaN(first.MemoryTemperatureC)) Sensor("memtemp", "Memory junction", "°C", 1);
 
         Group("Voltages");
-        if (!double.IsNaN(first.VoltageMv)) Sensor("volt", "GPU core (NVVDD)", "mV");
+        if (!double.IsNaN(first.VoltageMv)) Sensor("volt", "GPU core (VID)", "mV");
+        if (!double.IsNaN(first.NvvddMv)) Sensor("nvvdd", "NVVDD (measured)", "mV", 1);
+        if (!double.IsNaN(first.MsvddMv)) Sensor("msvdd", "MSVDD (measured)", "mV", 1);
 
         Group("Clocks");
         Sensor("core", "GPU core", "MHz");
@@ -164,6 +166,8 @@ public sealed class TelemetryTable
         Put("hotspot", t.HotSpotC);
         Put("memtemp", t.MemoryTemperatureC);
         Put("volt", t.VoltageMv);
+        Put("nvvdd", t.NvvddMv);
+        Put("msvdd", t.MsvddMv);
         Put("core", t.CoreClockMhz);
         Put("mem", t.MemoryClockMhz);
         Put("load", t.GpuLoadPercent);

@@ -34,7 +34,12 @@
                 <Grid x:Name="TableFooter" DockPanel.Dock="Bottom" Margin="0,6,10,0" Visibility="Collapsed">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock x:Name="Elapsed" Text="Running 00:00:00" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
-                    <Button Grid.Column="1" Content="Reset stats" Click="ResetStats_Click" Padding="10,3"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <CheckBox x:Name="AutoOpen" Content="Auto-open" Click="AutoOpen_Click" VerticalAlignment="Center"
+                                  Margin="0,0,12,0" Foreground="{StaticResource MutedBrush}"
+                                  ToolTip="Open this window automatically at launch. It is the only thing that polls the driver, so leaving it off costs nothing until you open it."/>
+                        <Button Content="Reset stats" Click="ResetStats_Click" Padding="10,3"/>
+                    </StackPanel>
                 </Grid>
 
                 <Grid>

@@ -393,6 +393,18 @@ public sealed class NvApiBackend : IGpuBackend
         // all, so this is the one figure that has to come from NVML.
         double watts = Nvml.PowerWatts(NvmlIndexFor(gpuIndex));
 
+        // Measured per-rail voltages. The rail status call reports the same number for every rail, so
+        // this is the only source that tells NVVDD and MSVDD apart.
+        double nvvddMv = double.NaN, msvddMv = double.NaN;
+        try
+        {
+            var uv = NvApiPrivate.ReadRailVoltagesUv(g.Handle);
+            if (uv.TryGetValue(NvApiPrivate.RailNvvdd, out var a)) nvvddMv = a / 1000.0;
+            if (uv.TryGetValue(NvApiPrivate.RailMsvdd, out var b)) msvddMv = b / 1000.0;
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+
         double power = 0;
         try
         {
@@ -451,6 +463,7 @@ public sealed class NvApiBackend : IGpuBackend
             CoreClockMhz = core, MemoryClockMhz = mem,
             TemperatureC = temp, HotSpotC = hotspot, MemoryTemperatureC = memTemp,
             VoltageMv = voltage, PowerPercent = power, PowerWatts = double.IsNaN(watts) ? 0 : watts,
+            NvvddMv = nvvddMv, MsvddMv = msvddMv,
             GpuLoadPercent = load, MemoryLoadPercent = memLoad, MemoryUsedMb = memUsed,
             FanPercent = fanPcts.Count > 0 ? fanPcts.Max() : 0,
             FanRpm = fanRpms.Count > 0 ? fanRpms.Max() : 0,
@@ -1731,6 +1744,43 @@ public sealed class NvApiBackend : IGpuBackend
                 foreach (var h in hits)
                     sb.AppendLine($"    0x{h.Size:X3} x v{h.Version}  {h.Words}");
             }
+        });
+
+        Section("Other sensor entry points (which this driver exposes at all)", () =>
+        {
+            // Hot spot is not in GetThermalSensors on Blackwell and MSVDD's own voltage is not in the
+            // rail status call, both shown above. Something reads them, so sweep the other documented
+            // sensor entry points: whether each resolves at all is already an answer.
+            (uint id, string name)[] candidates =
+            {
+                (0x65FE3AADu, "GetThermalSensors (in use)"),
+                (0xE3640A56u, "GetThermalSettings"),
+                (0x0D258BB5u, "ClientThermalPoliciesGetInfo"),
+                (0xE9C425A1u, "ClientThermalPoliciesGetStatus"),
+                (0x465F9BCFu, "ClientVoltRailsGetStatus"),
+                (0x43D9B26Au, "voltage ADC (lead)"),
+                (0xC16C7E2Cu, "GetVoltageDomainsStatus"),
+                (0x2AE9D80Au, "GetVoltageStep"),
+            };
+            foreach (var (id, name) in candidates)
+            {
+                var hits = NvApiPrivate.SweepShapes(g.Handle, id, 0x08, 0x600, new[] { 1, 2, 3 }, maxWords: 14);
+                if (!NvApiPrivate.Exposes(id)) { sb.AppendLine($"  0x{id:X8} {name,-30} not exposed"); continue; }
+                if (hits.Count == 0) { sb.AppendLine($"  0x{id:X8} {name,-30} exposed, no size in 0x08..0x600 accepted"); continue; }
+                foreach (var h in hits)
+                    sb.AppendLine($"  0x{id:X8} {name,-30} 0x{h.Size:X3} x v{h.Version}  {h.Words}");
+            }
+        });
+
+        Section("ADC family with a mask (looking for a per-rail voltage)", () =>
+        {
+            // 0x43D9B26A accepts 0x340 x v1 and answers with an empty buffer, which in this family
+            // means a mask has not been written. The offset differs per family, so try each.
+            var hits = NvApiPrivate.ProbeWithMask(g.Handle, 0x43D9B26Au, 0x340, 1,
+                new[] { -1, 0x04, 0x08, 0x0C }, new uint[] { 0x1, 0x3, 0xF, 0xFFFFFFFF });
+            if (hits.Count == 0) { sb.AppendLine("  no mask offset produced data"); return; }
+            foreach (var h in hits)
+                sb.AppendLine($"  mask 0x{h.Mask:X8} at +0x{h.MaskOffset:X2}: {h.Words}");
         });
 
         Section("Voltage lock (SetClockBoostLock)", () =>

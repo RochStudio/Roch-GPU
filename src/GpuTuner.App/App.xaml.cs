@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -118,6 +118,8 @@ public partial class App : Application
         MainWindow = win;
         win.Show();
         if (minimized) win.MinimizeToTray();
+        // After Show, so the monitor can position itself beside a window that has a size.
+        if (Settings.AutoOpenMonitor) win.SetMonitorOpen(true);
     }
 
     private void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

@@ -104,6 +104,12 @@ public sealed class AppSettings
     public string? StartupProfile { get; set; }
     public bool ApplyOnStartup { get; set; }
     public bool StartMinimized { get; set; }
+
+    /// <summary>
+    /// Open the hardware monitor as soon as the app starts. Off by default, because the monitor is
+    /// the only thing that polls the driver — turning it on is choosing to pay that cost from launch.
+    /// </summary>
+    public bool AutoOpenMonitor { get; set; }
     public int PollIntervalMs { get; set; } = 1000;
     public int HistorySeconds { get; set; } = 120;
     public bool UseMockBackend { get; set; }

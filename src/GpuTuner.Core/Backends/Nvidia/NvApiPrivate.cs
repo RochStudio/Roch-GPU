@@ -600,6 +600,114 @@ internal static class NvApiPrivate
     }
 
     /// <summary>
+    /// Call an entry point with a mask written at each candidate offset, and report what comes back.
+    ///
+    /// This family has a habit: the call returns 0 with an empty buffer until a mask is written, and
+    /// the offset is not the same between families — rails take it at +0x04, the crossbar at +0x08.
+    /// A sweep that writes only the version word therefore reads "no data" from a call that works,
+    /// which is how GetThermalSensors looks dead to a probe that does not know about its mask.
+    /// </summary>
+    public static List<(int MaskOffset, uint Mask, string Words)> ProbeWithMask(
+        PhysicalGPUHandle handle, uint id, int size, int version, int[] maskOffsets, uint[] masks, int maxWords = 24)
+    {
+        var results = new List<(int, uint, string)>();
+        var ptr = QueryInterface64(id);
+        if (ptr == IntPtr.Zero) return results;
+        var fn = Marshal.GetDelegateForFunctionPointer<RawDelegate>(ptr);
+
+        foreach (int mo in maskOffsets)
+            foreach (uint mask in masks)
+            {
+                var buf = Marshal.AllocHGlobal(size);
+                try
+                {
+                    for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+                    Marshal.WriteInt32(buf, 0, size | (version << 16));
+                    if (mo >= 0) Marshal.WriteInt32(buf, mo, unchecked((int)mask));
+                    int status;
+                    try { status = fn(handle.MemoryAddress, buf); }
+                    catch { continue; }
+                    if (status != 0) continue;
+
+                    var words = new List<string>();
+                    for (int off = 4; off + 4 <= size && words.Count < maxWords; off += 4)
+                    {
+                        if (off == mo) continue;              // our own mask, not the driver's answer
+                        int w = Marshal.ReadInt32(buf, off);
+                        if (w != 0) words.Add($"+0x{off:X3}={w}");
+                    }
+                    if (words.Count > 0) results.Add((mo, mask, string.Join(" ", words)));
+                }
+                finally { Marshal.FreeHGlobal(buf); }
+            }
+        return results;
+    }
+
+    // ---- measured rail voltages (ADC) ------------------------------------------------------
+    //
+    // A separate family from the rail status call, and the only one that reads the rails apart. The
+    // status call reports the same figure for every rail - 810 mV for both on a 5070 Ti, differing
+    // only in their limits - so reading a "per-rail" voltage from it would have labelled the core
+    // voltage as MSVDD. This one gives them different numbers: MSVDD pinned at exactly 800.000 mV
+    // across every sample, matching what third-party monitoring shows, while NVVDD moves and sits
+    // below its 810 mV VID, which is measured droop rather than the requested voltage.
+    //
+    // Empty until a mask is written at +0x04, the same trap the rails and crossbar families set.
+    private const uint FnVoltAdc = 0x43D9B26A;
+    private const int AdcSize = 0x340, AdcMaskOffset = 0x04, AdcEntry0 = 0x048, AdcStride = 0x4C, AdcVoltage = 0x04;
+
+    /// <summary>
+    /// Which channel is which rail, and NOT the order the rail mask puts them in — reading them in
+    /// mask order gets the two rails backwards.
+    ///
+    /// Settled by making the card move them rather than by matching numbers: forcing MSVDD's floor to
+    /// 900 mV pushed channel 0 from 794 to 900 and left channel 1 at 800, and forcing NVVDD's floor
+    /// to 900 did the mirror image. Correlation could not have separated these — at idle both rails
+    /// sit within a few millivolts of each other, and the first mapping tried looked plausible for
+    /// several samples before the floor test showed it was reversed.
+    /// </summary>
+    private const int AdcChannelMsvdd = 0, AdcChannelNvvdd = 1;
+
+    /// <summary>Measured voltage per rail index, in microvolts. Empty when the family is absent.</summary>
+    public static IReadOnlyDictionary<int, uint> ReadRailVoltagesUv(PhysicalGPUHandle handle)
+    {
+        var found = new Dictionary<int, uint>(2);
+        var ptr = QueryInterface64(FnVoltAdc);
+        if (ptr == IntPtr.Zero) return found;
+        var fn = Marshal.GetDelegateForFunctionPointer<RawDelegate>(ptr);
+
+        uint mask = ReadRailMask(handle);
+        if (mask == 0) return found;
+
+        var buf = Marshal.AllocHGlobal(AdcSize);
+        try
+        {
+            for (int i = 0; i < AdcSize; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, AdcSize | (1 << 16));
+            Marshal.WriteInt32(buf, AdcMaskOffset, unchecked((int)mask));
+            int status;
+            try { status = fn(handle.MemoryAddress, buf); }
+            catch { return found; }
+            if (status != 0) return found;
+
+            void Take(int channel, int rail)
+            {
+                int off = AdcEntry0 + channel * AdcStride + AdcVoltage;
+                if (off + 4 > AdcSize) return;
+                uint uv = (uint)Marshal.ReadInt32(buf, off);
+                if (uv > 0 && uv < 2_000_000) found[rail] = uv;
+            }
+            Take(AdcChannelMsvdd, RailMsvdd);
+            Take(AdcChannelNvvdd, RailNvvdd);
+            return found;
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    /// <summary>Whether the driver exports this private entry point at all.</summary>
+    public static bool Exposes(uint id) => QueryInterface64(id) != IntPtr.Zero;
+
+    /// <summary>
     /// Find the struct size an entry point wants by trying every one in a range. A wrong size answers
     /// -9 and nothing else happens, so the sweep is cheap and the first status of 0 is the answer —
     /// which is how the crossbar's 0x61A4 was found rather than guessed.

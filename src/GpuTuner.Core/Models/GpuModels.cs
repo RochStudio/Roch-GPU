@@ -176,6 +176,9 @@ public sealed record GpuTelemetry
     public double HotSpotC { get; init; }          // NaN when unavailable
     public double MemoryTemperatureC { get; init; } // NaN when unavailable
     public double VoltageMv { get; init; }          // NaN when unavailable
+    /// <summary>Measured rail voltages in mV; NaN when the card exposes no ADC for them.</summary>
+    public double NvvddMv { get; init; } = double.NaN;
+    public double MsvddMv { get; init; } = double.NaN;
     public double PowerPercent { get; init; }       // % of TDP (0 when the vendor reports watts instead)
     public double PowerWatts { get; init; }         // board power draw; 0 when unavailable
     public double GpuLoadPercent { get; init; }

@@ -67,6 +67,7 @@ showing everything greyed out.
 | Voltage cap | in the curve editor's flatten | offset, mV (undervolt) |
 | NVVDD rail | floor and ceiling, mV | — |
 | MSVDD rail | floor and ceiling, mV — Blackwell only | — |
+| Measured rail voltages | NVVDD and MSVDD, mV | — |
 | XBAR clock | offset, MHz — writable on Blackwell only | — |
 | SYS clock | offset, MHz | — |
 | Video clock | offset, MHz | — |
@@ -243,11 +244,6 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   delta field rather than a promise.
 - **MSVDD is Blackwell-only.** The rail control is present on a 5070 Ti and absent on the 40-series
   cards tested, where NVVDD works on its own.
-- **MSVDD's own voltage is not exposed.** Its ceiling and floor are set and read back, but the
-  voltage the rail actually runs at is not. The rail status call does not carry it: dumping every
-  non-zero word of both rails' entries gives the same reading in every field — 810 mV in both
-  +0x04 and +0x6C — and the only fields that differ between the two rails are their limits. A tool
-  that shows MSVDD separately is reading an ADC family this build does not call.
 - **Hot spot and memory chip temperature are not read on Blackwell.** The private thermal call returns exactly two
   sensors on a 5070 Ti — one tracking the public GPU reading within half a degree, one about eight
   degrees above it where memory junction sits — and neither hot spot nor a separate chip reading

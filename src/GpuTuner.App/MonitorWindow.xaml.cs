@@ -31,6 +31,7 @@ public partial class MonitorWindow : Window
         DataContext = vm;
         _suppressCurveEvents = true;      // TextChanged fires while the XAML loads
         InitializeComponent();
+        AutoOpen.IsChecked = App.Settings.AutoOpenMonitor;
 
         CurveEditor.SetPoints(_vm.EditorCurve.Points);
         HystBox.Text = _vm.EditorCurve.HysteresisC.ToString("0.#");
@@ -94,6 +95,12 @@ public partial class MonitorWindow : Window
 
     /// <summary>When the running figures were last started from nothing.</summary>
     private DateTime _statsSince = DateTime.UtcNow;
+
+    private void AutoOpen_Click(object sender, RoutedEventArgs e)
+    {
+        App.Settings.AutoOpenMonitor = AutoOpen.IsChecked == true;
+        App.Store.SaveSettings(App.Settings);
+    }
 
     private void ResetStats_Click(object sender, RoutedEventArgs e)
     {
