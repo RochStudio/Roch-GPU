@@ -33,7 +33,7 @@ public static class EntryPoint
 
         // The window writes clocks, so it wants elevation — but asking for it in the manifest would
         // break the other half. A manifest-elevated process is launched fresh and does not inherit
-        // the caller's console, so `Roch GPU.exe info` would print into a console nobody can see.
+        // the caller's console, so `ROCH GPU.exe info` would print into a console nobody can see.
         // Elevating here, and only for the window, keeps both halves usable.
         if (!IsElevated() && RelaunchElevated(args)) return 0;
 

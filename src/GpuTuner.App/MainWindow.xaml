@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU" Height="668" Width="350"
+        Title="ROCH GPU" Height="668" Width="350"
         ResizeMode="CanMinimize" WindowStyle="None"
         WindowStartupLocation="CenterScreen"
         Style="{StaticResource {x:Type Window}}">

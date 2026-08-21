@@ -1,6 +1,6 @@
-﻿<img src="assets/logo.svg" alt="Roch GPU" width="560">
+﻿<img src="assets/logo.svg" alt="ROCH GPU" width="560">
 
-# Roch GPU
+# ROCH GPU
 
 [![CI](https://github.com/RochStudio/ROCH-GPU/actions/workflows/ci.yml/badge.svg)](https://github.com/RochStudio/ROCH-GPU/actions/workflows/ci.yml)
 
@@ -11,7 +11,7 @@ and five profile slots.
 No kernel driver — everything goes through the vendors' own user-mode libraries (`nvapi64.dll`,
 `atiadlxx.dll`), the same route Afterburner and Adrenalin take.
 
-**`Roch GPU.exe` is the whole program.** Run it with nothing and you get the window; run it with a
+**`ROCH GPU.exe` is the whole program.** Run it with nothing and you get the window; run it with a
 command and you get the CLI. Nothing to install — no .NET runtime, no DLLs beside it.
 
 > Writing clocks and voltages to a GPU can crash, corrupt work in progress, and in the extreme
@@ -100,15 +100,15 @@ each default is recorded the first time a GPU is seen and restored from there.
 
 ## Running it
 
-Grab `Roch GPU.exe` from the [latest release](../../releases/latest) and run it. That's the whole
+Grab `ROCH GPU.exe` from the [latest release](../../releases/latest) and run it. That's the whole
 install — it is self-contained, so no .NET runtime is needed.
 
 It asks for administrator rights when the window opens, because writing clocks needs them. The CLI
 half does not ask, so read-only commands work from any terminal:
 
 ```powershell
-& '.\Roch GPU.exe' info          # what was detected, and every limit the driver reports
-& '.\Roch GPU.exe' info --mock   # a simulated GPU, for a machine with no supported card
+& '.\ROCH GPU.exe' info          # what was detected, and every limit the driver reports
+& '.\ROCH GPU.exe' info --mock   # a simulated GPU, for a machine with no supported card
 ```
 
 ### Command line
@@ -146,7 +146,7 @@ cd ROCH-GPU
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-That builds, tests and publishes `dist\Roch GPU.exe`. If you don't have the SDK, `SETUP.bat` does the
+That builds, tests and publishes `dist\ROCH GPU.exe`. If you don't have the SDK, `SETUP.bat` does the
 lot in one double-click.
 
 **Tests:** `dotnet run --project tests/GpuTuner.Core.Tests -c Release` → `215 passed, 0 failed`. The
@@ -162,7 +162,7 @@ can be changed without a GPU in front of you.
 | `...\dist\... is denied` | The app is still running, tray icon included. |
 | Builds fine, writes silently do nothing | Not elevated. |
 
-`& '.\dist\Roch GPU.exe' diag` prints exactly what the driver reported, which is usually the answer.
+`& '.\dist\ROCH GPU.exe' diag` prints exactly what the driver reported, which is usually the answer.
 
 </details>
 

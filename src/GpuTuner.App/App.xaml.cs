@@ -78,7 +78,7 @@ public partial class App : Application
             {
                 var r = MessageBox.Show(
                     ex.Message + "\n\nStart with a simulated GPU instead (UI demo only)?",
-                    "Roch GPU — no supported GPU", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    "ROCH GPU — no supported GPU", MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (r == MessageBoxResult.Yes)
                 {
                     Service.Dispose();
@@ -125,7 +125,7 @@ public partial class App : Application
         LogLine("Unhandled: " + e.Exception);
         // A message box in the logon-task run would wait forever on a desktop nobody is looking at.
         if (!_headless)
-            MessageBox.Show(e.Exception.Message, "Roch GPU error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(e.Exception.Message, "ROCH GPU error", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
         // ShutdownMode is OnExplicitShutdown: if the crash happened before the main window existed
         // (e.g. inside OnStartup), swallowing it would leave a windowless zombie process behind.

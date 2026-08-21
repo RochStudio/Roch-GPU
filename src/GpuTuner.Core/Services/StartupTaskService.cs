@@ -10,7 +10,7 @@ namespace GpuTuner.Core.Services;
 /// </summary>
 public static class StartupTaskService
 {
-    public const string TaskName = "Roch GPU Apply Profile";
+    public const string TaskName = "ROCH GPU Apply Profile";
 
     public static bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 

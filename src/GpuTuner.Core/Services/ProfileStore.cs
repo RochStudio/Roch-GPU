@@ -91,7 +91,7 @@ internal static class StorageRoot
     public static string Resolve()
     {
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        string current = Path.Combine(appData, "Roch GPU");
+        string current = Path.Combine(appData, "ROCH GPU");
         string legacy = Path.Combine(appData, "RochGpuOC");
         if (!Directory.Exists(current) && Directory.Exists(legacy))
             try { Directory.Move(legacy, current); } catch (IOException) { } catch (UnauthorizedAccessException) { }

@@ -611,7 +611,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var slot = Slots.FirstOrDefault(s => s.Number == number);
         if (slot is not { Occupied: true }) return;
-        if (MessageBox.Show($"Clear slot {number}?", "Roch GPU",
+        if (MessageBox.Show($"Clear slot {number}?", "ROCH GPU",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
 
         _store.Delete(slot.Name);
@@ -844,7 +844,7 @@ public sealed class MainViewModel : ObservableObject
     private void DeleteSelectedProfile()
     {
         if (SelectedProfile == null) return;
-        if (MessageBox.Show($"Delete profile '{SelectedProfile}'?", "Roch GPU", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (MessageBox.Show($"Delete profile '{SelectedProfile}'?", "ROCH GPU", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         _store.Delete(SelectedProfile);
         if (StartupProfile == SelectedProfile) { StartupProfile = null; ApplyOnStartup = false; }
         RefreshProfiles();
