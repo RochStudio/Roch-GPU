@@ -116,6 +116,14 @@ public sealed record GpuCapabilities
     public int VideoOffsetMinMhz { get; init; }
     public int VideoOffsetMaxMhz { get; init; }
 
+    /// <summary>
+    /// Pinning the graphics clock to a min/max window, through NVML's locked clocks. Not an offset:
+    /// it holds the card inside a range rather than shifting the curve.
+    /// </summary>
+    public bool CanLockClocks { get; init; }
+    public int ClockLockMinMhz { get; init; }
+    public int ClockLockMaxMhz { get; init; }
+
     public bool CanSetXbarOffset { get; init; }
     public int XbarOffsetMinMhz { get; init; }
     public int XbarOffsetMaxMhz { get; init; }
@@ -214,6 +222,9 @@ public sealed record GpuTuningState
     /// <summary>SYS and video clock offsets currently applied, in MHz.</summary>
     public int SysOffsetMhz { get; init; }
     public int VideoOffsetMhz { get; init; }
+    /// <summary>Clock lock currently applied, in MHz; 0/0 when the clock is unpinned.</summary>
+    public int LockedClockMinMhz { get; init; }
+    public int LockedClockMaxMhz { get; init; }
     public bool FanManual { get; init; }
     public int FanPercent { get; init; }
 

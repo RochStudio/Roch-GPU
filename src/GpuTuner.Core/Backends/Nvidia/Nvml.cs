@@ -28,6 +28,7 @@ internal static class Nvml
     [DllImport(Dll, EntryPoint = "nvmlErrorString")] private static extern IntPtr ErrorString(int result);
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetName")] private static extern int GetNameRaw(IntPtr device, [Out] byte[] name, uint length);
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetPowerUsage")] private static extern int GetPowerUsage(IntPtr device, out uint milliwatts);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetMaxClockInfo")] private static extern int GetMaxClock(IntPtr device, int type, out uint mhz);
 
     private static bool _initTried, _initOk;
     private static readonly object Gate = new();
@@ -114,6 +115,27 @@ internal static class Nvml
             catch (Exception) { return double.NaN; }
         }
     }
+
+    /// <summary>
+    /// Highest graphics clock the driver will report, in MHz; 0 when NVML cannot say. Used as the top
+    /// of the clock-range control, so the slider stops where the card does.
+    /// </summary>
+    public static int MaxGraphicsClockMhz(int gpuIndex)
+    {
+        if (!IsAvailable) return 0;
+        lock (Gate)
+        {
+            try
+            {
+                if (GetHandle((uint)gpuIndex, out var dev) != Success) return 0;
+                return GetMaxClock(dev, ClockGraphics, out uint mhz) == Success ? (int)mhz : 0;
+            }
+            catch (Exception) { return 0; }
+        }
+    }
+
+    /// <summary>NVML_CLOCK_GRAPHICS.</summary>
+    private const int ClockGraphics = 0;
 
     public static string? DeviceName(int gpuIndex)
     {

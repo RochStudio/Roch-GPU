@@ -69,6 +69,7 @@ showing everything greyed out.
 | MSVDD rail | floor and ceiling, mV — Blackwell only | — |
 | Measured rail voltages | NVVDD and MSVDD, mV | — |
 | XBAR clock | offset, MHz — writable on Blackwell only | — |
+| Clock range | pin the graphics clock to a min/max window | — |
 | SYS clock | offset, MHz | — |
 | Video clock | offset, MHz | — |
 | Power limit | % of TDP | % offset |
@@ -140,6 +141,8 @@ monitor [--interval 1000]     live telemetry until Ctrl+C
 apply --core 120 --mem 800 --power 110 --fan 60
 apply --volt 25 --uv -100     voltage boost %, and an undervolt in mV under the ceiling
 apply --nvvdd 1100 --msvdd 1050 --xbar 30 --sys 45 --video 30
+apply --clock-min 1500 --clock-max 1800
+                              pin the graphics clock; omit both to unpin
                               the gated levers — passing any one arms XOC for that apply,
                               passing none returns them to driver defaults
 apply-profile "Slot 1"        apply a profile saved in the GUI

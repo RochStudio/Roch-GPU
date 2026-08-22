@@ -124,6 +124,8 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>The interconnect clock, which no public NVAPI surface exposes.</summary>
     public bool HasXbar => Caps.CanSetXbarOffset;
     /// <summary>SYS and video: the other two offsettable domains in the crossbar's family.</summary>
+    /// <summary>Pinning the graphics clock to a window, through NVML's locked clocks.</summary>
+    public bool HasClockLock => Caps.CanLockClocks;
     public bool HasSys => Caps.CanSetSysOffset;
     public bool HasVideo => Caps.CanSetVideoOffset;
     /// <summary>Whether the card exposes any of the gated levers, and so whether the XOC button appears.</summary>
@@ -152,7 +154,7 @@ public sealed class MainViewModel : ObservableObject
     public string TempRangeText => $"{Caps.TempLimitMinC} … {Caps.TempLimitMaxC} °C (default {Caps.TempLimitDefaultC})";
 
     // ------------------------------------------------------------------ editor values (sliders)
-    private int _core, _mem, _power, _temp, _volt, _uv, _vTarget, _rail, _railFloor, _msvdd, _msvddFloor, _xbar, _sys, _video, _fanFixed, _fanModeIndex;
+    private int _core, _mem, _power, _temp, _volt, _uv, _vTarget, _rail, _railFloor, _msvdd, _msvddFloor, _xbar, _sys, _video, _lockLo, _lockHi, _fanFixed, _fanModeIndex;
     private bool _pendingChanges;
 
     // Each numeric property clamps to the driver range on set, so typing "+9999" or dragging past the end is safe,
@@ -197,6 +199,8 @@ public sealed class MainViewModel : ObservableObject
     public int MsvddRailMax { get => _msvdd; set { if (SetTuned(ref _msvdd, value, Caps.MsvddRailMinMv, Math.Max(Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv), nameof(MsvddRailMax))) OnPropertyChanged(nameof(MsvddRangeText)); } }
 
     /// <summary>Crossbar clock offset in MHz. Snaps to the same 15 MHz grid as the core clock.</summary>
+    public int ClockLockMin { get => _lockLo; set { if (SetTuned(ref _lockLo, value, Caps.ClockLockMinMhz, Math.Max(Caps.ClockLockMinMhz, Caps.ClockLockMaxMhz), nameof(ClockLockMin))) { OnPropertyChanged(nameof(ClockLockText)); OnPropertyChanged(nameof(ClockLockIsOff)); } } }
+    public int ClockLockMax { get => _lockHi; set { if (SetTuned(ref _lockHi, value, Caps.ClockLockMinMhz, Math.Max(Caps.ClockLockMinMhz, Caps.ClockLockMaxMhz), nameof(ClockLockMax))) { OnPropertyChanged(nameof(ClockLockText)); OnPropertyChanged(nameof(ClockLockIsOff)); } } }
     public int SysOffset { get => _sys; set => SetTuned(ref _sys, ClockStep.SnapWithin(value, CoreStepMhz, Caps.SysOffsetMinMhz, Caps.SysOffsetMaxMhz), Caps.SysOffsetMinMhz, Caps.SysOffsetMaxMhz, nameof(SysOffset)); }
     public int VideoOffset { get => _video; set => SetTuned(ref _video, ClockStep.SnapWithin(value, CoreStepMhz, Caps.VideoOffsetMinMhz, Caps.VideoOffsetMaxMhz), Caps.VideoOffsetMinMhz, Caps.VideoOffsetMaxMhz, nameof(VideoOffset)); }
     public int XbarOffset { get => _xbar; set => SetTuned(ref _xbar, ClockStep.SnapWithin(value, CoreStepMhz, Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz), Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz, nameof(XbarOffset)); }
@@ -276,6 +280,8 @@ public sealed class MainViewModel : ObservableObject
     public string VoltageRailFloorInput { get => _railFloor.ToString(); set => ParseInto(value, v => VoltageRailFloor = v, nameof(VoltageRailFloor)); }
     public string MsvddRailFloorInput { get => _msvddFloor.ToString(); set => ParseInto(value, v => MsvddRailFloor = v, nameof(MsvddRailFloor)); }
     public string MsvddRailMaxInput { get => _msvdd.ToString(); set => ParseInto(value, v => MsvddRailMax = v, nameof(MsvddRailMax)); }
+    public string ClockLockMinInput { get => _lockLo.ToString(); set => ParseInto(value, v => ClockLockMin = v, nameof(ClockLockMin)); }
+    public string ClockLockMaxInput { get => _lockHi.ToString(); set => ParseInto(value, v => ClockLockMax = v, nameof(ClockLockMax)); }
     public string SysOffsetInput { get => Signed(_sys); set => ParseInto(value, v => SysOffset = v, nameof(SysOffset)); }
     public string VideoOffsetInput { get => Signed(_video); set => ParseInto(value, v => VideoOffset = v, nameof(VideoOffset)); }
     public string XbarOffsetInput { get => Signed(_xbar); set => ParseInto(value, v => XbarOffset = v, nameof(XbarOffset)); }
@@ -449,6 +455,19 @@ public sealed class MainViewModel : ObservableObject
             return $"{MsvddRailFloor} - {MsvddRailMax} mV" + (stock ? " (stock)" : "");
         }
     }
+    /// <summary>
+    /// A window covering the whole range constrains nothing, so it means unpinned. The slider cannot
+    /// reach zero — its floor is the lowest clock the driver will lock to — so without this there
+    /// would be no way back to an unpinned card once the range had been touched.
+    /// </summary>
+    public bool ClockLockIsOff =>
+        _lockLo <= Caps.ClockLockMinMhz && _lockHi >= Caps.ClockLockMaxMhz;
+
+    public string ClockLockText => ClockLockIsOff
+        ? "full range - the driver picks the clock"
+        : $"pinned to {_lockLo} - {_lockHi} MHz";
+    public string ClockLockRangeText =>
+        $"{Caps.ClockLockMinMhz} … {Caps.ClockLockMaxMhz} MHz. Holds the graphics clock inside a window; both at the low end unpins it.";
     public string SysOffsetText => $"{SysOffset:+#;-#;0} MHz on the SYS clock";
     public string VideoOffsetText => $"{VideoOffset:+#;-#;0} MHz on the video clock";
     public string SysOffsetRangeText =>
@@ -726,6 +745,8 @@ public sealed class MainViewModel : ObservableObject
         MsvddRailFloorMv = HasMsvddRail ? MsvddRailFloor : 0,
         XbarOffsetMhz = HasXbar ? XbarOffset : 0,
         SysOffsetMhz = HasSys ? SysOffset : 0,
+        ClockLockMinMhz = HasClockLock && !ClockLockIsOff ? ClockLockMin : 0,
+        ClockLockMaxMhz = HasClockLock && !ClockLockIsOff ? ClockLockMax : 0,
         VideoOffsetMhz = HasVideo ? VideoOffset : 0,
         XocEnabled = XocEnabled,
         // The cap has no slider any more — the curve editor's flatten owns it. Carry whatever lock is
@@ -753,6 +774,9 @@ public sealed class MainViewModel : ObservableObject
         MsvddRailFloor = p.MsvddRailFloorMv > 0 ? p.MsvddRailFloorMv : Caps.MsvddRailStockFloorMv;
         XbarOffset = p.XbarOffsetMhz;
         SysOffset = p.SysOffsetMhz;
+        // 0/0 in a profile is "unpinned", which the slider shows as the full range.
+        ClockLockMin = p.ClockLockMinMhz > 0 ? p.ClockLockMinMhz : Caps.ClockLockMinMhz;
+        ClockLockMax = p.ClockLockMaxMhz > 0 ? p.ClockLockMaxMhz : Caps.ClockLockMaxMhz;
         VideoOffset = p.VideoOffsetMhz;
         XocEnabled = p.XocEnabled;
         TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : StockCeilingMv;
@@ -925,7 +949,7 @@ public sealed class MainViewModel : ObservableObject
     private void RaiseTexts()
     {
         foreach (var p in new[] { nameof(CoreOffset), nameof(MemoryOffset), nameof(PowerLimit),
-                                  nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(VoltageRailMax), nameof(VoltageRailFloor), nameof(MsvddRailMax), nameof(MsvddRailFloor), nameof(XbarOffset), nameof(SysOffset), nameof(VideoOffset), nameof(FixedFan) })
+                                  nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(VoltageRailMax), nameof(VoltageRailFloor), nameof(MsvddRailMax), nameof(MsvddRailFloor), nameof(XbarOffset), nameof(SysOffset), nameof(VideoOffset), nameof(ClockLockMin), nameof(ClockLockMax), nameof(FixedFan) })
             RaiseVal(p);
         OnPropertyChanged(nameof(VoltageCapText));
        

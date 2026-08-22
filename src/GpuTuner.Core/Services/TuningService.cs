@@ -350,6 +350,10 @@ public sealed class TuningService : IDisposable
             if (Capabilities.CanSetCoreOffset)
                 Try("Core offset", () => Backend.SetCoreOffset(GpuIndex, p.CoreOffsetMhz));
             if (Capabilities.CanSetMemoryOffset) Try("Memory offset", () => Backend.SetMemoryOffset(GpuIndex, p.MemoryOffsetMhz));
+            // Not behind the XOC gate: a clock lock holds the card inside a window, it cannot raise
+            // a voltage. 0/0 hands the range back to the driver, so an unset profile clears it.
+            if (Capabilities.CanLockClocks)
+                Try("Clock range", () => Backend.SetClockRange(GpuIndex, p.ClockLockMinMhz, p.ClockLockMaxMhz));
 
             // The cap goes in LAST, on purpose. The curve-offset and core-offset writes touch the same
             // delta table and have historically cleared it as a side effect; writing it after them
@@ -619,6 +623,8 @@ public sealed class TuningService : IDisposable
             _activeCurve = null;
             ManualCurveActive = false;
             Backend.ResetToDefaults(GpuIndex);
+            if (Capabilities.CanLockClocks)
+                try { Backend.SetClockRange(GpuIndex, 0, 0); } catch (GpuBackendException) { }
             // Rails last: the backend deliberately leaves them alone because only this layer knows
             // what they were before anything touched them.
             if (Capabilities.CanSetVoltageRail && NvvddDefaultMaxMv > 0)
@@ -692,6 +698,8 @@ public sealed class TuningService : IDisposable
             MsvddRailMaxMv = s.MsvddRailMaxMv,
             VoltageRailFloorMv = s.VoltageRailFloorMv,
             MsvddRailFloorMv = s.MsvddRailFloorMv,
+            ClockLockMinMhz = s.LockedClockMinMhz,
+            ClockLockMaxMhz = s.LockedClockMaxMhz,
             XbarOffsetMhz = s.XbarOffsetMhz,
             SysOffsetMhz = s.SysOffsetMhz,
             VideoOffsetMhz = s.VideoOffsetMhz,

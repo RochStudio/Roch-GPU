@@ -107,6 +107,46 @@ using (var svc = new TuningService(new MockBackend()))
     Check("reset", svc.Backend.ReadTuningState(0).CoreOffsetMhz == 0);
 }
 
+// ---- Clock range: a window the card is held inside, not an offset, and not behind the XOC gate.
+using (var svc = new TuningService(new MockBackend()))
+{
+    svc.Initialize();
+    svc.Apply(new TuningProfile { ClockLockMinMhz = 1500, ClockLockMaxMhz = 1800 });
+    var st = svc.Backend.ReadTuningState(0);
+    Check("clock range applied", st.LockedClockMinMhz == 1500 && st.LockedClockMaxMhz == 1800);
+
+    // 0/0 is "unpinned", and an apply that does not ask for a window has to clear one left behind.
+    svc.Apply(new TuningProfile());
+    st = svc.Backend.ReadTuningState(0);
+    Check("clock range cleared when unset", st.LockedClockMinMhz == 0 && st.LockedClockMaxMhz == 0);
+
+    // Not gated: a clock lock holds the card inside a range, it cannot raise a voltage.
+    svc.Apply(new TuningProfile { XocEnabled = false, ClockLockMinMhz = 900, ClockLockMaxMhz = 1200 });
+    st = svc.Backend.ReadTuningState(0);
+    Check("clock range ignores the XOC gate", st.LockedClockMinMhz == 900);
+
+    svc.ResetToDefaults();
+    st = svc.Backend.ReadTuningState(0);
+    Check("reset unpins the clock", st.LockedClockMinMhz == 0 && st.LockedClockMaxMhz == 0);
+}
+
+{
+    var lockCaps = new GpuCapabilities { CanLockClocks = true, ClockLockMinMhz = 210, ClockLockMaxMhz = 3090 };
+    var p1 = new TuningProfile { ClockLockMinMhz = 50, ClockLockMaxMhz = 9000 };
+    p1.ClampTo(lockCaps);
+    Check("clock range clamps to what the driver locks", p1.ClockLockMinMhz == 210 && p1.ClockLockMaxMhz == 3090);
+
+    // A floor above its ceiling is not a window the driver can honour.
+    var p2 = new TuningProfile { ClockLockMinMhz = 2000, ClockLockMaxMhz = 1000 };
+    p2.ClampTo(lockCaps);
+    Check("inverted clock window collapses rather than inverting", p2.ClockLockMinMhz <= p2.ClockLockMaxMhz);
+
+    // Untouched profiles stay untouched: 0/0 must not become 210/210 and silently pin the card.
+    var p3 = new TuningProfile();
+    p3.ClampTo(lockCaps);
+    Check("an unset clock range stays unset", p3.ClockLockMinMhz == 0 && p3.ClockLockMaxMhz == 0);
+}
+
 // ---- XOC gate: the rails and crossbar are written only while armed, and disarming puts them back.
 // Regression guard for the reason the gate exists — a rail ceiling left standing from an earlier
 // session is exactly the state that browns a card out on the next boot.

@@ -281,6 +281,10 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
 
+        // Clock lock. NVML owns this one; its reported maximum is the top of the range, and the floor
+        // is the 210 MHz the driver already insists on when a zero floor is refused.
+        int maxLockMhz = Nvml.MaxGraphicsClockMhz(NvmlIndexFor(gpuIndex));
+
         var coreRange = ClockStep.Narrow(coreMin, coreMax,
             ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreOffsetPracticalMaxMhz);
         var memRange = ClockStep.Narrow(memMin, memMax,
@@ -312,6 +316,7 @@ public sealed class NvApiBackend : IGpuBackend
             CanSetMsvddRail = msvdd.Supported,
             MsvddRailMinMv = msvdd.MinMv, MsvddRailMaxMv = msvdd.MaxMv, MsvddRailStockMaxMv = msvdd.StockMv,
             MsvddRailFloorMinMv = msvdd.FloorMinMv, MsvddRailFloorMaxMv = msvdd.FloorMaxMv, MsvddRailStockFloorMv = msvdd.FloorStockMv,
+            CanLockClocks = maxLockMhz > 0, ClockLockMinMhz = MinLockableMhz, ClockLockMaxMhz = maxLockMhz,
             CanSetXbarOffset = canXbar, XbarOffsetMinMhz = xbarMin, XbarOffsetMaxMhz = xbarMax,
             CanSetSysOffset = canSys, SysOffsetMinMhz = sysMin, SysOffsetMaxMhz = sysMax,
             CanSetVideoOffset = canVideo, VideoOffsetMinMhz = vidMin, VideoOffsetMaxMhz = vidMax
@@ -592,6 +597,7 @@ public sealed class NvApiBackend : IGpuBackend
             VoltageRailMaxMv = railMaxMv, MsvddRailMaxMv = msvddMaxMv,
             VoltageRailFloorMv = railFloorMv, MsvddRailFloorMv = msvddFloorMv,
             XbarOffsetMhz = xbarMhz, SysOffsetMhz = sysMhz, VideoOffsetMhz = videoMhz,
+            LockedClockMinMhz = _lockedMinMhz, LockedClockMaxMhz = _lockedMaxMhz,
             PowerLimitPercent = power, TempLimitC = temp,
             VoltageBoostPercent = voltBoost, VoltageOffsetMv = voltOffset,
             FanManual = fanManual, FanPercent = fanPct
@@ -690,6 +696,41 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
         return d;
+    }
+
+    /// <summary>The clock window the user asked for, so the voltage cap knows not to fight it.</summary>
+    private int _lockedMinMhz, _lockedMaxMhz;
+
+    /// <summary>Lowest clock the driver will accept as a floor; a zero floor is refused on some branches.</summary>
+    private const int MinLockableMhz = 210;
+
+    public void SetClockRange(int gpuIndex, int minMhz, int maxMhz)
+    {
+        int nvmlIndex = NvmlIndexFor(gpuIndex);
+
+        if (minMhz <= 0 && maxMhz <= 0)
+        {
+            if (_lockedMinMhz == 0 && _lockedMaxMhz == 0) return;   // already unpinned
+            string? clr = Nvml.ResetGraphicsClocks(nvmlIndex);
+            if (clr != null) throw new GpuBackendException("Failed to release the clock range: " + clr);
+            _lockedMinMhz = _lockedMaxMhz = 0;
+            return;
+        }
+
+        int lo = Math.Max(MinLockableMhz, minMhz > 0 ? minMhz : MinLockableMhz);
+        int hi = maxMhz > 0 ? maxMhz : minMhz;
+        if (hi < lo) hi = lo;
+
+        string? err = Nvml.LockGraphicsClocks(nvmlIndex, lo, hi);
+        if (err != null)
+            throw new GpuBackendException($"Failed to pin the clock to {lo}-{hi} MHz: {err}");
+
+        _lockedMinMhz = lo;
+        _lockedMaxMhz = hi;
+        // The voltage cap's NVML fallback writes the same lock. This one is explicit, so it wins;
+        // the cap has the NVAPI boost lock to fall back on and will say so if it cannot use it.
+        _nvmlClockCapMhz = 0;
+        _nvmlCapVoltageMv = 0;
     }
 
     public void SetSysOffset(int gpuIndex, int offsetMhz) =>
@@ -1041,13 +1082,21 @@ public sealed class NvApiBackend : IGpuBackend
                 $"The driver ignored the {targetMv} mV voltage lock and the V/F curve could not be read, " +
                 "so there is no frequency to cap instead.");
 
-        mhz = Math.Max(210, mhz);
+        // An explicit clock range owns the NVML lock; capping through it here would silently move the
+        // window the user set. The boost lock above is the cap's own mechanism.
+        if (_lockedMinMhz > 0 || _lockedMaxMhz > 0)
+            throw new GpuBackendException(
+                $"The driver ignored the {targetMv} mV voltage lock, and the clock cap it would fall " +
+                $"back to is held by the {_lockedMinMhz}-{_lockedMaxMhz} MHz clock range. Clear the " +
+                "range to cap by clock instead.");
+
+        mhz = Math.Max(MinLockableMhz, mhz);
         int nvmlIndex = NvmlIndexFor(gpuIndex);
         string? err = Nvml.LockGraphicsClocks(nvmlIndex, 0, mhz);
         if (err != null)
         {
             // Some driver branches reject a 0 floor; 210 MHz is the lowest 3D clock these cards use.
-            string? retry = Nvml.LockGraphicsClocks(nvmlIndex, 210, mhz);
+            string? retry = Nvml.LockGraphicsClocks(nvmlIndex, MinLockableMhz, mhz);
             err = retry == null ? null : $"{err}; with a 210 MHz floor: {retry}";
         }
         if (err != null)

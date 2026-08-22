@@ -122,6 +122,12 @@ public interface IGpuBackend : IDisposable
     void SetVideoOffset(int gpuIndex, int offsetMhz) { }
 
     /// <summary>
+    /// Pin the graphics clock between min and max MHz; 0/0 hands the range back to the driver.
+    /// Backends without a clock lock ignore this.
+    /// </summary>
+    void SetClockRange(int gpuIndex, int minMhz, int maxMhz) { }
+
+    /// <summary>
     /// Clock domains beyond the core and memory ones every card reports, keyed for display. Empty
     /// by default: these come from a vendor-private counter and most backends have none.
     /// </summary>

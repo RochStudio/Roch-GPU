@@ -32,6 +32,13 @@ public sealed class TuningProfile
     /// <summary>Crossbar clock offset in MHz.</summary>
     public int XbarOffsetMhz { get; set; }
 
+    /// <summary>
+    /// Graphics clock window in MHz, 0/0 for unpinned. Not gated with XOC: a clock lock cannot
+    /// over-volt anything, it only holds the card inside a range.
+    /// </summary>
+    public int ClockLockMinMhz { get; set; }
+    public int ClockLockMaxMhz { get; set; }
+
     /// <summary>SYS and video clock offsets in MHz. Gated with the crossbar; see XocEnabled.</summary>
     public int SysOffsetMhz { get; set; }
     public int VideoOffsetMhz { get; set; }
@@ -82,6 +89,8 @@ public sealed class TuningProfile
         XbarOffsetMhz = XbarOffsetMhz,
         SysOffsetMhz = SysOffsetMhz,
         VideoOffsetMhz = VideoOffsetMhz,
+        ClockLockMinMhz = ClockLockMinMhz,
+        ClockLockMaxMhz = ClockLockMaxMhz,
         XocEnabled = XocEnabled,
         TargetVoltageMv = TargetVoltageMv,
         ZeroRpm = ZeroRpm,
@@ -129,6 +138,13 @@ public sealed class TuningProfile
             SysOffsetMhz = Math.Clamp(SysOffsetMhz, caps.SysOffsetMinMhz, caps.SysOffsetMaxMhz);
         if (caps.CanSetVideoOffset)
             VideoOffsetMhz = Math.Clamp(VideoOffsetMhz, caps.VideoOffsetMinMhz, caps.VideoOffsetMaxMhz);
+        if (caps.CanLockClocks && (ClockLockMinMhz > 0 || ClockLockMaxMhz > 0))
+        {
+            ClockLockMinMhz = Math.Clamp(ClockLockMinMhz, caps.ClockLockMinMhz, caps.ClockLockMaxMhz);
+            ClockLockMaxMhz = Math.Clamp(ClockLockMaxMhz, caps.ClockLockMinMhz, caps.ClockLockMaxMhz);
+            // A window whose floor is above its ceiling is not one the driver can honour.
+            if (ClockLockMinMhz > ClockLockMaxMhz) ClockLockMinMhz = ClockLockMaxMhz;
+        }
         if (TargetVoltageMv > 0 && caps.MaxVoltageMv > 0)
             TargetVoltageMv = Math.Clamp(TargetVoltageMv, caps.MinVoltageMv, caps.MaxVoltageMv);
         FixedFanPercent = Math.Clamp(FixedFanPercent, caps.FanMinPercent, caps.FanMaxPercent);

@@ -158,6 +158,7 @@ public static class CommandLine
         Console.WriteLine($"Undervolt     : {undervolt}");
         Console.WriteLine($"Core rail     : {(c.CanSetVoltageRail ? $"{c.VoltageRailMinMv}..{c.VoltageRailMaxMv} mV ceiling (now {c.VoltageRailStockMaxMv} mV), floor {c.VoltageRailFloorMinMv}..{c.VoltageRailFloorMaxMv} mV (stock {c.VoltageRailStockFloorMv} mV)" : "not supported")}");
         Console.WriteLine($"MSVDD rail    : {(c.CanSetMsvddRail ? $"{c.MsvddRailMinMv}..{c.MsvddRailMaxMv} mV ceiling (now {c.MsvddRailStockMaxMv} mV), floor {c.MsvddRailFloorMinMv}..{c.MsvddRailFloorMaxMv} mV (stock {c.MsvddRailStockFloorMv} mV)" : "not supported")}");
+        Console.WriteLine($"Clock range   : {(c.CanLockClocks ? $"{c.ClockLockMinMhz}..{c.ClockLockMaxMhz} MHz lockable" : "not supported")}");
         Console.WriteLine($"Crossbar      : {(c.CanSetXbarOffset ? $"{c.XbarOffsetMinMhz}..{c.XbarOffsetMaxMhz} MHz offset" : "not supported")}");
         Console.WriteLine($"SYS clock     : {(c.CanSetSysOffset ? $"{c.SysOffsetMinMhz}..{c.SysOffsetMaxMhz} MHz offset" : "not supported")}");
         Console.WriteLine($"Video clock   : {(c.CanSetVideoOffset ? $"{c.VideoOffsetMinMhz}..{c.VideoOffsetMaxMhz} MHz offset" : "not supported")}");
@@ -253,6 +254,8 @@ public static class CommandLine
         }
         if (o.TryGetValue("volt", out var vb)) p.VoltageBoostPercent = int.Parse(vb);
         if (o.TryGetValue("uv", out var uv)) p.VoltageOffsetMv = int.Parse(uv);
+        if (o.TryGetValue("clock-min", out var clkLo)) p.ClockLockMinMhz = int.Parse(clkLo);
+        if (o.TryGetValue("clock-max", out var clkHi)) p.ClockLockMaxMhz = int.Parse(clkHi);
         if (o.TryGetValue("sys", out var sysText))
         {
             p.SysOffsetMhz = int.Parse(sysText);
@@ -361,7 +364,7 @@ public static class CommandLine
 
           RochGPU.exe info
           RochGPU.exe monitor [--interval 1000]
-          RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--sys +50] [--video +50] [--fan 60|auto]
+          RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
             the rail and crossbar flags are gated: pass one to arm them, pass none and they go back to driver defaults
           RochGPU.exe apply-profile <name> [--gpu 0]
           RochGPU.exe list-profiles

@@ -15,7 +15,7 @@ public sealed class MockBackend : IGpuBackend
     };
 
     private int _core, _mem, _power = 100, _temp = 83, _fan = 30, _voltBoost, _voltOffset;
-    private int _railMax = 1035, _msvddMax = 985, _railFloor, _msvddFloor, _xbar, _sys, _video;
+    private int _railMax = 1035, _msvddMax = 985, _railFloor, _msvddFloor, _xbar, _sys, _video, _lockLo, _lockHi;
     private bool _fanManual;
     private double _load = 5, _simTemp = 40;
 
@@ -38,6 +38,7 @@ public sealed class MockBackend : IGpuBackend
         // The gated levers, with a stock MSVDD ceiling below its NVVDD twin the way a real Blackwell
         // card ships, so the disarm path is tested against two different defaults rather than one.
         CanSetVoltageRail = true, CanSetMsvddRail = true, CanSetXbarOffset = true,
+        CanLockClocks = true, ClockLockMinMhz = 210, ClockLockMaxMhz = 3090,
         CanSetSysOffset = true, SysOffsetMinMhz = -150, SysOffsetMaxMhz = 495,
         CanSetVideoOffset = true, VideoOffsetMinMhz = -150, VideoOffsetMaxMhz = 495,
         VoltageRailMinMv = 800, VoltageRailMaxMv = 1150, VoltageRailStockMaxMv = 1035,
@@ -85,7 +86,8 @@ public sealed class MockBackend : IGpuBackend
         FanManual = _fanManual, FanPercent = _fan,
         VoltageRailMaxMv = _railMax, MsvddRailMaxMv = _msvddMax,
         VoltageRailFloorMv = _railFloor, MsvddRailFloorMv = _msvddFloor,
-        XbarOffsetMhz = _xbar, SysOffsetMhz = _sys, VideoOffsetMhz = _video
+        XbarOffsetMhz = _xbar, SysOffsetMhz = _sys, VideoOffsetMhz = _video,
+        LockedClockMinMhz = _lockLo, LockedClockMaxMhz = _lockHi
     };
 
     public void SetVoltageRailMax(int gpuIndex, int millivolts) { Calls.Add(nameof(SetVoltageRailMax)); _railMax = millivolts; }
@@ -95,6 +97,7 @@ public sealed class MockBackend : IGpuBackend
     public void SetXbarOffset(int gpuIndex, int offsetMhz) { Calls.Add(nameof(SetXbarOffset)); _xbar = offsetMhz; }
     public void SetSysOffset(int gpuIndex, int offsetMhz) { _sys = offsetMhz; }
     public void SetVideoOffset(int gpuIndex, int offsetMhz) { _video = offsetMhz; }
+    public void SetClockRange(int gpuIndex, int minMhz, int maxMhz) { _lockLo = minMhz; _lockHi = maxMhz; }
 
     public void SetCoreOffset(int gpuIndex, int offsetMhz) { Calls.Add(nameof(SetCoreOffset)); _core = offsetMhz; }
     public void SetMemoryOffset(int gpuIndex, int offsetMhz) { Calls.Add(nameof(SetMemoryOffset)); _mem = offsetMhz; }
