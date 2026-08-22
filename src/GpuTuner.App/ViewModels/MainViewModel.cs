@@ -129,7 +129,7 @@ public sealed class MainViewModel : ObservableObject
     public bool HasSys => Caps.CanSetSysOffset;
     public bool HasVideo => Caps.CanSetVideoOffset;
     /// <summary>Whether the card exposes any of the gated levers, and so whether the XOC button appears.</summary>
-    public bool HasXoc => HasVoltageRail || HasMsvddRail || HasXbar || HasSys || HasVideo;
+    public bool HasXoc => HasVoltageRail || HasMsvddRail || HasXbar || HasSys || HasVideo || HasClockLock;
     public bool HasTempLimit => Caps.CanSetTempLimit;
     public bool HasZeroRpm => Caps.CanSetZeroRpm;
     public bool HasMemoryTiming => Caps.CanSetMemoryTiming && Caps.MemoryTimingOptions.Count > 0;

@@ -1,9 +1,8 @@
 ﻿<Window x:Class="GpuTuner.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU" Height="740" Width="350"
+        Title="Roch GPU" Height="668" Width="350"
         ResizeMode="CanMinimize" WindowStyle="None"
         WindowStartupLocation="CenterScreen"
         Style="{StaticResource {x:Type Window}}">
@@ -190,7 +189,7 @@
                             <Button Content="XOC" Click="Xoc_Click" Padding="10,4" Margin="0,0,0,7"
                                     HorizontalAlignment="Stretch" FontWeight="SemiBold"
                                     Visibility="{Binding HasXoc, Converter={StaticResource BoolToVis}}"
-                                    ToolTip="Extreme OC: NVVDD and MSVDD rail ranges and the crossbar clock"/>
+                                    ToolTip="Extreme OC: rail ranges, the crossbar, SYS and video clocks, and the clock range"/>
 
                             <!-- 1a. Over-voltage percentage (Afterburner's "Core Voltage (%)"). Raises the
                                  ceiling above the top of the V/F table; separate lever from the cap below. -->
@@ -258,27 +257,6 @@
                                 <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="core:1"/>
                             </Grid>
-
-                            <!-- 2b. Clock range: hold the card inside a window rather than shift its
-                                 curve. Not gated with XOC — a lock cannot raise a voltage. -->
-                            <StackPanel Margin="0,4,0,0" Visibility="{Binding HasClockLock, Converter={StaticResource BoolToVis}}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="Clock Range (MHz)" Style="{StaticResource RowLabel}"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
-                                             ToolTip="{Binding ClockLockRangeText}"
-                                             Text="{Binding ClockLockMinInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                    <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
-                                             ToolTip="{Binding ClockLockRangeText}"
-                                             Text="{Binding ClockLockMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <c:RangeSlider Margin="0,2,0,0"
-                                               Minimum="{Binding Caps.ClockLockMinMhz}" Maximum="{Binding Caps.ClockLockMaxMhz}" Step="15"
-                                               LowerValue="{Binding ClockLockMin, Mode=TwoWay}"
-                                               UpperValue="{Binding ClockLockMax, Mode=TwoWay}"/>
-                                <TextBlock Text="{Binding ClockLockText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding ClockLockRangeText}"/>
-                            </StackPanel>
 
                             <!-- 3. Memory clock -->
                             <Grid Margin="0,14,0,0" IsEnabled="{Binding Caps.CanSetMemoryOffset}">

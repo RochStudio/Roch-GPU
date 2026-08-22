@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Extreme OC" Height="570" Width="380" ResizeMode="NoResize"
+        Title="Extreme OC" Height="690" Width="380" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
@@ -34,6 +34,31 @@
         <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="10,7" Margin="0,8,0,0">
             <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
                        Text="Rail ceilings raise the voltage the whole card runs at, and the crossbar, SYS and video clocks are undocumented domains with no driver-side sanity check. Move one at a time, in small steps, and test between each. Nothing here survives a reboot."/>
+        </Border>
+
+        <!-- Clock range. Lives here with the rest of the extreme levers, but deliberately outside the
+             gated panel: a range only holds the clock inside a window, it cannot raise a voltage, so
+             shutting the gate has no reason to take it away. Applied by the main window's Apply. -->
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="12,10" Margin="0,8,0,0"
+                Visibility="{Binding HasClockLock, Converter={StaticResource BoolToVis}}">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Clock Range (MHz)" Style="{StaticResource RowLabel}"/>
+                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
+                             ToolTip="{Binding ClockLockRangeText}"
+                             Text="{Binding ClockLockMinInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                    <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
+                             ToolTip="{Binding ClockLockRangeText}"
+                             Text="{Binding ClockLockMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                </Grid>
+                <c:RangeSlider Margin="0,2,0,0"
+                               Minimum="{Binding Caps.ClockLockMinMhz}" Maximum="{Binding Caps.ClockLockMaxMhz}" Step="15"
+                               LowerValue="{Binding ClockLockMin, Mode=TwoWay}"
+                               UpperValue="{Binding ClockLockMax, Mode=TwoWay}"/>
+                <TextBlock Text="{Binding ClockLockText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding ClockLockRangeText}"/>
+            </StackPanel>
         </Border>
 
         <Border Style="{StaticResource Panel}" Padding="12,10">
