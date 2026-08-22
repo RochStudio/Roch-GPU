@@ -1730,35 +1730,26 @@ public sealed class NvApiBackend : IGpuBackend
                 sb.AppendLine($"  rail {rail}: {words}");
         });
 
-        Section("Client power topology probe (looking for board watts)", () =>
+        Section("Power topology", () =>
         {
-            // Two entry points monitoring tools use for per-rail power. Shapes unknown on this
-            // driver, so sweep rather than assume; a status of 0 with non-zero words is a live call.
-            foreach (var (id, name) in new[] { (0xEDCF624Eu, "ClientPowerTopologyGetStatus"),
-                                               (0xA4DFD3F2u, "ClientPowerTopologyGetInfo"),
-                                               (0x34206D86u, "ClientPowerPoliciesGetInfo") })
-            {
-                sb.AppendLine($"  {name} (0x{id:X8}):");
-                var hits = NvApiPrivate.SweepShapes(g.Handle, id, 0x08, 0x900, new[] { 1, 2, 3 });
-                if (hits.Count == 0) { sb.AppendLine("    no size in 0x08..0x900 accepted"); continue; }
-                foreach (var h in hits)
-                    sb.AppendLine($"    0x{h.Size:X3} x v{h.Version}  {h.Words}");
-            }
-        });
-
-        Section("Thermal channels (v3, all slots)", () =>
-        {
-            // The richest version of the thermal call. The driver names its own versions when handed
-            // a wrong one — Ver-1:1003c Ver-2:200a8 Ver-3:334c8 — which pack as version|size, so v3
-            // is 0x34C8 bytes and v2's 0xA8 is exactly the struct the reader already uses. v3 wants
-            // its mask at +0x08 where v2 wants it at +0x04, and lays out eight channels of 0x8C: a
-            // reading, then a type. 255.0 is the marker for a slot with no sensor behind it.
+            // NV_GPU_CLIENT_POWER_TOPOLOGY_STATUS, 0xEDCF624E: version, count, then four entries of
+            // {domain, reserved, usage, reserved} - 0x48 bytes, which is the shape this call accepts.
+            // Domains are GPU and Board, and the figures are per-cent-mille of the limit rather than
+            // watts, which is why board power comes from NVML instead.
             //
-            // On a 5070 Ti only two slots are ever populated, which is the answer to where hot spot
-            // is: not here, at any version.
-            foreach (var ch in NvApiPrivate.ReadThermalChannels(g.Handle))
-                sb.AppendLine($"  slot {ch.Slot}  type {ch.Type}  " +
-                              (ch.Present ? $"{ch.Celsius:0.0} °C" : "no sensor"));
+            // Worth being explicit, because it is a question that keeps getting asked: there are no
+            // per-channel power *limits* anywhere in this family. It reports usage for two domains.
+            var w = NvApiPrivate.CallRaw(g.Handle, 0xEDCF624Eu, 0x48, 1, -1, 0u, out int st);
+            if (st != 0 || w.Length < 4) { sb.AppendLine($"  status {st}"); return; }
+            int count = w[1];
+            sb.AppendLine($"  count = {count}");
+            for (int i = 0; i < count && i < 4; i++)
+            {
+                int at = 2 + i * 4;
+                if (at + 2 >= w.Length) break;
+                string domain = w[at] == 0 ? "GPU" : w[at] == 1 ? "Board" : $"domain {w[at]}";
+                sb.AppendLine($"  {domain,-6} usage {w[at + 2] / 1000.0:0.000} % of limit");
+            }
         });
 
         Section("Voltage lock (SetClockBoostLock)", () =>
