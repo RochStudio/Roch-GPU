@@ -3,176 +3,268 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Extreme OC" Height="690" Width="380" ResizeMode="NoResize"
+        Title="Extreme OC" Height="666" Width="380" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
-        <conv:BoolToBrushConverter x:Key="StatusBrush" TrueBrush="{StaticResource DangerBrush}" FalseBrush="{StaticResource MutedBrush}"/>
+        <!-- Armed drives the sliders and the Disable button; NotArmed drives Enable, so exactly one
+             of each pair is ever clickable and the greyed one names the state the card is in. -->
+        <conv:XocLeverConverter x:Key="Armed"/>
+        <conv:XocLeverConverter x:Key="NotArmed" Invert="True"/>
+
+        <!-- A pair per lever, sized to sit on the caption line rather than add a row each. -->
+        <Style x:Key="GateOn" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+            <Setter Property="Height" Value="21"/>
+            <Setter Property="MinWidth" Value="58"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontSize" Value="10.5"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+        </Style>
+        <Style x:Key="GateOff" TargetType="Button" BasedOn="{StaticResource DangerButton}">
+            <Setter Property="Height" Value="21"/>
+            <Setter Property="MinWidth" Value="58"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontSize" Value="10.5"/>
+            <Setter Property="Margin" Value="4,0,0,0"/>
+        </Style>
     </Window.Resources>
 
     <DockPanel Margin="12">
 
-        <!-- The gate. Enable and Disable write the card straight away, the way mVolt+ does, so this
-             panel is an action rather than another pending edit for the main window's Apply. -->
+        <!-- Each lever is armed on its own, because they fail in unrelated ways: a rail ceiling that
+             browns the card out says nothing about whether a crossbar offset is stable. Enable and
+             Disable write the card straight away, the way mVolt+ does, so this window is an action
+             rather than another pending edit for the main window's Apply. -->
         <Border DockPanel.Dock="Top" Style="{StaticResource Panel}" Padding="12,10" Margin="0,0,0,8">
             <StackPanel>
                 <TextBlock Text="EXTREME OC" Style="{StaticResource SectionTitle}"/>
-                <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <Button Content="Enable" Command="{Binding EnableXocCommand}" IsEnabled="{Binding XocDisabled}"
-                            Style="{StaticResource PrimaryButton}" Padding="10,5" Margin="0,0,4,0"
-                            ToolTip="Write the rail ranges and crossbar offset below to the card now"/>
-                    <Button Grid.Column="1" Content="Disable" Command="{Binding DisableXocCommand}" IsEnabled="{Binding XocEnabled}"
-                            Style="{StaticResource DangerButton}" Padding="10,5" Margin="4,0,0,0"
-                            ToolTip="Put the rails and crossbar back to the driver's own values now"/>
-                </Grid>
-                <TextBlock Text="{Binding XocStatusText}" Style="{StaticResource Muted}" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding XocStatusText}" Style="{StaticResource Muted}" TextWrapping="Wrap"/>
             </StackPanel>
         </Border>
 
         <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="10,7" Margin="0,8,0,0">
             <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
-                       Text="Rail ceilings raise the voltage the whole card runs at, and the crossbar, SYS and video clocks are undocumented domains with no driver-side sanity check. Move one at a time, in small steps, and test between each. Nothing here survives a reboot."/>
-        </Border>
-
-        <!-- Clock range. Lives here with the rest of the extreme levers, but deliberately outside the
-             gated panel: a range only holds the clock inside a window, it cannot raise a voltage, so
-             shutting the gate has no reason to take it away. Applied by the main window's Apply. -->
-        <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="12,10" Margin="0,8,0,0"
-                Visibility="{Binding HasClockLock, Converter={StaticResource BoolToVis}}">
-            <StackPanel>
-                <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBlock Text="Clock Range (MHz)" Style="{StaticResource RowLabel}"/>
-                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
-                             ToolTip="{Binding ClockLockRangeText}"
-                             Text="{Binding ClockLockMinInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                    <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
-                             ToolTip="{Binding ClockLockRangeText}"
-                             Text="{Binding ClockLockMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                </Grid>
-                <c:RangeSlider Margin="0,2,0,0"
-                               Minimum="{Binding Caps.ClockLockMinMhz}" Maximum="{Binding Caps.ClockLockMaxMhz}" Step="15"
-                               LowerValue="{Binding ClockLockMin, Mode=TwoWay}"
-                               UpperValue="{Binding ClockLockMax, Mode=TwoWay}"/>
-                <TextBlock Text="{Binding ClockLockText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                           TextTrimming="CharacterEllipsis" ToolTip="{Binding ClockLockRangeText}"/>
-            </StackPanel>
+                       Text="Rail ceilings raise the voltage the whole card runs at, and the crossbar, SYS and video clocks are undocumented domains with no driver-side sanity check. Arm one at a time, in small steps, and test between each. Nothing here survives a reboot."/>
         </Border>
 
         <Border Style="{StaticResource Panel}" Padding="12,10">
-            <!-- Dead while the gate is shut: a slider that moves but is never written would be the
-                 window claiming a setting the card has not got. -->
-            <StackPanel IsEnabled="{Binding XocEnabled}">
-                <!-- 1b2. NVVDD rail: floor and ceiling on one track -->
-                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasVoltageRail, Converter={StaticResource BoolToVis}}">
-                    <Grid>
+            <StackPanel>
+
+                <!-- NVVDD rail: floor and ceiling on one track -->
+                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasVoltageRail, Converter={StaticResource BoolToVis}}">
+                    <!-- Dead while this lever is disarmed: a slider that moves but is never written
+                         would be the window claiming a setting the card has not got. -->
+                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Nvvdd}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="NVVDD Range (mV)" Style="{StaticResource RowLabel}"/>
+                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
+                                     ToolTip="{Binding VoltageRailMaxRangeText}"
+                                     Text="{Binding VoltageRailFloorInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
+                                     ToolTip="{Binding VoltageRailMaxRangeText}"
+                                     Text="{Binding VoltageRailMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <c:RangeSlider Margin="0,2,0,0"
+                                       Minimum="{Binding Caps.VoltageRailFloorMinMv}" Maximum="{Binding Caps.VoltageRailMaxMv}" Step="5"
+                                       LowerValue="{Binding VoltageRailFloor, Mode=TwoWay}"
+                                       UpperValue="{Binding VoltageRailMax, Mode=TwoWay}"/>
+                    </StackPanel>
+                    <Grid Margin="0,3,0,0">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="NVVDD Range (mV)" Style="{StaticResource RowLabel}"/>
-                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
-                                 ToolTip="{Binding VoltageRailMaxRangeText}"
-                                 Text="{Binding VoltageRailFloorInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                        <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
-                                 ToolTip="{Binding VoltageRailMaxRangeText}"
-                                 Text="{Binding VoltageRailMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Text="{Binding VoltageRailRangeText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding VoltageRailMaxRangeText}"
+                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Nvvdd}"/>
+                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
+                                Command="{Binding ArmCommand}" CommandParameter="Nvvdd"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Nvvdd}"
+                                ToolTip="Write this rail range to the card now"/>
+                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
+                                Command="{Binding DisarmCommand}" CommandParameter="Nvvdd"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Nvvdd}"
+                                ToolTip="Put this rail back to the driver's own values now"/>
                     </Grid>
-                    <c:RangeSlider Margin="0,2,0,0"
-                                   Minimum="{Binding Caps.VoltageRailFloorMinMv}" Maximum="{Binding Caps.VoltageRailMaxMv}" Step="5"
-                                   LowerValue="{Binding VoltageRailFloor, Mode=TwoWay}"
-                                   UpperValue="{Binding VoltageRailMax, Mode=TwoWay}"/>
-                    <TextBlock Text="{Binding VoltageRailRangeText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                               TextTrimming="CharacterEllipsis" ToolTip="{Binding VoltageRailMaxRangeText}"/>
                 </StackPanel>
 
-                <!-- 1b2b. MSVDD rail: floor and ceiling on one track -->
-                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasMsvddRail, Converter={StaticResource BoolToVis}}">
-                    <Grid>
+                <!-- MSVDD rail: floor and ceiling on one track -->
+                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasMsvddRail, Converter={StaticResource BoolToVis}}">
+                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Msvdd}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="MSVDD Range (mV)" Style="{StaticResource RowLabel}"/>
+                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
+                                     ToolTip="{Binding MsvddRailMaxRangeText}"
+                                     Text="{Binding MsvddRailFloorInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
+                                     ToolTip="{Binding MsvddRailMaxRangeText}"
+                                     Text="{Binding MsvddRailMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <c:RangeSlider Margin="0,2,0,0"
+                                       Minimum="{Binding Caps.MsvddRailFloorMinMv}" Maximum="{Binding Caps.MsvddRailMaxMv}" Step="5"
+                                       LowerValue="{Binding MsvddRailFloor, Mode=TwoWay}"
+                                       UpperValue="{Binding MsvddRailMax, Mode=TwoWay}"/>
+                    </StackPanel>
+                    <Grid Margin="0,3,0,0">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="MSVDD Range (mV)" Style="{StaticResource RowLabel}"/>
-                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
-                                 ToolTip="{Binding MsvddRailMaxRangeText}"
-                                 Text="{Binding MsvddRailFloorInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                        <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
-                                 ToolTip="{Binding MsvddRailMaxRangeText}"
-                                 Text="{Binding MsvddRailMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        <TextBlock Text="{Binding MsvddRangeText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding MsvddRailMaxRangeText}"
+                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Msvdd}"/>
+                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
+                                Command="{Binding ArmCommand}" CommandParameter="Msvdd"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Msvdd}"
+                                ToolTip="Write this rail range to the card now"/>
+                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
+                                Command="{Binding DisarmCommand}" CommandParameter="Msvdd"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Msvdd}"
+                                ToolTip="Put this rail back to the driver's own values now"/>
                     </Grid>
-                    <c:RangeSlider Margin="0,2,0,0"
-                                   Minimum="{Binding Caps.MsvddRailFloorMinMv}" Maximum="{Binding Caps.MsvddRailMaxMv}" Step="5"
-                                   LowerValue="{Binding MsvddRailFloor, Mode=TwoWay}"
-                                   UpperValue="{Binding MsvddRailMax, Mode=TwoWay}"/>
-                    <TextBlock Text="{Binding MsvddRangeText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                               TextTrimming="CharacterEllipsis" ToolTip="{Binding MsvddRailMaxRangeText}"/>
                 </StackPanel>
 
-                <!-- 1b3. Crossbar clock offset â€” private domain, not in PStates20 -->
-                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasXbar, Converter={StaticResource BoolToVis}}">
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="XBAR Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
-                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                 ToolTip="{Binding XbarOffsetRangeText}"
-                                 Text="{Binding XbarOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                <!-- Crossbar clock offset - private domain, not in PStates20 -->
+                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasXbar, Converter={StaticResource BoolToVis}}">
+                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Xbar}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="XBAR Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
+                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                     ToolTip="{Binding XbarOffsetRangeText}"
+                                     Text="{Binding XbarOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="xbar:-1"/>
+                            <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.XbarOffsetMinMhz}" Maximum="{Binding Caps.XbarOffsetMaxMhz}"
+                                    Value="{Binding XbarOffset, Mode=TwoWay}" TickFrequency="15"/>
+                            <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="xbar:1"/>
+                        </Grid>
+                    </StackPanel>
+                    <Grid Margin="0,3,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding XbarOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding XbarOffsetRangeText}"
+                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Xbar}"/>
+                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
+                                Command="{Binding ArmCommand}" CommandParameter="Xbar"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Xbar}"
+                                ToolTip="Write this offset to the card now"/>
+                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
+                                Command="{Binding DisarmCommand}" CommandParameter="Xbar"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Xbar}"
+                                ToolTip="Put this domain back to no offset now"/>
                     </Grid>
-                    <Grid Margin="0,1,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                      Command="{Binding NudgeCommand}" CommandParameter="xbar:-1"/>
-                        <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.XbarOffsetMinMhz}" Maximum="{Binding Caps.XbarOffsetMaxMhz}"
-                                Value="{Binding XbarOffset, Mode=TwoWay}" TickFrequency="15"/>
-                        <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                      Command="{Binding NudgeCommand}" CommandParameter="xbar:1"/>
-                    </Grid>
-                    <TextBlock Text="{Binding XbarOffsetText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                               TextTrimming="CharacterEllipsis" ToolTip="{Binding XbarOffsetRangeText}"/>
                 </StackPanel>
 
-                <!-- 1b3. Crossbar clock offset â€” private domain, not in PStates20 -->
-                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasSys, Converter={StaticResource BoolToVis}}">
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="SYS Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
-                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                 ToolTip="{Binding SysOffsetRangeText}"
-                                 Text="{Binding SysOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                <!-- SYS clock offset -->
+                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasSys, Converter={StaticResource BoolToVis}}">
+                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Sys}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="SYS Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
+                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                     ToolTip="{Binding SysOffsetRangeText}"
+                                     Text="{Binding SysOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="sys:-1"/>
+                            <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.SysOffsetMinMhz}" Maximum="{Binding Caps.SysOffsetMaxMhz}"
+                                    Value="{Binding SysOffset, Mode=TwoWay}" TickFrequency="15"/>
+                            <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="sys:1"/>
+                        </Grid>
+                    </StackPanel>
+                    <Grid Margin="0,3,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding SysOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding SysOffsetRangeText}"
+                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Sys}"/>
+                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
+                                Command="{Binding ArmCommand}" CommandParameter="Sys"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Sys}"
+                                ToolTip="Write this offset to the card now"/>
+                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
+                                Command="{Binding DisarmCommand}" CommandParameter="Sys"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Sys}"
+                                ToolTip="Put this domain back to no offset now"/>
                     </Grid>
-                    <Grid Margin="0,1,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                      Command="{Binding NudgeCommand}" CommandParameter="sys:-1"/>
-                        <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.SysOffsetMinMhz}" Maximum="{Binding Caps.SysOffsetMaxMhz}"
-                                Value="{Binding SysOffset, Mode=TwoWay}" TickFrequency="15"/>
-                        <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                      Command="{Binding NudgeCommand}" CommandParameter="sys:1"/>
-                    </Grid>
-                    <TextBlock Text="{Binding SysOffsetText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                               TextTrimming="CharacterEllipsis" ToolTip="{Binding SysOffsetRangeText}"/>
                 </StackPanel>
 
-                <!-- 1b3. Crossbar clock offset â€” private domain, not in PStates20 -->
-                <StackPanel Margin="0,4,0,0" Visibility="{Binding HasVideo, Converter={StaticResource BoolToVis}}">
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="Video Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
-                        <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                 ToolTip="{Binding VideoOffsetRangeText}"
-                                 Text="{Binding VideoOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                <!-- Video clock offset -->
+                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasVideo, Converter={StaticResource BoolToVis}}">
+                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Video}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Video Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
+                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                     ToolTip="{Binding VideoOffsetRangeText}"
+                                     Text="{Binding VideoOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="video:-1"/>
+                            <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VideoOffsetMinMhz}" Maximum="{Binding Caps.VideoOffsetMaxMhz}"
+                                    Value="{Binding VideoOffset, Mode=TwoWay}" TickFrequency="15"/>
+                            <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="video:1"/>
+                        </Grid>
+                    </StackPanel>
+                    <Grid Margin="0,3,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding VideoOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding VideoOffsetRangeText}"
+                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Video}"/>
+                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
+                                Command="{Binding ArmCommand}" CommandParameter="Video"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Video}"
+                                ToolTip="Write this offset to the card now"/>
+                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
+                                Command="{Binding DisarmCommand}" CommandParameter="Video"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Video}"
+                                ToolTip="Put this domain back to no offset now"/>
                     </Grid>
-                    <Grid Margin="0,1,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                      Command="{Binding NudgeCommand}" CommandParameter="video:-1"/>
-                        <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VideoOffsetMinMhz}" Maximum="{Binding Caps.VideoOffsetMaxMhz}"
-                                Value="{Binding VideoOffset, Mode=TwoWay}" TickFrequency="15"/>
-                        <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                      Command="{Binding NudgeCommand}" CommandParameter="video:1"/>
+                </StackPanel>
+
+                <!-- Clock range. The one lever here that can only hold the card down rather than push
+                     it up, but it gets the same button pair so the window works one way throughout. -->
+                <StackPanel Margin="0,2,0,0" Visibility="{Binding HasClockLock, Converter={StaticResource BoolToVis}}">
+                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=ClockRange}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="Clock Range (MHz)" Style="{StaticResource RowLabel}"/>
+                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}" Width="46" Margin="0,0,4,0"
+                                     ToolTip="{Binding ClockLockRangeText}"
+                                     Text="{Binding ClockLockMinInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                            <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" Width="46"
+                                     ToolTip="{Binding ClockLockRangeText}"
+                                     Text="{Binding ClockLockMaxInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <c:RangeSlider Margin="0,2,0,0"
+                                       Minimum="{Binding Caps.ClockLockMinMhz}" Maximum="{Binding Caps.ClockLockMaxMhz}" Step="15"
+                                       LowerValue="{Binding ClockLockMin, Mode=TwoWay}"
+                                       UpperValue="{Binding ClockLockMax, Mode=TwoWay}"/>
+                    </StackPanel>
+                    <Grid Margin="0,3,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding ClockLockText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding ClockLockRangeText}"
+                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=ClockRange}"/>
+                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
+                                Command="{Binding ArmCommand}" CommandParameter="ClockRange"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=ClockRange}"
+                                ToolTip="Pin the graphics clock inside this window now"/>
+                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
+                                Command="{Binding DisarmCommand}" CommandParameter="ClockRange"
+                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=ClockRange}"
+                                ToolTip="Hand the clock back to the driver now"/>
                     </Grid>
-                    <TextBlock Text="{Binding VideoOffsetText}" Style="{StaticResource Muted}" Margin="0,2,0,0"
-                               TextTrimming="CharacterEllipsis" ToolTip="{Binding VideoOffsetRangeText}"/>
                 </StackPanel>
 
             </StackPanel>
         </Border>
     </DockPanel>
 </Window>
-

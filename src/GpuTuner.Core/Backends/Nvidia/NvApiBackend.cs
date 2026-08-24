@@ -710,7 +710,11 @@ public sealed class NvApiBackend : IGpuBackend
 
         if (minMhz <= 0 && maxMhz <= 0)
         {
-            if (_lockedMinMhz == 0 && _lockedMaxMhz == 0) return;   // already unpinned
+            // Always ask the driver to release it, even when this process never pinned anything.
+            // The lock lives in the driver and outlives us: skipping the call when the remembered
+            // state said "already unpinned" left a lock standing whenever it had been set by an
+            // earlier run - every CLI apply after a pin, and the GUI's first Apply after a restart.
+            // NVML has no way to read the window back, so remembered state cannot be trusted here.
             string? clr = Nvml.ResetGraphicsClocks(nvmlIndex);
             if (clr != null) throw new GpuBackendException("Failed to release the clock range: " + clr);
             _lockedMinMhz = _lockedMaxMhz = 0;

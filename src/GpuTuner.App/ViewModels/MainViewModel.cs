@@ -57,8 +57,8 @@ public sealed class MainViewModel : ObservableObject
         LoadProfileCommand = new RelayCommand(LoadSelectedProfile, () => SelectedProfile != null);
         DeleteProfileCommand = new RelayCommand(DeleteSelectedProfile, () => SelectedProfile != null);
         RevertCommand = new RelayCommand(Revert);
-        EnableXocCommand = new RelayCommand(() => SetXoc(true));
-        DisableXocCommand = new RelayCommand(() => SetXoc(false));
+        ArmCommand = new RelayCommand(o => SetLever(o, true));
+        DisarmCommand = new RelayCommand(o => SetLever(o, false));
         SlotCommand = new RelayCommand(p => OnSlotClicked(ToSlotNumber(p)));
         NudgeCommand = new RelayCommand(Nudge);
         for (int i = 1; i <= SlotCount; i++) Slots.Add(new ProfileSlot(i));
@@ -351,20 +351,31 @@ public sealed class MainViewModel : ObservableObject
     public FanCurve EditorCurve { get; private set; } = new();
 
     /// <summary>
-    /// The XOC gate. Not a pending edit like the sliders are: Enable and Disable write the hardware
-    /// on the spot, the way mVolt+ does, so there is nothing left over for Apply to send.
+    /// Which XOC levers are armed. Not a pending edit like the sliders are: each Enable and Disable
+    /// writes the hardware on the spot, the way mVolt+ does, so there is nothing left over for Apply
+    /// to send. Bound through XocLeverConverter rather than a boolean pair per lever, so adding a
+    /// seventh lever costs one enum member instead of two more properties.
     /// </summary>
-    public bool XocEnabled
+    public XocLever XocArmed
     {
-        get => _xocEnabled;
-        private set { if (Set(ref _xocEnabled, value)) { OnPropertyChanged(nameof(XocDisabled)); OnPropertyChanged(nameof(XocStatusText)); } }
+        get => _xocArmed;
+        private set { if (Set(ref _xocArmed, value)) OnPropertyChanged(nameof(XocStatusText)); }
     }
-    private bool _xocEnabled;
-    /// <summary>For the Enable button, which is the one to offer while the gate is shut.</summary>
-    public bool XocDisabled => !_xocEnabled;
-    public string XocStatusText => _xocEnabled
-        ? "Enabled - the rails and crossbar below are live on the card."
-        : "Disabled - the card is running the driver's own rail and crossbar values.";
+    private XocLever _xocArmed;
+
+    public string XocStatusText
+    {
+        get
+        {
+            var armed = new List<string>();
+            void Add(XocLever l, string name) { if (_xocArmed.Has(l)) armed.Add(name); }
+            Add(XocLever.Nvvdd, "NVVDD"); Add(XocLever.Msvdd, "MSVDD"); Add(XocLever.Xbar, "XBAR");
+            Add(XocLever.Sys, "SYS"); Add(XocLever.Video, "video"); Add(XocLever.ClockRange, "clock range");
+            return armed.Count == 0
+                ? "Nothing armed - the card is running the driver's own values."
+                : "Live on the card: " + string.Join(", ", armed) + ".";
+        }
+    }
 
     public bool PendingChanges { get => _pendingChanges; private set => Set(ref _pendingChanges, value); }
     private void Dirty() => PendingChanges = true;
@@ -725,8 +736,8 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand LoadProfileCommand { get; }
     public RelayCommand DeleteProfileCommand { get; }
     public RelayCommand RevertCommand { get; }
-    public RelayCommand EnableXocCommand { get; }
-    public RelayCommand DisableXocCommand { get; }
+    public RelayCommand ArmCommand { get; }
+    public RelayCommand DisarmCommand { get; }
 
     // ------------------------------------------------------------------ actions
     public TuningProfile BuildProfileFromEditor(string name) => new()
@@ -748,7 +759,7 @@ public sealed class MainViewModel : ObservableObject
         ClockLockMinMhz = HasClockLock && !ClockLockIsOff ? ClockLockMin : 0,
         ClockLockMaxMhz = HasClockLock && !ClockLockIsOff ? ClockLockMax : 0,
         VideoOffsetMhz = HasVideo ? VideoOffset : 0,
-        XocEnabled = XocEnabled,
+        XocArmed = XocArmed,
         // The cap has no slider any more — the curve editor's flatten owns it. Carry whatever lock is
         // actually on the card so pressing Apply here preserves a flatten set over there instead of
         // overwriting it with a value this window last read at startup.
@@ -778,7 +789,7 @@ public sealed class MainViewModel : ObservableObject
         ClockLockMin = p.ClockLockMinMhz > 0 ? p.ClockLockMinMhz : Caps.ClockLockMinMhz;
         ClockLockMax = p.ClockLockMaxMhz > 0 ? p.ClockLockMaxMhz : Caps.ClockLockMaxMhz;
         VideoOffset = p.VideoOffsetMhz;
-        XocEnabled = p.XocEnabled;
+        XocArmed = p.XocArmed;
         TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : StockCeilingMv;
         ZeroRpm = p.ZeroRpm;
         MemoryTimingIndex = p.MemoryTimingLevel;
@@ -813,34 +824,61 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Enable / Disable, mVolt+ style: one click writes the rails and crossbar, or puts them back.
-    /// Deliberately narrow - it never touches clocks, power, temp or fan, so arming the gate cannot
-    /// smuggle a half-finished slider edit onto the card behind the user's back.
+    /// Enable / Disable, mVolt+ style: one click writes that one lever, or puts it back. Deliberately
+    /// narrow - it touches neither the other levers nor the clocks, power, temp and fan, so arming
+    /// one cannot smuggle a half-finished slider edit elsewhere onto the card behind the user's back.
     /// </summary>
-    private void SetXoc(bool on)
+    private void SetLever(object? parameter, bool on)
     {
-        var errs = _svc.SetXocEnabled(BuildProfileFromEditor(SelectedProfile ?? "Session"), on);
-        // The gate only counts as open if the writes behind it landed; leaving it showing "Enabled"
-        // after a failed rail write would be the tool lying about the state of the card.
+        if (parameter is not string name || !Enum.TryParse<XocLever>(name, true, out var lever)) return;
+        var errs = _svc.SetXocLever(BuildProfileFromEditor(SelectedProfile ?? "Session"), lever, on);
         bool ok = errs.Count == 0 || TuningService.OnlyNotes(errs);
-        XocEnabled = on && ok;
+        // The button only moves if the write behind it landed. Leaving it showing "armed" after a
+        // failed rail write would be the tool lying about the state of the card - and so would
+        // showing "disarmed" after a failed put-back, which is why neither direction is assumed.
+        if (ok) XocArmed = _xocArmed.With(lever, on);
         Status = errs.Count > 0
             ? string.Join("  |  ", errs)
-            : on ? "XOC enabled" : "XOC disabled - rails and crossbar back to driver defaults";
+            : $"{LeverLabel(lever)} {(on ? "armed" : "disarmed")}";
         StatusIsError = !ok;
-        if (!on && ok)
-        {
-            // Show what the card is actually carrying now rather than the values that were armed.
-            VoltageRailMax = Caps.VoltageRailStockMaxMv;
-            MsvddRailMax = Caps.MsvddRailStockMaxMv;
-            VoltageRailFloor = Caps.VoltageRailStockFloorMv;
-            MsvddRailFloor = Caps.MsvddRailStockFloorMv;
-            XbarOffset = 0;
-            SysOffset = 0;
-            VideoOffset = 0;
-        }
+        // Show what the card is actually carrying now rather than the values that were armed.
+        if (!on && ok) ShowDisarmedValues(lever);
         OnPropertyChanged(nameof(BoostCeilingMv));   // the NVVDD ceiling feeds it
         RefreshAppliedSummary();
+    }
+
+    private static string LeverLabel(XocLever lever) => lever switch
+    {
+        XocLever.Nvvdd => "NVVDD range",
+        XocLever.Msvdd => "MSVDD range",
+        XocLever.Xbar => "XBAR clock",
+        XocLever.Sys => "SYS clock",
+        XocLever.Video => "Video clock",
+        XocLever.ClockRange => "Clock range",
+        _ => lever.ToString()
+    };
+
+    private void ShowDisarmedValues(XocLever lever)
+    {
+        switch (lever)
+        {
+            case XocLever.Nvvdd:
+                VoltageRailMax = Caps.VoltageRailStockMaxMv;
+                VoltageRailFloor = Caps.VoltageRailStockFloorMv;
+                break;
+            case XocLever.Msvdd:
+                MsvddRailMax = Caps.MsvddRailStockMaxMv;
+                MsvddRailFloor = Caps.MsvddRailStockFloorMv;
+                break;
+            case XocLever.Xbar: XbarOffset = 0; break;
+            case XocLever.Sys: SysOffset = 0; break;
+            case XocLever.Video: VideoOffset = 0; break;
+            // Full range is how this slider says "unpinned"; its floor cannot reach zero.
+            case XocLever.ClockRange:
+                ClockLockMin = Caps.ClockLockMinMhz;
+                ClockLockMax = Caps.ClockLockMaxMhz;
+                break;
+        }
     }
 
     private void Reset()
@@ -849,7 +887,7 @@ public sealed class MainViewModel : ObservableObject
         {
             _svc.ResetToDefaults();
             LoadIntoEditor(TuningProfile.Stock(Caps, Device.Name));
-            XocEnabled = false;
+            XocArmed = XocLever.None;
             PendingChanges = false;
             Status = "Reset to driver defaults"; StatusIsError = false;
         }

@@ -105,15 +105,21 @@ given card selects, so the unreachable stretch is shaded rather than left lookin
 ### Extreme OC (XOC)
 
 The **XOC** button holds the levers that can brown a card out rather than merely fail: the NVVDD and
-MSVDD rail ranges, and the crossbar, SYS and video clocks. They sit behind an **Enable / Disable** pair and are off
-by default. On the 40-series cards tested only NVVDD is usable — the other two are Blackwell-only,
-and controls the card doesn't support are hidden rather than shown greyed out.
+MSVDD rail ranges, the crossbar, SYS and video clocks, and the clock range. Each has **its own
+Enable / Disable pair** and is off by default. On the 40-series cards tested only NVVDD is usable —
+the other two are Blackwell-only, and controls the card doesn't support are hidden rather than shown
+greyed out.
 
-Enable and Disable write the card immediately and touch nothing else — no clocks, power or fan. The
-gate travels with the profile, so a normal **Apply** respects it: armed writes your values, disarmed
-puts the rails and crossbar back to the driver's own. A rail ceiling left standing from an earlier
-session is exactly what browns a card out on the next boot, and rail offsets survive a reboot, so
-each default is recorded the first time a GPU is seen and restored from there.
+They are armed separately because they fail in unrelated ways: a rail ceiling that browns the card
+out says nothing about whether a crossbar offset is stable, and having to arm both to test either is
+how a session ends up unable to say which of two changes hung it.
+
+Enable and Disable write that one lever immediately and touch nothing else — not the other levers,
+and not the clocks, power or fan. What is armed travels with the profile, so a normal **Apply**
+respects it: an armed lever writes your value, a disarmed one goes back to the driver's own. A rail
+ceiling left standing from an earlier session is exactly what browns a card out on the next boot,
+and rail offsets survive a reboot, so each default is recorded the first time a GPU is seen and
+restored from there.
 
 ---
 
@@ -142,9 +148,10 @@ apply --core 120 --mem 800 --power 110 --fan 60
 apply --volt 25 --uv -100     voltage boost %, and an undervolt in mV under the ceiling
 apply --nvvdd 1100 --msvdd 1050 --xbar 30 --sys 45 --video 30
 apply --clock-min 1500 --clock-max 1800
-                              pin the graphics clock; omit both to unpin
-                              the gated levers — passing any one arms XOC for that apply,
-                              passing none returns them to driver defaults
+                              pin the graphics clock; give one side only to pin at it
+                              the gated levers — passing a flag arms that lever for that
+                              apply, and any lever you do not name goes back to the
+                              driver's own value
 apply-profile "Slot 1"        apply a profile saved in the GUI
 reset                         everything back to driver defaults
 diag                          full dump: capabilities, raw tables, sensors

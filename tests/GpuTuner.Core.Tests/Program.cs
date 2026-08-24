@@ -107,11 +107,11 @@ using (var svc = new TuningService(new MockBackend()))
     Check("reset", svc.Backend.ReadTuningState(0).CoreOffsetMhz == 0);
 }
 
-// ---- Clock range: a window the card is held inside, not an offset, and not behind the XOC gate.
+// ---- Clock range: a window the card is held inside, not an offset, armed like the other levers.
 using (var svc = new TuningService(new MockBackend()))
 {
     svc.Initialize();
-    svc.Apply(new TuningProfile { ClockLockMinMhz = 1500, ClockLockMaxMhz = 1800 });
+    svc.Apply(new TuningProfile { XocArmed = XocLever.ClockRange, ClockLockMinMhz = 1500, ClockLockMaxMhz = 1800 });
     var st = svc.Backend.ReadTuningState(0);
     Check("clock range applied", st.LockedClockMinMhz == 1500 && st.LockedClockMaxMhz == 1800);
 
@@ -120,10 +120,14 @@ using (var svc = new TuningService(new MockBackend()))
     st = svc.Backend.ReadTuningState(0);
     Check("clock range cleared when unset", st.LockedClockMinMhz == 0 && st.LockedClockMaxMhz == 0);
 
-    // Not gated: a clock lock holds the card inside a range, it cannot raise a voltage.
-    svc.Apply(new TuningProfile { XocEnabled = false, ClockLockMinMhz = 900, ClockLockMaxMhz = 1200 });
+    // Armed like every other lever in the XOC window: a window nobody armed is a window nobody gets.
+    svc.Apply(new TuningProfile { ClockLockMinMhz = 900, ClockLockMaxMhz = 1200 });
     st = svc.Backend.ReadTuningState(0);
-    Check("clock range ignores the XOC gate", st.LockedClockMinMhz == 900);
+    Check("clock range disarmed stays unpinned", st.LockedClockMinMhz == 0);
+
+    svc.Apply(new TuningProfile { XocArmed = XocLever.ClockRange, ClockLockMinMhz = 900, ClockLockMaxMhz = 1200 });
+    st = svc.Backend.ReadTuningState(0);
+    Check("clock range armed pins the card", st.LockedClockMinMhz == 900 && st.LockedClockMaxMhz == 1200);
 
     svc.ResetToDefaults();
     st = svc.Backend.ReadTuningState(0);
@@ -145,6 +149,16 @@ using (var svc = new TuningService(new MockBackend()))
     var p3 = new TuningProfile();
     p3.ClampTo(lockCaps);
     Check("an unset clock range stays unset", p3.ClockLockMinMhz == 0 && p3.ClockLockMaxMhz == 0);
+
+    // One side given, the other left at 0: the absent side means "not asked for". Clamping it into
+    // the range turned --clock-min 1500 into a card pinned at 210, its slowest lockable speed.
+    var p4 = new TuningProfile { ClockLockMinMhz = 1500 };
+    p4.ClampTo(lockCaps);
+    Check("a floor-only window keeps its floor", p4.ClockLockMinMhz == 1500 && p4.ClockLockMaxMhz == 0);
+
+    var p5 = new TuningProfile { ClockLockMaxMhz = 2400 };
+    p5.ClampTo(lockCaps);
+    Check("a ceiling-only window keeps its ceiling", p5.ClockLockMinMhz == 0 && p5.ClockLockMaxMhz == 2400);
 }
 
 // ---- XOC gate: the rails and crossbar are written only while armed, and disarming puts them back.
@@ -157,7 +171,7 @@ using (var svc = new TuningService(new MockBackend()))
 
     var armed = new TuningProfile
     {
-        XocEnabled = true,
+        XocArmed = XocLever.All,
         VoltageRailMaxMv = 1075, MsvddRailMaxMv = 1050,
         VoltageRailFloorMv = 850, MsvddRailFloorMv = 850, XbarOffsetMhz = 100,
         SysOffsetMhz = 45, VideoOffsetMhz = 30
@@ -175,7 +189,7 @@ using (var svc = new TuningService(new MockBackend()))
     // ceilings go to their own separate defaults rather than a shared one.
     svc.Apply(new TuningProfile
     {
-        XocEnabled = false,
+        XocArmed = XocLever.None,
         VoltageRailMaxMv = 1075, MsvddRailMaxMv = 1050,
         VoltageRailFloorMv = 850, MsvddRailFloorMv = 850, XbarOffsetMhz = 100,
         SysOffsetMhz = 45, VideoOffsetMhz = 30
@@ -187,32 +201,58 @@ using (var svc = new TuningService(new MockBackend()))
     Check("xoc disarmed zeroes xbar", st.XbarOffsetMhz == 0);
     Check("xoc disarmed zeroes sys and video", st.SysOffsetMhz == 0 && st.VideoOffsetMhz == 0);
 
-    // SetXocEnabled is the window's Enable/Disable: the gated levers move, nothing else does.
+    // SetXocLever is one lever's Enable/Disable: that lever moves, nothing else does. The whole
+    // point of splitting the gate is that arming one cannot drag the other five along with it.
     svc.Apply(new TuningProfile { CoreOffsetMhz = 150, PowerLimitPercent = 110 });
-    svc.SetXocEnabled(armed, true);
+    svc.SetXocLever(armed, XocLever.Nvvdd, true);
     st = svc.Backend.ReadTuningState(0);
-    Check("SetXocEnabled(true) writes rails", st.VoltageRailMaxMv == 1075 && st.XbarOffsetMhz == 100);
-    Check("SetXocEnabled leaves core alone", st.CoreOffsetMhz == 150);
-    Check("SetXocEnabled leaves power alone", st.PowerLimitPercent == 110);
+    Check("SetXocLever(Nvvdd) writes that rail", st.VoltageRailMaxMv == 1075);
+    Check("SetXocLever(Nvvdd) leaves msvdd alone", st.MsvddRailMaxMv == 985);
+    Check("SetXocLever(Nvvdd) leaves xbar alone", st.XbarOffsetMhz == 0);
+    Check("SetXocLever leaves core alone", st.CoreOffsetMhz == 150);
+    Check("SetXocLever leaves power alone", st.PowerLimitPercent == 110);
 
-    svc.SetXocEnabled(armed, false);
+    svc.SetXocLever(armed, XocLever.Xbar, true);
     st = svc.Backend.ReadTuningState(0);
-    Check("SetXocEnabled(false) restores rails", st.VoltageRailMaxMv == 1035 && st.XbarOffsetMhz == 0);
-    Check("SetXocEnabled(false) leaves core alone", st.CoreOffsetMhz == 150);
+    Check("SetXocLever(Xbar) writes that domain", st.XbarOffsetMhz == 100);
+    Check("SetXocLever(Xbar) leaves the armed rail standing", st.VoltageRailMaxMv == 1075);
+
+    svc.SetXocLever(armed, XocLever.Nvvdd, false);
+    st = svc.Backend.ReadTuningState(0);
+    Check("SetXocLever(Nvvdd, false) restores that rail", st.VoltageRailMaxMv == 1035);
+    Check("SetXocLever(Nvvdd, false) leaves xbar armed", st.XbarOffsetMhz == 100);
+    Check("SetXocLever(false) leaves core alone", st.CoreOffsetMhz == 150);
+
+    svc.SetXocLever(armed, XocLever.Xbar, false);
+    Check("SetXocLever(Xbar, false) zeroes that domain", svc.Backend.ReadTuningState(0).XbarOffsetMhz == 0);
 
     // An unknown default is left alone rather than guessed at: guessing low browns the card out.
     using (var bare = new TuningService(new MockBackend()))
     {
         bare.Initialize();
-        bare.Apply(new TuningProfile { XocEnabled = true, VoltageRailMaxMv = 1100 });
-        bare.Apply(new TuningProfile { XocEnabled = false });
+        bare.Apply(new TuningProfile { XocArmed = XocLever.Nvvdd, VoltageRailMaxMv = 1100 });
+        bare.Apply(new TuningProfile { XocArmed = XocLever.None });
         Check("xoc disarm without a recorded default leaves the ceiling put",
               bare.Backend.ReadTuningState(0).VoltageRailMaxMv == 1100);
     }
 
-    // A profile round-trips the gate, so a saved tune cannot come back with the rails silently armed.
-    Check("gate survives clone", armed.Clone().XocEnabled);
-    Check("stock profile is disarmed", !TuningProfile.Stock(svc.Capabilities, "x").XocEnabled);
+    // A profile round-trips the gates, so a saved tune cannot come back with the rails silently armed.
+    Check("gates survive clone", armed.Clone().XocArmed == XocLever.All);
+    Check("stock profile is disarmed", TuningProfile.Stock(svc.Capabilities, "x").XocArmed == XocLever.None);
+
+    // Levers are independent: arming one must not set another.
+    var one = new TuningProfile().Clone();
+    one.XocArmed = one.XocArmed.With(XocLever.Sys, true);
+    Check("arming one lever arms only it", one.XocArmed == XocLever.Sys);
+    Check("disarming a lever that is off is a no-op", one.XocArmed.With(XocLever.Video, false) == XocLever.Sys);
+
+    // A profile saved before the levers were split carried one bool for all of them; it has to come
+    // back armed, or an older saved tune would silently apply as stock.
+    var legacy = System.Text.Json.JsonSerializer.Deserialize<TuningProfile>(
+        "{\"XocEnabled\":true,\"VoltageRailMaxMv\":1100}")!;
+    Check("a legacy single gate arms every lever", legacy.XocArmed == XocLever.All);
+    var legacyOff = System.Text.Json.JsonSerializer.Deserialize<TuningProfile>("{\"XocEnabled\":false}")!;
+    Check("a legacy shut gate arms nothing", legacyOff.XocArmed == XocLever.None);
 }
 
 // ---- Curve span: the V/F curve runs through BOTH struct regions, not just the "GPU" one.

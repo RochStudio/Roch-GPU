@@ -288,13 +288,21 @@ public static class CommandLine
             if (!svc.Capabilities.CanSetVoltageRail)
                 notes.Add($"{TuningService.NotePrefix} this card exposes no core voltage rail — {rail} mV ignored.");
         }
-        // Typing one of the gated flags is the arming gesture; the GUI has a button for it. Without
-        // any of them the profile carries the gate shut, and the apply puts the rails and crossbar
-        // back to the driver's own values rather than leaving an earlier tune half-standing.
-        p.XocEnabled = o.ContainsKey("nvvdd") || o.ContainsKey("nvvdd-min")
-                    || o.ContainsKey("msvdd") || o.ContainsKey("msvdd-min") || o.ContainsKey("xbar")
-                    || o.ContainsKey("sys") || o.ContainsKey("video");
-        if (p.XocEnabled) notes.Add($"{TuningService.NotePrefix} XOC armed for this apply (rails and private clocks written).");
+        // Typing a gated flag is the arming gesture for that lever alone; the GUI has a button per
+        // lever for it. A lever nobody named stays disarmed, and the apply puts it back to the
+        // driver's own value rather than leaving an earlier tune half-standing underneath.
+        void Arm(XocLever lever, params string[] flags)
+        {
+            if (flags.Any(o.ContainsKey)) p.XocArmed |= lever;
+        }
+        Arm(XocLever.Nvvdd, "nvvdd", "nvvdd-min");
+        Arm(XocLever.Msvdd, "msvdd", "msvdd-min");
+        Arm(XocLever.Xbar, "xbar");
+        Arm(XocLever.Sys, "sys");
+        Arm(XocLever.Video, "video");
+        Arm(XocLever.ClockRange, "clock-min", "clock-max");
+        if (p.XocArmed != XocLever.None)
+            notes.Add($"{TuningService.NotePrefix} armed for this apply: {p.XocArmed}.");
         if (o.TryGetValue("fan", out var fan))
         {
             if (fan.Equals("auto", StringComparison.OrdinalIgnoreCase)) p.FanMode = FanMode.Auto;

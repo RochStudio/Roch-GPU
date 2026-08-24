@@ -1,4 +1,6 @@
-﻿namespace GpuTuner.Core.Models;
+﻿using System.Text.Json.Serialization;
+
+namespace GpuTuner.Core.Models;
 
 public enum FanMode { Auto, Fixed, Curve }
 
@@ -32,25 +34,35 @@ public sealed class TuningProfile
     /// <summary>Crossbar clock offset in MHz.</summary>
     public int XbarOffsetMhz { get; set; }
 
-    /// <summary>
-    /// Graphics clock window in MHz, 0/0 for unpinned. Not gated with XOC: a clock lock cannot
-    /// over-volt anything, it only holds the card inside a range.
-    /// </summary>
+    /// <summary>Graphics clock window in MHz, 0/0 for unpinned. Armed by XocLever.ClockRange.</summary>
     public int ClockLockMinMhz { get; set; }
     public int ClockLockMaxMhz { get; set; }
 
-    /// <summary>SYS and video clock offsets in MHz. Gated with the crossbar; see XocEnabled.</summary>
+    /// <summary>SYS and video clock offsets in MHz. Each armed separately; see XocArmed.</summary>
     public int SysOffsetMhz { get; set; }
     public int VideoOffsetMhz { get; set; }
 
     /// <summary>
-    /// Arms the three fields above - the two rails and the crossbar. They are off by default and
-    /// written only when this is set, because they are the levers that can brown a card out rather
-    /// than merely fail: a rail ceiling moves the roof the whole card runs under, and the crossbar
-    /// is an undocumented domain the driver range-checks far more loosely. Everything else in this
-    /// profile is bounded by ranges the driver itself reports, so it needs no gate.
+    /// Which of the fields above are armed. They are off by default and written only when armed,
+    /// because they are the levers that can brown a card out rather than merely fail: a rail ceiling
+    /// moves the roof the whole card runs under, and the crossbar, SYS and video domains are
+    /// undocumented ones the driver range-checks far more loosely. Everything else in this profile
+    /// is bounded by ranges the driver itself reports, so it needs no gate.
+    ///
+    /// A lever that is not armed is not merely skipped - it is written back to the driver's own
+    /// value, so a profile always describes the whole card rather than leaving an earlier tune
+    /// half-standing underneath it.
     /// </summary>
-    public bool XocEnabled { get; set; }
+    public XocLever XocArmed { get; set; }
+
+    /// <summary>
+    /// The single gate that armed every lever at once, before each got its own button. Read so a
+    /// profile saved by an earlier build still arms, and never written back - which is why the
+    /// getter is a constant rather than a state worth consulting.
+    /// </summary>
+    [JsonPropertyName("XocEnabled")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacyXocEnabled { get => false; set { if (value) XocArmed = XocLever.All; } }
 
     /// <summary>
     /// Absolute core-voltage target in mV. When non-zero this drives both voltage boost and the
@@ -91,7 +103,7 @@ public sealed class TuningProfile
         VideoOffsetMhz = VideoOffsetMhz,
         ClockLockMinMhz = ClockLockMinMhz,
         ClockLockMaxMhz = ClockLockMaxMhz,
-        XocEnabled = XocEnabled,
+        XocArmed = XocArmed,
         TargetVoltageMv = TargetVoltageMv,
         ZeroRpm = ZeroRpm,
         MemoryTimingLevel = MemoryTimingLevel,
@@ -138,12 +150,20 @@ public sealed class TuningProfile
             SysOffsetMhz = Math.Clamp(SysOffsetMhz, caps.SysOffsetMinMhz, caps.SysOffsetMaxMhz);
         if (caps.CanSetVideoOffset)
             VideoOffsetMhz = Math.Clamp(VideoOffsetMhz, caps.VideoOffsetMinMhz, caps.VideoOffsetMaxMhz);
-        if (caps.CanLockClocks && (ClockLockMinMhz > 0 || ClockLockMaxMhz > 0))
+        if (caps.CanLockClocks)
         {
-            ClockLockMinMhz = Math.Clamp(ClockLockMinMhz, caps.ClockLockMinMhz, caps.ClockLockMaxMhz);
-            ClockLockMaxMhz = Math.Clamp(ClockLockMaxMhz, caps.ClockLockMinMhz, caps.ClockLockMaxMhz);
-            // A window whose floor is above its ceiling is not one the driver can honour.
-            if (ClockLockMinMhz > ClockLockMaxMhz) ClockLockMinMhz = ClockLockMaxMhz;
+            // 0 on one side means "not asked for", not "asked for zero". Clamping it into the range
+            // anyway turned a floor-only request into a window pinned at the bottom of the card:
+            // --clock-min 1500 came back as 210/210, because the absent ceiling clamped up to 210 and
+            // then dragged the floor down to meet it.
+            if (ClockLockMinMhz > 0)
+                ClockLockMinMhz = Math.Clamp(ClockLockMinMhz, caps.ClockLockMinMhz, caps.ClockLockMaxMhz);
+            if (ClockLockMaxMhz > 0)
+                ClockLockMaxMhz = Math.Clamp(ClockLockMaxMhz, caps.ClockLockMinMhz, caps.ClockLockMaxMhz);
+            // A window whose floor is above its ceiling is not one the driver can honour - but only
+            // when both sides were actually asked for.
+            if (ClockLockMinMhz > 0 && ClockLockMaxMhz > 0 && ClockLockMinMhz > ClockLockMaxMhz)
+                ClockLockMinMhz = ClockLockMaxMhz;
         }
         if (TargetVoltageMv > 0 && caps.MaxVoltageMv > 0)
             TargetVoltageMv = Math.Clamp(TargetVoltageMv, caps.MinVoltageMv, caps.MaxVoltageMv);
