@@ -313,5 +313,12 @@ third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). Third-party components keep their own licences; see
+GPL-3.0-or-later. See [LICENSE](LICENSE), the same licence as
+[Roch Viewer](https://github.com/RochStudio/Roch-Viewer).
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. It writes clocks
+and voltages to a graphics card; run it on hardware you are willing to experiment with.
+
+Third-party components keep their own licences; see
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

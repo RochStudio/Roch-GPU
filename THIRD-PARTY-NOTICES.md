@@ -1,6 +1,6 @@
 ﻿# Third-party notices
 
-Roch GPU itself is MIT licensed (see `LICENSE`). It includes and depends on the following.
+Roch GPU itself is GPL-3.0-or-later (see `LICENSE`). It includes and depends on the following.
 
 ---
 
@@ -22,11 +22,14 @@ The complete, modified source of the library is in this repository, and the rele
 is a single-file self-contained publish — so `NvAPIWrapper.dll` is bundled inside the executable
 rather than sitting beside it, and cannot be swapped out in the shipped binary.
 
-LGPL-3.0 §4(d)(0) is what this relies on, not the shared-library route in §4(d)(1): the modified
-library's complete source is conveyed under the LGPL here, the application's own source is conveyed
-alongside it under the MIT licence, and `build.ps1` rebuilds the whole executable from both with one
-command. Anyone receiving this software can therefore modify the library and produce a modified
-combined work.
+That bundling needs no special argument now that the application is GPL-3.0-or-later. LGPL-3.0 §2(b)
+lets a recipient take a copy of the library under the plain GPL-3.0, so the combined work is simply a
+GPL-3.0 work: its complete corresponding source - the application's and the modified library's alike -
+is in this repository, and `build.ps1` rebuilds the whole executable from it with one command. The
+library keeps its own LGPL-3.0 notice above and its licence text in `third_party/NvAPIWrapper/LICENSE`.
+
+The corresponding source for any released binary is the repository at the tag that release was built
+from; the release notes name it.
 
 ---
 
