@@ -13,10 +13,10 @@ namespace GpuTuner.App;
 
 /// <summary>
 /// Startup flow:
-///   GpuTuner.exe                          → GUI
-///   GpuTuner.exe --mock                   → GUI on the simulated GPU
-///   GpuTuner.exe --apply-profile X --exit → apply saved profile, no window, exit (used by the startup task)
-///   GpuTuner.exe --apply-profile X --minimized → apply, then stay resident in the tray (needed for fan curves)
+///   RochGPU.exe                          → GUI
+///   RochGPU.exe --mock                   → GUI on the simulated GPU
+///   RochGPU.exe --apply-profile X --exit → apply saved profile, no window, exit (used by the startup task)
+///   RochGPU.exe --apply-profile X --minimized → apply, then stay resident in the tray (needed for fan curves)
 /// </summary>
 public partial class App : Application
 {

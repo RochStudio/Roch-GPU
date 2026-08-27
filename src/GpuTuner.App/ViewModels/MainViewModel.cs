@@ -363,17 +363,27 @@ public sealed class MainViewModel : ObservableObject
     }
     private XocLever _xocArmed;
 
+    /// <summary>
+    /// What the levers are doing, told apart from what they are only asked to do. Loading a profile
+    /// arms levers in the editor without writing anything, so claiming those are live would describe
+    /// a card nobody had touched; the service records what it actually wrote.
+    /// </summary>
     public string XocStatusText
     {
         get
         {
-            var armed = new List<string>();
-            void Add(XocLever l, string name) { if (_xocArmed.Has(l)) armed.Add(name); }
+            if (_xocArmed == XocLever.None)
+                return "Nothing armed - the card is running the driver's own values.";
+
+            var names = new List<string>();
+            void Add(XocLever l, string name) { if (_xocArmed.Has(l)) names.Add(name); }
             Add(XocLever.Nvvdd, "NVVDD"); Add(XocLever.Msvdd, "MSVDD"); Add(XocLever.Xbar, "XBAR");
             Add(XocLever.Sys, "SYS"); Add(XocLever.Video, "video"); Add(XocLever.ClockRange, "clock range");
-            return armed.Count == 0
-                ? "Nothing armed - the card is running the driver's own values."
-                : "Live on the card: " + string.Join(", ", armed) + ".";
+            string list = string.Join(", ", names);
+
+            return _svc.ArmedOnCard.Has(_xocArmed)
+                ? $"Live on the card: {list}."
+                : $"Armed: {list}. Press Apply to send them to the card.";
         }
     }
 
@@ -790,6 +800,7 @@ public sealed class MainViewModel : ObservableObject
         ClockLockMax = p.ClockLockMaxMhz > 0 ? p.ClockLockMaxMhz : Caps.ClockLockMaxMhz;
         VideoOffset = p.VideoOffsetMhz;
         XocArmed = p.XocArmed;
+        OnPropertyChanged(nameof(XocStatusText));   // live-ness may have changed even if the flags did not
         TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : StockCeilingMv;
         ZeroRpm = p.ZeroRpm;
         MemoryTimingIndex = p.MemoryTimingLevel;

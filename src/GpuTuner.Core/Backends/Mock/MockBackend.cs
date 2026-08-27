@@ -141,7 +141,14 @@ public sealed class MockBackend : IGpuBackend
     }
     public void SetFanSpeed(int gpuIndex, int fanIndex, int percent) { _fanManual = true; _fan = percent; }
     public void SetFanAuto(int gpuIndex) => _fanManual = false;
-    public void ResetToDefaults(int gpuIndex) { _core = 0; _mem = 0; _power = 100; _temp = 83; _voltBoost = 0; _voltOffset = 0; _voltLockMv = 0; _fanManual = false; }
+    public void ResetToDefaults(int gpuIndex)
+    {
+        _core = 0; _mem = 0; _power = 100; _temp = 83; _voltBoost = 0; _voltOffset = 0;
+        _voltLockMv = 0; _fanManual = false;
+        // The private domains too. Leaving them set here is what let the real backend's identical
+        // gap through the tests: a mock that forgets the same thing agrees with the bug.
+        _xbar = 0; _sys = 0; _video = 0; _lockLo = 0; _lockHi = 0;
+    }
     public string GetDiagnostics(int gpuIndex)
     {
         string fan = _fanManual ? _fan + "%" : "auto";

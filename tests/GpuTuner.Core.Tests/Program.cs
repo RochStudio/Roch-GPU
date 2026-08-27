@@ -236,6 +236,28 @@ using (var svc = new TuningService(new MockBackend()))
               bare.Backend.ReadTuningState(0).VoltageRailMaxMv == 1100);
     }
 
+    // Reset means every gated lever, not the ones somebody remembered to list. SYS and video were
+    // added months after ResetToDefaults and survived it, on the real backend and the mock alike.
+    svc.Apply(armed);
+    svc.ResetToDefaults();
+    st = svc.Backend.ReadTuningState(0);
+    Check("reset clears the crossbar", st.XbarOffsetMhz == 0);
+    Check("reset clears sys and video", st.SysOffsetMhz == 0 && st.VideoOffsetMhz == 0);
+    Check("reset restores both rail ceilings", st.VoltageRailMaxMv == 1035 && st.MsvddRailMaxMv == 985);
+    Check("reset zeroes both rail floors", st.VoltageRailFloorMv == 0 && st.MsvddRailFloorMv == 0);
+    Check("reset unpins the clock range", st.LockedClockMinMhz == 0 && st.LockedClockMaxMhz == 0);
+    Check("reset leaves nothing armed on the card", svc.ArmedOnCard == XocLever.None);
+
+    // ArmedOnCard is what was written, not what a profile asked for: a profile is only ever a
+    // request, and the window says "live on the card" on the strength of this.
+    svc.SetXocLever(armed, XocLever.Sys, true);
+    Check("arming one lever records only it", svc.ArmedOnCard == XocLever.Sys);
+    svc.SetXocLever(armed, XocLever.Video, true);
+    Check("arming a second records both", svc.ArmedOnCard == (XocLever.Sys | XocLever.Video));
+    svc.SetXocLever(armed, XocLever.Sys, false);
+    Check("disarming clears only that one", svc.ArmedOnCard == XocLever.Video);
+    svc.ResetToDefaults();
+
     // A profile round-trips the gates, so a saved tune cannot come back with the rails silently armed.
     Check("gates survive clone", armed.Clone().XocArmed == XocLever.All);
     Check("stock profile is disarmed", TuningProfile.Stock(svc.Capabilities, "x").XocArmed == XocLever.None);

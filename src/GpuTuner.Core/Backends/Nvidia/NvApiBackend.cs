@@ -1515,6 +1515,8 @@ public sealed class NvApiBackend : IGpuBackend
         // reports no factory value, and this layer cannot tell an untouched rail from one a previous
         // run raised. TuningService restores those from the figure recorded on first sight.
         try { SetXbarOffset(gpuIndex, 0); } catch (GpuBackendException) { }
+        try { SetSysOffset(gpuIndex, 0); } catch (GpuBackendException) { }
+        try { SetVideoOffset(gpuIndex, 0); } catch (GpuBackendException) { }
 
         var caps = GetCapabilities(gpuIndex);
         var errors = new List<string>();

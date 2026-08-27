@@ -21,6 +21,14 @@ public sealed class TuningService : IDisposable
     /// <summary>The profile currently applied to hardware (null = untouched since launch).</summary>
     public TuningProfile? AppliedProfile { get; private set; }
 
+    /// <summary>
+    /// Which gated levers this run has actually written to the card. Separate from a profile's
+    /// XocArmed, which is only ever a request: loading a profile arms levers in the editor without
+    /// touching the hardware, and a window that reported those as live would be describing a card
+    /// nobody had written to yet.
+    /// </summary>
+    public XocLever ArmedOnCard { get; private set; }
+
     /// <summary>Latest telemetry sample.</summary>
     public GpuTelemetry? Latest { get; private set; }
 
@@ -550,6 +558,10 @@ public sealed class TuningService : IDisposable
     private void WriteXoc(TuningProfile p, Action<string, Action> Try, XocLever which = XocLever.All)
     {
         var on = p.XocArmed;
+        // Record it here rather than at each call site: this is the one routine every lever write
+        // goes through, from an apply, a per-lever button or a reset alike. Masked by what the card
+        // can do, so a profile asking for a domain this GPU has not got cannot report itself live.
+        ArmedOnCard = (ArmedOnCard & ~which) | (on & which & SupportedLevers);
 
         if (which.Has(XocLever.Nvvdd) && Capabilities.CanSetVoltageRail)
         {
@@ -596,6 +608,15 @@ public sealed class TuningService : IDisposable
             Try("Clock range", () => Backend.SetClockRange(GpuIndex, lo, hi));
         }
     }
+
+    /// <summary>The levers this card exposes at all; the rest can never be armed.</summary>
+    public XocLever SupportedLevers =>
+        (Capabilities.CanSetVoltageRail ? XocLever.Nvvdd : 0) |
+        (Capabilities.CanSetMsvddRail ? XocLever.Msvdd : 0) |
+        (Capabilities.CanSetXbarOffset ? XocLever.Xbar : 0) |
+        (Capabilities.CanSetSysOffset ? XocLever.Sys : 0) |
+        (Capabilities.CanSetVideoOffset ? XocLever.Video : 0) |
+        (Capabilities.CanLockClocks ? XocLever.ClockRange : 0);
 
     /// <summary>
     /// Arm or disarm one lever and write it now, leaving every other lever and all the ungated
@@ -657,20 +678,12 @@ public sealed class TuningService : IDisposable
             _activeCurve = null;
             ManualCurveActive = false;
             Backend.ResetToDefaults(GpuIndex);
-            if (Capabilities.CanLockClocks)
-                try { Backend.SetClockRange(GpuIndex, 0, 0); } catch (GpuBackendException) { }
-            // Rails last: the backend deliberately leaves them alone because only this layer knows
-            // what they were before anything touched them.
-            if (Capabilities.CanSetVoltageRail && NvvddDefaultMaxMv > 0)
-                try { Backend.SetVoltageRailMax(GpuIndex, NvvddDefaultMaxMv); } catch (GpuBackendException) { }
-            if (Capabilities.CanSetMsvddRail && MsvddDefaultMaxMv > 0)
-                try { Backend.SetMsvddRailMax(GpuIndex, MsvddDefaultMaxMv); } catch (GpuBackendException) { }
-            // Floors have a real default of zero offset, unlike the ceilings: MSVDD ships with a
-            // maximum offset already applied but neither rail ships with a minimum offset.
-            if (Capabilities.CanSetVoltageRail)
-                try { Backend.SetVoltageRailFloor(GpuIndex, 0); } catch (GpuBackendException) { }
-            if (Capabilities.CanSetMsvddRail)
-                try { Backend.SetMsvddRailFloor(GpuIndex, 0); } catch (GpuBackendException) { }
+            // Every gated lever, through the one routine that knows them all. Listing them here by
+            // hand is how the SYS and video offsets came to survive a Reset: they were added months
+            // after this method, and nothing pointed at it. A disarmed WriteXoc puts each one back -
+            // rails to the figures recorded on first sight, private domains to no offset, the clock
+            // range to unpinned - and picks up any lever added later for free.
+            WriteXoc(new TuningProfile(), (_, a) => { try { a(); } catch (GpuBackendException) { } });
             AppliedProfile = TuningProfile.Stock(Capabilities, Device.Name);
             RefreshLiveVoltageState();
             Log?.Invoke("Reset to driver defaults");
