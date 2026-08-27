@@ -373,7 +373,7 @@ public static class CommandLine
           RochGPU.exe info
           RochGPU.exe monitor [--interval 1000]
           RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
-            the rail and crossbar flags are gated: pass one to arm them, pass none and they go back to driver defaults
+            each gated flag arms its own lever for that apply; a lever you do not name goes back to the driver's own value
           RochGPU.exe apply-profile <name> [--gpu 0]
           RochGPU.exe list-profiles
           RochGPU.exe reset [--gpu 0]

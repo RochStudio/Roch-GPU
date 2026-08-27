@@ -14,13 +14,19 @@ Roch GPU itself is MIT licensed (see `LICENSE`). It includes and depends on the 
 
 This copy has been **modified**. The changes are:
 
-1. Retargeted to `net8.0` (upstream targets an older framework).
+1. Retargeted to `net10.0` (upstream targets an older framework).
 2. Added an `InternalsVisibleTo` attribute for `GpuTuner.Core`, so the tuning code can reach the
    internal structure definitions it needs for private NVAPI calls.
 
-The complete, modified source of the library is included in this repository, and it is built as its
-own assembly (`NvAPIWrapper.dll`) rather than merged into the application. Anyone receiving this
-software can therefore study, modify, rebuild and relink it, as LGPL-3.0 §4 requires.
+The complete, modified source of the library is in this repository, and the released `RochGPU.exe`
+is a single-file self-contained publish — so `NvAPIWrapper.dll` is bundled inside the executable
+rather than sitting beside it, and cannot be swapped out in the shipped binary.
+
+LGPL-3.0 §4(d)(0) is what this relies on, not the shared-library route in §4(d)(1): the modified
+library's complete source is conveyed under the LGPL here, the application's own source is conveyed
+alongside it under the MIT licence, and `build.ps1` rebuilds the whole executable from both with one
+command. Anyone receiving this software can therefore modify the library and produce a modified
+combined work.
 
 ---
 

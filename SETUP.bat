@@ -1,5 +1,5 @@
 @echo off
-:: GpuTuner one-click setup: installs the .NET 10 SDK (if needed), builds, publishes to dist\, launches.
+:: Roch GPU one-click setup: installs the .NET 10 SDK (if needed), builds, publishes to dist\, launches.
 :: Re-launches itself elevated because winget/UAC and the app itself need admin.
 net session >nul 2>&1
 if %errorlevel% neq 0 (

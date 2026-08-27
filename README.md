@@ -141,6 +141,10 @@ half does not ask, so read-only commands work from any terminal:
 Same executable, same engine, no window. The first word decides which half runs — a command gives
 you the CLI, no arguments gives you the window.
 
+One quirk of shipping both halves in one file: it is a GUI-subsystem executable, so a shell does not
+wait for it. The prompt comes back immediately and the output arrives a moment later, underneath it.
+Redirect (`RochGPU.exe diag > out.txt`) if you want to capture it.
+
 ```
 info                          what was detected, and every limit the driver reports
 monitor [--interval 1000]     live telemetry until Ctrl+C
@@ -261,7 +265,8 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   of 0x8C as a reading plus a type. Read that way, a 5070 Ti populates exactly two of the eight —
   GPU and memory junction — with 255 °C in the rest, the same marker v2 uses for an absent sensor.
   Hot spot and the memory chip reading are in neither version. `RochGPU.exe diag` prints all eight
-  slots, so a card that populates more will show it.
+  slots, so a card that populates more will show it — [a sample dump from this
+  card](docs/diag-rtx5070ti.txt) is kept as the evidence behind these findings.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **Nothing guards an apply-at-logon that crashed the machine.** If a tune hangs the card on boot,
@@ -283,12 +288,13 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
 ```
 roch-gpu.sln               solution
 assets/                    logo.svg (banner), icon.png, RochGPU.ico, screenshots/
+docs/                      a sample `diag` dump, kept as evidence for the known limitations
 build.ps1                  build + test + publish to dist\
 setup.ps1                  as above, plus SDK install and launch (driven by SETUP.bat)
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
 src/GpuTuner.App           the executable — WPF window, and the entry point that picks a half
 src/GpuTuner.Cli           the command-line half, compiled into the same executable
-tests/GpuTuner.Core.Tests  dependency-free test runner (215 checks, no hardware needed)
+tests/GpuTuner.Core.Tests  dependency-free test runner (237 checks, no hardware needed)
 tools/amd                  read-only PowerShell probes used to map the AMD driver surface
 .github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md

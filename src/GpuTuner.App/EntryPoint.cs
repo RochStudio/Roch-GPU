@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Text;
 
 namespace GpuTuner.App;
 
@@ -17,8 +18,11 @@ namespace GpuTuner.App;
 /// </summary>
 public static class EntryPoint
 {
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool AttachConsole(int processId);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetStdHandle(int which);
+    private const int StdOutputHandle = -11;
     private const int AttachParentProcess = -1;
 
     [STAThread]
@@ -27,7 +31,8 @@ public static class EntryPoint
         if (WantsCommandLine(args))
         {
             AttachToOutput();
-            return Cli.CommandLine.Run(args);
+            try { return Cli.CommandLine.Run(args); }
+            finally { RestoreConsoleEncoding(); }
         }
 
         // The window writes clocks, so it wants elevation — but asking for it in the manifest would
@@ -55,8 +60,36 @@ public static class EntryPoint
     /// </summary>
     private static void AttachToOutput()
     {
-        bool redirected = Console.IsOutputRedirected;
-        if (!redirected) AttachConsole(AttachParentProcess);
+        // Decide on the handle itself, not on Console.IsOutputRedirected. A GUI-subsystem process
+        // launched from a prompt inherits no standard output at all, and GetFileType on that null
+        // handle answers "unknown", which .NET counts as redirected - so the test said "someone is
+        // capturing us" in exactly the case where nobody was, and every line went into Stream.Null.
+        // Measured: from a console GetStdHandle returns 0, under `> file.txt` it returns a real
+        // handle, and IsOutputRedirected is true for both.
+        bool inherited = GetStdHandle(StdOutputHandle) != IntPtr.Zero;
+        bool attached = !inherited && AttachConsole(AttachParentProcess);
+
+        if (attached)
+        {
+            // Everything below is written as UTF-8, but a console renders bytes in its own code page
+            // - 437 on a stock English install - so an em dash or a degree sign arrives as a question
+            // mark. Set it before the writers are built: assigning OutputEncoding throws away
+            // whatever Console.Out currently is. Put back on the way out, because the code page
+            // outlives this process and belongs to the window the caller is still using.
+            try { _restoreEncoding = Console.OutputEncoding; Console.OutputEncoding = Encoding.UTF8; }
+            catch (Exception) { _restoreEncoding = null; }
+
+            // Open the console device by name rather than asking for this process's standard output.
+            // A GUI-subsystem process starts with no standard handles and AttachConsole does not
+            // backfill them, so OpenStandardOutput hands back Stream.Null and every line goes
+            // nowhere - which is why `RochGPU.exe info` typed at a prompt printed nothing at all,
+            // while the same command redirected into a file has always worked.
+            Rebind(() => new FileStream("CONOUT$", FileMode.Open, FileAccess.Write, FileShare.ReadWrite),
+                   Console.SetOut);
+            Rebind(() => new FileStream("CONOUT$", FileMode.Open, FileAccess.Write, FileShare.ReadWrite),
+                   Console.SetError);
+            return;
+        }
 
         Rebind(Console.OpenStandardOutput, Console.SetOut);
         Rebind(Console.OpenStandardError, Console.SetError);
@@ -70,6 +103,15 @@ public static class EntryPoint
             }
             catch (IOException) { }   // no console and no redirection: nothing to write to, and that is fine
         }
+    }
+
+    private static Encoding? _restoreEncoding;
+
+    /// <summary>Hand the caller's console back the code page it had.</summary>
+    private static void RestoreConsoleEncoding()
+    {
+        if (_restoreEncoding == null) return;
+        try { Console.Out.Flush(); Console.OutputEncoding = _restoreEncoding; } catch (Exception) { }
     }
 
     /// <summary>Help is the one word both halves answer to; the CLI's version is the useful one.</summary>

@@ -11,9 +11,8 @@ distcli/
 *.suo
 *.swp
 
-# local runtime artefacts
+# local runtime artefacts — the names the tool writes today. A stale list here is why a machine's
+# own diagnostic dump ended up committed at the repo root; the kept sample lives in docs/.
 *.log
-whats-amd*.txt
-rochoc-diag.txt
-gputuner-diag.txt
-gputuner-info.txt
+roch-gpu-diag.txt
+roch-gpu-info.txt
