@@ -1149,6 +1149,77 @@ internal static class NvApiPrivate
     /// what this family wants too, the buffer stops coming back nearly empty and the offset field
     /// becomes readable instead of assumed. Nothing here writes: GetControl only.
     /// </summary>
+    /// <summary>
+    /// Every word of one domain's control block, read-only. HYDRA carries a 128-entry
+    /// xbar_curve_points array beside its 128 curve_points, so something holds a per-point crossbar
+    /// table; this shows whether it is in the block we already write the flat offset into. The buffer
+    /// is over-allocated the way ExploreXbarControl does, so a driver that fills more than the
+    /// declared size cannot walk off the end of it.
+    /// </summary>
+    /// <summary>
+    /// One domain's info entry in full, read-only. Each is 0x430 bytes - room for a per-point table,
+    /// which is what a crossbar curve would have to be. Long runs of similar values are the shape to
+    /// look for; a handful of scattered words is just the range and type fields already parsed.
+    /// </summary>
+    public static List<string> DumpDomainInfo(PhysicalGPUHandle handle, int slot)
+    {
+        var outp = new List<string>();
+        var info = XbarCall(handle, FnXbarGetInfo, XbarInfoSize, XbarInfoVersion, selector: false);
+        if (info == null) { outp.Add("GetInfo returned nothing"); return outp; }
+
+        int e = XbarInfoEntries + slot * XbarInfoStride;
+        if (e + XbarInfoStride > info.Length) { outp.Add($"slot {slot} entry runs past the buffer"); return outp; }
+
+        int type = BitConverter.ToInt32(info, e);
+        var words = new List<string>();
+        int nonZero = 0, longestRun = 0, run = 0;
+        for (int o = 0; o < XbarInfoStride; o += 4)
+        {
+            int w = BitConverter.ToInt32(info, e + o);
+            if (w != 0)
+            {
+                nonZero++; run++;
+                if (run > longestRun) longestRun = run;
+                if (words.Count < 24) words.Add($"+0x{o:X3}={w}");
+            }
+            else run = 0;
+        }
+        outp.Add($"slot {slot} type={type} nonZero={nonZero}/{XbarInfoStride / 4} longestRun={longestRun}");
+        outp.Add("  " + (words.Count == 0 ? "(all zero)" : string.Join(" ", words)));
+        return outp;
+    }
+
+    public static List<string> DumpDomainBlock(PhysicalGPUHandle handle, int slot)
+    {
+        var outp = new List<string>();
+        var fn = Resolve(FnXbarGetControl);
+        if (fn == null) { outp.Add("GetControl unresolved"); return outp; }
+
+        const int Slack = 0x40000;
+        var buf = Marshal.AllocHGlobal(XbarControlSize + Slack);
+        try
+        {
+            for (int i = 0; i < XbarControlSize + Slack; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, unchecked((int)XbarControlVersion));
+            Marshal.WriteInt32(buf, XbarControlSelector, 1 << slot);
+            int status;
+            try { status = fn(handle.MemoryAddress, buf); }
+            catch { outp.Add("threw"); return outp; }
+
+            int start = XbarControlBlock0 + slot * XbarControlBlockStride;
+            outp.Add($"slot {slot} selector=0x{1 << slot:X} status={status} block at +0x{start:X4}, {XbarControlBlockStride} bytes");
+            var words = new List<string>();
+            for (int o = 0; o < XbarControlBlockStride; o += 4)
+            {
+                int w = Marshal.ReadInt32(buf, start + o);
+                if (w != 0) words.Add($"+0x{o:X3}={w}");
+            }
+            outp.Add(words.Count == 0 ? "  block is all zero" : "  " + string.Join(" ", words));
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+        return outp;
+    }
+
     public static List<(string label, int status, int nonZero, string head)> ExploreXbarControl(PhysicalGPUHandle handle)
     {
         var results = new List<(string, int, int, string)>();

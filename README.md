@@ -267,6 +267,16 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   Hot spot and the memory chip reading are in neither version. `RochGPU.exe diag` prints all eight
   slots, so a card that populates more will show it — [a sample dump from this
   card](docs/diag-rtx5070ti.txt) is kept as the evidence behind these findings.
+- **The crossbar is a single flat offset, not a curve.** HYDRA 2.3B carries a 127-entry
+  `xbar_curve_points` array beside its 127 `curve_points`, which suggests a per-voltage-point
+  crossbar table. There isn't one on this driver, and all three places it could live were checked:
+  the 127-point V/F space is entirely the core curve (its points continue monotonically to 1240 mV /
+  3247 MHz, with no second domain in it); each domain's 772-byte control block holds one type word
+  and the flat offset field this tool already writes; each domain's 1072-byte info entry holds 12-13
+  scattered scalars with a longest run of 4 — a per-point table would be a run of about 127.
+  HYDRA's own saved profile has that array all-zero, so it has never written one either.
+  `RochGPU.exe diag` prints all four domain blocks and info entries, so a card that does carry a
+  table will show it as a long run.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **Nothing guards an apply-at-logon that crashed the machine.** If a tune hangs the card on boot,

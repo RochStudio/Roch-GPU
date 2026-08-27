@@ -1582,6 +1582,18 @@ public sealed class NvApiBackend : IGpuBackend
                 sb.AppendLine($"  status ctrl={p.Controller} pstate={p.PerformanceStateId} target={p.TargetTemperature}");
         });
 
+        Section("Domain control blocks (looking for a per-point crossbar table)", () =>
+        {
+            foreach (int slot in new[] { NvApiPrivate.SlotCore, NvApiPrivate.SlotXbar,
+                                         NvApiPrivate.SlotSys, NvApiPrivate.SlotVideo })
+            {
+                foreach (var line in NvApiPrivate.DumpDomainBlock(g.Handle, slot))
+                    sb.AppendLine("  " + line);
+                foreach (var line in NvApiPrivate.DumpDomainInfo(g.Handle, slot))
+                    sb.AppendLine("  " + line);
+            }
+        });
+
         Section("Voltage", () =>
         {
             sb.AppendLine($"  current      = {GPUApi.GetCurrentVoltage(g.Handle).ValueInMicroVolt / 1000.0:0} mV");
