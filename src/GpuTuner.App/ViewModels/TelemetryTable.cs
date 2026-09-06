@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
 
 namespace GpuTuner.App.ViewModels;
@@ -125,12 +126,13 @@ public sealed class TelemetryTable
         if (caps.CanSetXbarOffset) Sensor("xbar", "Crossbar", "MHz");
         if (caps.CanSetSysOffset) Sensor("sys", "SYS", "MHz");
         if (caps.CanSetVideoOffset) Sensor("video", "Video", "MHz");
-        // Whatever else this card lists. Named by type, not by a guess: a 5070 Ti enumerates nine
-        // domains and only four of them have names anyone has confirmed. Built from the first
-        // sample, so a card that lists nothing extra gets no rows rather than a column of dashes.
+        // Whatever else this card reports. The backend supplies the name where one has been checked
+        // against the hardware and the bare type number where it has not. Built from the first
+        // sample, so a card that reports nothing extra gets no rows rather than a column of dashes.
         foreach (var key in extraClockKeys)
-            if (key.StartsWith("domain", StringComparison.Ordinal))
-                Sensor(key, "Domain type " + key["domain".Length..], "MHz");
+            if (key.StartsWith("domain", StringComparison.Ordinal)
+                && int.TryParse(key["domain".Length..], out int type))
+                Sensor(key, NvApiBackend.DomainName(type), "MHz");
 
         Group("Load");
         Sensor("load", "GPU core", "%");

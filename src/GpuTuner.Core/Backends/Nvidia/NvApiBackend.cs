@@ -708,9 +708,16 @@ public sealed class NvApiBackend : IGpuBackend
     }
 
     /// <summary>
-    /// Domain types this card lists that are not already reported under a name of their own. Cached:
-    /// the info walk reads a 34 KB struct, which is far too heavy for the poll loop, and the set of
-    /// domains a card has does not change while it is plugged in.
+    /// Domain types worth reporting that are not already shown under a name of their own.
+    ///
+    /// Found by asking the frequency counter for every type id rather than by walking the info
+    /// struct. The info walk lists nine domains on a 5070 Ti and misses the reference clock at type
+    /// 22 entirely, which the counter answers for perfectly well - so the walk is a floor, not the
+    /// list. Both are unioned: the walk also carries type 31, which reads a flat zero and would be
+    /// dropped by a probe that keeps only what moves.
+    ///
+    /// Cached, because the info call reads a 34 KB struct and the set of domains a card has does not
+    /// change while it is plugged in.
     /// </summary>
     private int[]? _extraDomainTypes;
 
@@ -719,15 +726,40 @@ public sealed class NvApiBackend : IGpuBackend
         if (_extraDomainTypes != null) return _extraDomainTypes;
         // Core, crossbar, SYS and video have their own rows; memory has one from the public API.
         var named = new HashSet<int> { 0, 1, 2, 21, 4 };
+        var found = new SortedSet<int>();
         try
         {
-            _extraDomainTypes = NvApiPrivate.ReadDomainEntries(g.Handle)
-                .Select(e => e.Type).Where(t => !named.Contains(t)).Distinct().OrderBy(t => t).ToArray();
+            foreach (var e in NvApiPrivate.ReadDomainEntries(g.Handle))
+                if (!named.Contains(e.Type)) found.Add(e.Type);
+
+            for (int type = 0; type <= MaxDomainType; type++)
+                if (!named.Contains(type) && !found.Contains(type)
+                    && NvApiPrivate.MeasureClockKhz(g.Handle, type) > 0)
+                    found.Add(type);
         }
-        catch (NVIDIAApiException) { _extraDomainTypes = Array.Empty<int>(); }
-        catch (NVIDIANotSupportedException) { _extraDomainTypes = Array.Empty<int>(); }
-        return _extraDomainTypes;
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+        return _extraDomainTypes = found.ToArray();
     }
+
+    /// <summary>Highest domain type id worth asking about; 31 is the top one any card has answered.</summary>
+    private const int MaxDomainType = 31;
+
+    /// <summary>
+    /// Names for the domains the driver only numbers. Taken from mVolt's telemetry tab and checked
+    /// against this card rather than trusted: reading both at once, its figures and ours agree to
+    /// within about 2 MHz on every one, and type 20 tracks the core clock under load exactly as an
+    /// L2 clock should. Type 31 reads a flat zero and mVolt does not name it either, so neither do
+    /// we - a number with no name is more honest than a name with no evidence.
+    /// </summary>
+    public static string DomainName(int type) => type switch
+    {
+        3 => "HUBCLK",
+        6 => "DISPCLK",
+        20 => "L2CLK",
+        22 => "Reference clock",
+        _ => "Domain type " + type
+    };
 
     /// <summary>The clock window the user asked for, so the voltage cap knows not to fight it.</summary>
     private int _lockedMinMhz, _lockedMaxMhz;

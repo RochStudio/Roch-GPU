@@ -274,15 +274,17 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   Hot spot and the memory chip reading are in neither version. `RochGPU.exe diag` prints all eight
   slots, so a card that populates more will show it — [a sample dump from this
   card](docs/diag-rtx5070ti.txt) is kept as the evidence behind these findings.
-- **The unnamed clock domains are shown by type, not by a guessed name.** A 5070 Ti enumerates nine
-  domains and only four of them — core, crossbar, SYS and video — have names anyone has confirmed.
-  mVolt 0.38 added HUBCLK, DISPCLK, L2CLK and a reference clock and marks them "experimental and
-  unconfirmed", which is the honest state of the art, so the monitor lists the rest as `Domain type
-  N` and lets the min/max columns say what they are. On this card, at idle with light desktop use:
-  type 20 swung 1674 → 2166 MHz in step with the core, which is how a clock tied to the graphics
-  domain behaves; types 3 and 6 sat at 542 and 676 MHz and barely moved, which is how a fixed
-  display or hub clock behaves; type 31 read a flat zero. That is behaviour, not identification —
-  put a name on one only when something makes it move for a reason you chose.
+- **Ten clock domains, and the info struct only lists nine of them.** Core, crossbar, SYS and video
+  have their own controls; HUBCLK, DISPCLK, L2CLK and the reference clock are read-only readings in
+  the monitor. The names come from mVolt's telemetry tab and were checked rather than trusted —
+  reading both tools at once, their figures and ours agree to within about 2 MHz on every domain
+  (HUBCLK 539/540, DISPCLK 674/676, L2CLK 1679/1681, reference 107/108), and type 20 tracks the core
+  clock under load exactly as an L2 clock should.
+  The reference clock is the reason this list is built by asking the frequency counter for every type
+  id rather than by walking the info struct: the walk misses type 22 entirely, though the counter
+  answers for it perfectly well. Both are used, because the walk carries type 31 — a domain that
+  reads a flat zero, which a probe keeping only what moves would drop. Type 31 stays unnamed; mVolt
+  does not name it either, and a number with no name is more honest than a name with no evidence.
 - **The crossbar is a single flat offset, not a curve.** HYDRA 2.3B carries a 127-entry
   `xbar_curve_points` array beside its 127 `curve_points`, which suggests a per-voltage-point
   crossbar table. There isn't one on this driver, and all three places it could live were checked:
