@@ -692,10 +692,41 @@ public sealed class NvApiBackend : IGpuBackend
             d["xbar"] = NvApiPrivate.MeasureClockKhz(g.Handle, NvApiPrivate.DomainXbar) / 1000.0;
             d["sys"] = NvApiPrivate.MeasureClockKhz(g.Handle, 2) / 1000.0;
             d["video"] = NvApiPrivate.MeasureClockKhz(g.Handle, 21) / 1000.0;
+
+            // The rest of the domains this card lists. A 5070 Ti enumerates nine and only four of
+            // them have names anyone has confirmed - mVolt 0.38 added HUBCLK, DISPCLK, L2CLK and a
+            // reference clock and marks them "experimental and unconfirmed", which is the honest
+            // state of the art. So these are reported by the type the driver gives them rather than
+            // by a guessed name: what they are is a question the min/max columns answer over a
+            // session, once you can see one track the core under load and another sit flat.
+            foreach (int type in ExtraDomainTypes(g))
+                d["domain" + type] = NvApiPrivate.MeasureClockKhz(g.Handle, type) / 1000.0;
         }
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
         return d;
+    }
+
+    /// <summary>
+    /// Domain types this card lists that are not already reported under a name of their own. Cached:
+    /// the info walk reads a 34 KB struct, which is far too heavy for the poll loop, and the set of
+    /// domains a card has does not change while it is plugged in.
+    /// </summary>
+    private int[]? _extraDomainTypes;
+
+    private int[] ExtraDomainTypes(PhysicalGPU g)
+    {
+        if (_extraDomainTypes != null) return _extraDomainTypes;
+        // Core, crossbar, SYS and video have their own rows; memory has one from the public API.
+        var named = new HashSet<int> { 0, 1, 2, 21, 4 };
+        try
+        {
+            _extraDomainTypes = NvApiPrivate.ReadDomainEntries(g.Handle)
+                .Select(e => e.Type).Where(t => !named.Contains(t)).Distinct().OrderBy(t => t).ToArray();
+        }
+        catch (NVIDIAApiException) { _extraDomainTypes = Array.Empty<int>(); }
+        catch (NVIDIANotSupportedException) { _extraDomainTypes = Array.Empty<int>(); }
+        return _extraDomainTypes;
     }
 
     /// <summary>The clock window the user asked for, so the voltage cap knows not to fight it.</summary>

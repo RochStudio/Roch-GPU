@@ -116,7 +116,7 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
                     <Image Source="pack://application:,,,/icon.png" Width="18" Height="18"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
-                    <TextBlock Text="{Binding TitleText}" FontSize="12.5" FontWeight="Bold" Margin="6,0,10,0"
+                    <TextBlock Text="{Binding TitleText}" FontSize="16" FontWeight="Bold" Margin="6,0,10,0"
                                VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">

@@ -29,11 +29,19 @@
         <Style TargetType="Window">
             <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <!-- Consolas 12, the font Roch Viewer uses throughout. Monospace earns its place in a
-                 tool like this: the telemetry columns line up and a value stops shifting sideways
-                 as its digits change. -->
+            <!-- Consolas, the font Roch Viewer uses throughout. Monospace earns its place in a tool
+                 like this: the telemetry columns line up and a value stops shifting sideways as its
+                 digits change.
+                 Its "size 12" is 12 POINTS, which Tk resolves to 16 device pixels; WPF's FontSize is
+                 already in pixels, so a literal 12 here came out three quarters the size. The body
+                 stays at 12px because this window is 386 wide where Roch Viewer's is nearly twice
+                 that - the title matches at the real 16. -->
             <Setter Property="FontFamily" Value="Consolas"/>
             <Setter Property="FontSize" Value="12"/>
+            <!-- Tk antialiases greyscale. Left on ClearType, white-on-near-black picks up visible
+                 red and blue fringes that the sibling app does not have. -->
+            <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale"/>
+            <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
             <Setter Property="UseLayoutRounding" Value="True"/>
         </Style>
         <!-- No implicit TextBlock foreground: text inherits Window.Foreground, so button/combobox templates keep their own colours. -->

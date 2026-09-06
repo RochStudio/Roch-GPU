@@ -92,13 +92,16 @@ public partial class MonitorWindow : Window
 
     private void Render(GpuTelemetry t)
     {
+        var extra = _svc.MeasureExtraClocks();
         if (_table == null)
         {
-            _table = new TelemetryTable(t, _svc.Capabilities);
+            // The first sample says which domains this card actually reports, which is what decides
+            // the rows - the same reason the sensor rows are built from it rather than from a list.
+            _table = new TelemetryTable(t, _svc.Capabilities, extra.Keys);
             TableRows.ItemsSource = _table.Rows;
         }
         // The table is the only view, so these are always on screen and always worth reading.
-        _table.Add(t, _svc.MeasureExtraClocks());
+        _table.Add(t, extra);
         Elapsed.Text = "Running " + (DateTime.UtcNow - _statsSince).ToString(@"hh\:mm\:ss");
 
         CurveEditor.SetLive(t.TemperatureC, t.FanPercent);

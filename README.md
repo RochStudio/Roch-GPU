@@ -274,6 +274,15 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   Hot spot and the memory chip reading are in neither version. `RochGPU.exe diag` prints all eight
   slots, so a card that populates more will show it — [a sample dump from this
   card](docs/diag-rtx5070ti.txt) is kept as the evidence behind these findings.
+- **The unnamed clock domains are shown by type, not by a guessed name.** A 5070 Ti enumerates nine
+  domains and only four of them — core, crossbar, SYS and video — have names anyone has confirmed.
+  mVolt 0.38 added HUBCLK, DISPCLK, L2CLK and a reference clock and marks them "experimental and
+  unconfirmed", which is the honest state of the art, so the monitor lists the rest as `Domain type
+  N` and lets the min/max columns say what they are. On this card, at idle with light desktop use:
+  type 20 swung 1674 → 2166 MHz in step with the core, which is how a clock tied to the graphics
+  domain behaves; types 3 and 6 sat at 542 and 676 MHz and barely moved, which is how a fixed
+  display or hub clock behaves; type 31 read a flat zero. That is behaviour, not identification —
+  put a name on one only when something makes it move for a reason you chose.
 - **The crossbar is a single flat offset, not a curve.** HYDRA 2.3B carries a 127-entry
   `xbar_curve_points` array beside its 127 `curve_points`, which suggests a per-voltage-point
   crossbar table. There isn't one on this driver, and all three places it could live were checked:

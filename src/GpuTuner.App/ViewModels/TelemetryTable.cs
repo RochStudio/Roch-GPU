@@ -103,8 +103,11 @@ public sealed class TelemetryTable
     /// Lay out the sensors this card actually has. A row for a sensor the card never reports would
     /// sit at an em dash for the whole session, which reads as a fault rather than an absence.
     /// </summary>
-    public TelemetryTable(GpuTelemetry first, GpuCapabilities caps)
+    public TelemetryTable(GpuTelemetry first, GpuCapabilities caps,
+                          IEnumerable<string>? extraClockKeys = null)
     {
+        extraClockKeys ??= Array.Empty<string>();
+
         Group("Temperatures");
         Sensor("temp", "GPU", "°C", 1);
         if (!double.IsNaN(first.HotSpotC)) Sensor("hotspot", "Hot spot", "°C", 1);
@@ -122,6 +125,12 @@ public sealed class TelemetryTable
         if (caps.CanSetXbarOffset) Sensor("xbar", "Crossbar", "MHz");
         if (caps.CanSetSysOffset) Sensor("sys", "SYS", "MHz");
         if (caps.CanSetVideoOffset) Sensor("video", "Video", "MHz");
+        // Whatever else this card lists. Named by type, not by a guess: a 5070 Ti enumerates nine
+        // domains and only four of them have names anyone has confirmed. Built from the first
+        // sample, so a card that lists nothing extra gets no rows rather than a column of dashes.
+        foreach (var key in extraClockKeys)
+            if (key.StartsWith("domain", StringComparison.Ordinal))
+                Sensor(key, "Domain type " + key["domain".Length..], "MHz");
 
         Group("Load");
         Sensor("load", "GPU core", "%");
