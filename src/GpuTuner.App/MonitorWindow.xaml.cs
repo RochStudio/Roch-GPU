@@ -48,7 +48,7 @@ public partial class MonitorWindow : Window
         if (svc.Latest != null) Render(svc.Latest);
         svc.TelemetryUpdated += OnTelemetry;
 
-        WindowTheme.ApplyOnOpen(this);
+        Theme.Register(this);   // paints the chrome now, and follows every later light/dark switch
         Closed += (_, _) =>
         {
             _svc.TelemetryUpdated -= OnTelemetry;

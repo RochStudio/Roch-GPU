@@ -32,6 +32,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         Settings = Store.LoadSettings();
+        Native.Theme.Apply(Settings.DarkMode);   // before any window exists, so none of them flashes the other mode
 
         var args = e.Args.ToList();
         bool mock = args.Contains("--mock") || Settings.UseMockBackend;

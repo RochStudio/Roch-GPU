@@ -113,6 +113,9 @@ public sealed class AppSettings
     public int PollIntervalMs { get; set; } = 1000;
     public int HistorySeconds { get; set; } = 120;
     public bool UseMockBackend { get; set; }
+
+    /// <summary>Light or dark. Dark by default, which is what the tool has always opened as.</summary>
+    public bool DarkMode { get; set; } = true;
     /// <summary>Hardware monitor collapsed, leaving only the control column.</summary>    /// <summary>Last applied profile per GPU (by name), restored into the sliders on launch.</summary>
     public Dictionary<string, string> LastProfileByGpu { get; set; } = new();
 

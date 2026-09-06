@@ -47,7 +47,8 @@ public partial class MainWindow : Window
         svc.TelemetryUpdated += OnTelemetry;
         svc.StartPolling(Math.Max(250, App.Settings.PollIntervalMs));
 
-        WindowTheme.ApplyOnOpen(this);   // Windows draws the title bar, and it follows the OS theme, not ours
+        Theme.Register(this);   // paints the chrome now, and follows every later light/dark switch
+        ThemeButton.Content = Theme.IsDark ? "Dark" : "Light";
         SetupTray();
         UpdatePollDetail();              // monitor starts closed, so the poll starts paused
         Closing += MainWindow_Closing;
@@ -126,6 +127,14 @@ public partial class MainWindow : Window
     private void TitleMinimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     /// <summary>Goes through Close() so the "fan control is active" prompt still runs.</summary>
+    private void Theme_Click(object sender, RoutedEventArgs e)
+    {
+        bool dark = Theme.Toggle();
+        ThemeButton.Content = dark ? "Dark" : "Light";
+        App.Settings.DarkMode = dark;
+        App.Store.SaveSettings(App.Settings);
+    }
+
     private void TitleClose_Click(object sender, RoutedEventArgs e) => Close();
 
     /// <summary>

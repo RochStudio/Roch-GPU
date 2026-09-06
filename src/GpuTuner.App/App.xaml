@@ -27,19 +27,22 @@
         <SolidColorBrush x:Key="DangerBrush" Color="#FFE53935"/>
 
         <Style TargetType="Window">
-            <Setter Property="Background" Value="{StaticResource BgBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <!-- Consolas 12, the font Roch Viewer uses throughout. Monospace earns its place in a
+                 tool like this: the telemetry columns line up and a value stops shifting sideways
+                 as its digits change. -->
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="UseLayoutRounding" Value="True"/>
         </Style>
         <!-- No implicit TextBlock foreground: text inherits Window.Foreground, so button/combobox templates keep their own colours. -->
         <Style x:Key="Muted" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="FontSize" Value="11.5"/>
         </Style>
         <Style x:Key="SectionTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin" Value="0,0,0,8"/>
@@ -47,7 +50,6 @@
         <Style x:Key="BigValue" TargetType="TextBlock">
             <Setter Property="FontSize" Value="22"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="FontFamily" Value="Segoe UI, Consolas"/>
         </Style>
         <!-- Flat sections: spacing and section titles carry the structure, not boxes. -->
         <Style x:Key="Panel" TargetType="Border">
@@ -57,9 +59,9 @@
         </Style>
 
         <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="12,6"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -72,7 +74,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4"/>
@@ -83,13 +85,13 @@
             </Setter>
         </Style>
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
             <Setter Property="Foreground" Value="#FFFFFFFF"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
         <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="BorderBrush" Value="{StaticResource DangerBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
         </Style>
 
         <Style TargetType="Slider">
@@ -106,7 +108,7 @@
             </Style.Triggers>
         </Style>
         <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style TargetType="ComboBox">
@@ -115,15 +117,15 @@
             <Setter Property="Foreground" Value="#FF15171B"/>
         </Style>
         <Style TargetType="ListBox">
-            <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         </Style>
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-            <Setter Property="CaretBrush" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Padding" Value="4,3"/>
         </Style>
         <!-- One Afterburner-style control row: name on the left, typeable value on the right, slider under. -->
@@ -141,7 +143,7 @@
             <Setter Property="IsMoveToPointEnabled" Value="True"/>
         </Style>
         <Style x:Key="ValueBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
             <Setter Property="Width" Value="60"/>
             <Setter Property="HorizontalContentAlignment" Value="Right"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -160,9 +162,9 @@
             <Setter Property="Height" Value="17"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="FontSize" Value="9"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-            <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Delay" Value="400"/>
@@ -177,11 +179,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="b" Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.35"/>

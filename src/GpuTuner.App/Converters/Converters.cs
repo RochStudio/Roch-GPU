@@ -20,12 +20,24 @@ public sealed class BoolToVisibilityConverter : IValueConverter
         value is Visibility.Visible;
 }
 
+/// <summary>
+/// One of two themed brushes, looked up by resource key.
+///
+/// The keys are held as strings and resolved on every call rather than taking Brush values in XAML.
+/// A converter is not a DependencyObject, so it cannot be given a DynamicResource - handed a
+/// StaticResource it would capture whichever brush existed at load and keep showing that one colour
+/// after a light/dark switch.
+/// </summary>
 public sealed class BoolToBrushConverter : IValueConverter
 {
-    public Brush TrueBrush { get; set; } = Brushes.Red;
-    public Brush FalseBrush { get; set; } = Brushes.Gray;
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-        value is bool b && b ? TrueBrush : FalseBrush;
+    public string TrueKey { get; set; } = "DangerBrush";
+    public string FalseKey { get; set; } = "MutedBrush";
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        string key = value is bool b && b ? TrueKey : FalseKey;
+        return Application.Current?.TryFindResource(key) as Brush ?? Brushes.Gray;
+    }
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
@@ -42,6 +54,23 @@ public sealed class XocLeverConverter : IValueConverter
         bool armed = value is XocLever set && parameter is string name
                      && Enum.TryParse<XocLever>(name, true, out var one) && set.Has(one);
         return Invert ? !armed : armed;
+    }
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>
+/// What pressing a lever's gate button will do: "Disable" while it is armed, "Enable" while it is
+/// not. The button names the action rather than the state, because the state is already told by the
+/// slider beside it being live or dead.
+/// </summary>
+public sealed class XocGateLabelConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        bool armed = value is XocLever set && parameter is string name
+                     && Enum.TryParse<XocLever>(name, true, out var one) && set.Has(one);
+        return armed ? "Disable" : "Enable";
     }
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
         throw new NotSupportedException();

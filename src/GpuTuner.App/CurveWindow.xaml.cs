@@ -1,4 +1,4 @@
-using GpuTuner.App.Native;
+﻿using GpuTuner.App.Native;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,7 +22,7 @@ public partial class CurveWindow : Window
     {
         _svc = svc;
         InitializeComponent();
-        WindowTheme.ApplyOnOpen(this);
+        Theme.Register(this);   // paints the chrome now, and follows every later light/dark switch
 
         Editor.CurveChanged += (_, _) => UpdateStatus();
         Loaded += (_, _) => LoadCurve();

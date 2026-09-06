@@ -3,30 +3,26 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Extreme OC" SizeToContent="Height" MinHeight="600" Width="380" ResizeMode="NoResize"
+        Title="Extreme OC" SizeToContent="Height" MinHeight="600" Width="430" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
-        <!-- Armed drives the sliders and the Disable button; NotArmed drives Enable, so exactly one
-             of each pair is ever clickable and the greyed one names the state the card is in. -->
+        <!-- Armed drives each lever's sliders: dead while disarmed, because a slider that moves but
+             is never written would be the window claiming a setting the card has not got. -->
         <conv:XocLeverConverter x:Key="Armed"/>
-        <conv:XocLeverConverter x:Key="NotArmed" Invert="True"/>
 
-        <!-- A pair per lever, sized to sit on the caption line rather than add a row each. -->
-        <Style x:Key="GateOn" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+        <!-- One button per lever, not a pair. The pair always had exactly one half clickable, so the
+             other half was only ever there to name the state - which the slider beside it and the
+             caption under it already do. Only the label changes, which is how Roch Viewer's own
+             light/dark button works: one control, naming what pressing it will do. -->
+        <conv:XocGateLabelConverter x:Key="GateLabel"/>
+        <Style x:Key="Gate" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
             <Setter Property="Height" Value="21"/>
-            <Setter Property="MinWidth" Value="58"/>
+            <Setter Property="MinWidth" Value="64"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="FontSize" Value="10.5"/>
             <Setter Property="Margin" Value="6,0,0,0"/>
-        </Style>
-        <Style x:Key="GateOff" TargetType="Button" BasedOn="{StaticResource DangerButton}">
-            <Setter Property="Height" Value="21"/>
-            <Setter Property="MinWidth" Value="58"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="FontSize" Value="10.5"/>
-            <Setter Property="Margin" Value="4,0,0,0"/>
         </Style>
     </Window.Resources>
 
@@ -72,18 +68,14 @@
                                        UpperValue="{Binding VoltageRailMax, Mode=TwoWay}"/>
                     </StackPanel>
                     <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding VoltageRailRangeText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding VoltageRailMaxRangeText}"
                                    IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Nvvdd}"/>
-                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
-                                Command="{Binding ArmCommand}" CommandParameter="Nvvdd"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Nvvdd}"
-                                ToolTip="Write this rail range to the card now"/>
-                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
-                                Command="{Binding DisarmCommand}" CommandParameter="Nvvdd"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Nvvdd}"
-                                ToolTip="Put this rail back to the driver's own values now"/>
+                        <Button Grid.Column="1" Style="{StaticResource Gate}"
+                                Command="{Binding ToggleLeverCommand}" CommandParameter="Nvvdd"
+                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Nvvdd}"
+                                ToolTip="Write this rail range to the card now, or put it back"/>
                     </Grid>
                 </StackPanel>
 
@@ -106,18 +98,14 @@
                                        UpperValue="{Binding MsvddRailMax, Mode=TwoWay}"/>
                     </StackPanel>
                     <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding MsvddRangeText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding MsvddRailMaxRangeText}"
                                    IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Msvdd}"/>
-                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
-                                Command="{Binding ArmCommand}" CommandParameter="Msvdd"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Msvdd}"
-                                ToolTip="Write this rail range to the card now"/>
-                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
-                                Command="{Binding DisarmCommand}" CommandParameter="Msvdd"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Msvdd}"
-                                ToolTip="Put this rail back to the driver's own values now"/>
+                        <Button Grid.Column="1" Style="{StaticResource Gate}"
+                                Command="{Binding ToggleLeverCommand}" CommandParameter="Msvdd"
+                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Msvdd}"
+                                ToolTip="Write this rail range to the card now, or put it back"/>
                     </Grid>
                 </StackPanel>
 
@@ -142,18 +130,14 @@
                         </Grid>
                     </StackPanel>
                     <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding XbarOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding XbarOffsetRangeText}"
                                    IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Xbar}"/>
-                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
-                                Command="{Binding ArmCommand}" CommandParameter="Xbar"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Xbar}"
-                                ToolTip="Write this offset to the card now"/>
-                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
-                                Command="{Binding DisarmCommand}" CommandParameter="Xbar"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Xbar}"
-                                ToolTip="Put this domain back to no offset now"/>
+                        <Button Grid.Column="1" Style="{StaticResource Gate}"
+                                Command="{Binding ToggleLeverCommand}" CommandParameter="Xbar"
+                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Xbar}"
+                                ToolTip="Write this offset to the card now, or put it back"/>
                     </Grid>
                 </StackPanel>
 
@@ -178,18 +162,14 @@
                         </Grid>
                     </StackPanel>
                     <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding SysOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding SysOffsetRangeText}"
                                    IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Sys}"/>
-                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
-                                Command="{Binding ArmCommand}" CommandParameter="Sys"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Sys}"
-                                ToolTip="Write this offset to the card now"/>
-                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
-                                Command="{Binding DisarmCommand}" CommandParameter="Sys"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Sys}"
-                                ToolTip="Put this domain back to no offset now"/>
+                        <Button Grid.Column="1" Style="{StaticResource Gate}"
+                                Command="{Binding ToggleLeverCommand}" CommandParameter="Sys"
+                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Sys}"
+                                ToolTip="Write this offset to the card now, or put it back"/>
                     </Grid>
                 </StackPanel>
 
@@ -214,18 +194,14 @@
                         </Grid>
                     </StackPanel>
                     <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding VideoOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding VideoOffsetRangeText}"
                                    IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Video}"/>
-                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
-                                Command="{Binding ArmCommand}" CommandParameter="Video"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=Video}"
-                                ToolTip="Write this offset to the card now"/>
-                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
-                                Command="{Binding DisarmCommand}" CommandParameter="Video"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Video}"
-                                ToolTip="Put this domain back to no offset now"/>
+                        <Button Grid.Column="1" Style="{StaticResource Gate}"
+                                Command="{Binding ToggleLeverCommand}" CommandParameter="Video"
+                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Video}"
+                                ToolTip="Write this offset to the card now, or put it back"/>
                     </Grid>
                 </StackPanel>
 
@@ -249,18 +225,14 @@
                                        UpperValue="{Binding ClockLockMax, Mode=TwoWay}"/>
                     </StackPanel>
                     <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding ClockLockText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding ClockLockRangeText}"
                                    IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=ClockRange}"/>
-                        <Button Grid.Column="1" Content="Enable" Style="{StaticResource GateOn}"
-                                Command="{Binding ArmCommand}" CommandParameter="ClockRange"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource NotArmed}, ConverterParameter=ClockRange}"
-                                ToolTip="Pin the graphics clock inside this window now"/>
-                        <Button Grid.Column="2" Content="Disable" Style="{StaticResource GateOff}"
-                                Command="{Binding DisarmCommand}" CommandParameter="ClockRange"
-                                IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=ClockRange}"
-                                ToolTip="Hand the clock back to the driver now"/>
+                        <Button Grid.Column="1" Style="{StaticResource Gate}"
+                                Command="{Binding ToggleLeverCommand}" CommandParameter="ClockRange"
+                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=ClockRange}"
+                                ToolTip="Pin the graphics clock inside this window now, or put it back"/>
                     </Grid>
                 </StackPanel>
 

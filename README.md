@@ -102,6 +102,13 @@ the undervolt, and is where the voltage cap lives.
 A marker shows where the card actually stops — the table describes voltages well above anything a
 given card selects, so the unreachable stretch is shaded rather than left looking tunable.
 
+### Light and dark
+
+One button, top right, showing the mode you are in — a Light/Dark pair would spend half its width
+naming the mode you are not in. It switches everything already on screen, including the title bars
+Windows draws rather than WPF, and the choice is remembered. The palette and the font (Consolas) are
+[Roch Viewer](https://github.com/RochStudio/Roch-Viewer)'s, value for value.
+
 ### Extreme OC (XOC)
 
 The **XOC** button holds the levers that can brown a card out rather than merely fail: the NVVDD and

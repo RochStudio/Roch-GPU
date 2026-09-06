@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -22,14 +22,14 @@ public static class WindowTheme
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
     /// <summary>Call once the window has an HWND — i.e. from SourceInitialized, not the constructor.</summary>
-    public static void UseDarkTitleBar(Window window)
+    public static void SetDarkTitleBar(Window window, bool dark)
     {
         try
         {
             var hwnd = new WindowInteropHelper(window).Handle;
             if (hwnd == IntPtr.Zero) return;
 
-            int on = 1;
+            int on = dark ? 1 : 0;
             if (DwmSetWindowAttribute(hwnd, DarkModeAttribute, ref on, sizeof(int)) != 0)
                 DwmSetWindowAttribute(hwnd, DarkModeAttributeLegacy, ref on, sizeof(int));
         }
@@ -37,7 +37,11 @@ public static class WindowTheme
         catch (EntryPointNotFoundException) { }
     }
 
-    /// <summary>Wire it up for a window that has not been shown yet.</summary>
-    public static void ApplyOnOpen(Window window) =>
-        window.SourceInitialized += (_, _) => UseDarkTitleBar(window);
+    /// <summary>
+    /// Wire it up for a window that has not been shown yet. The mode is fetched when the handle
+    /// arrives rather than captured now, so a window built before a theme switch still opens in the
+    /// mode that is current by the time it appears.
+    /// </summary>
+    public static void ApplyOnOpen(Window window, Func<bool> isDark) =>
+        window.SourceInitialized += (_, _) => SetDarkTitleBar(window, isDark());
 }

@@ -2,14 +2,14 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU" Height="668" Width="350"
+        Title="Roch GPU" Height="668" Width="386"
         ResizeMode="CanMinimize" WindowStyle="None"
         WindowStartupLocation="CenterScreen"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
-        <conv:BoolToBrushConverter x:Key="StatusBrush" TrueBrush="{StaticResource DangerBrush}" FalseBrush="{StaticResource MutedBrush}"/>
-        <conv:BoolToBrushConverter x:Key="LimitBrush" TrueBrush="{StaticResource WarnBrush}" FalseBrush="{StaticResource MutedBrush}"/>
+        <conv:BoolToBrushConverter x:Key="StatusBrush" TrueKey="DangerBrush" FalseKey="MutedBrush"/>
+        <conv:BoolToBrushConverter x:Key="LimitBrush" TrueKey="WarnBrush" FalseKey="MutedBrush"/>
 
         <!-- Afterburner-style numbered profile slot. Dim when empty, white when stored, red when active. -->
         <Style x:Key="SlotButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
@@ -19,24 +19,24 @@
             <Setter Property="Margin" Value="0,0,4,0"/>
             <Setter Property="FontSize" Value="12.5"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Occupied}" Value="True">
-                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                    <Setter Property="BorderBrush" Value="{StaticResource AccentDimBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentDimBrush}"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
-                    <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+                    <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
                     <Setter Property="Foreground" Value="#FFFFFFFF"/>
-                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
         <!-- Save is a two-step arm: press it, then a number. Checked = armed (red). -->
         <Style x:Key="SaveToggle" TargetType="ToggleButton">
-            <Setter Property="Background" Value="{StaticResource PanelAltBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelAltBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,0"/>
             <Setter Property="Height" Value="26"/>
@@ -52,11 +52,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="b" Property="Background" Value="{StaticResource AccentBrush}"/>
-                                <Setter TargetName="b" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                                 <Setter Property="Foreground" Value="#FFFFFFFF"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -71,8 +71,8 @@
             <Setter Property="Width" Value="44"/>
             <Setter Property="Height" Value="30"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>   <!-- chrome glyphs, not content -->
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Template">
@@ -83,8 +83,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="Background" Value="{StaticResource TitleHoverBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                <Setter TargetName="b" Property="Background" Value="{DynamicResource TitleHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -94,7 +94,7 @@
         <Style x:Key="TitleCloseButton" TargetType="Button" BasedOn="{StaticResource TitleButton}">
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource CloseHoverBrush}"/>
+                    <Setter Property="Background" Value="{DynamicResource CloseHoverBrush}"/>
                     <Setter Property="Foreground" Value="#FFFFFFFF"/>
                 </Trigger>
             </Style.Triggers>
@@ -110,7 +110,7 @@
         <!-- Custom title bar, laid out like Roch Viewer's: logo, then the name and version in plain
              white. The brand red is not spent here - the logo already carries it, and the red is what
              the values and the link below use to mean "live" and "clickable". -->
-        <Border Height="30" Background="{StaticResource HeaderBrush}" MouseLeftButtonDown="TitleBar_MouseDown">
+        <Border Height="30" Background="{DynamicResource HeaderBrush}" MouseLeftButtonDown="TitleBar_MouseDown">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
@@ -148,14 +148,14 @@
                      no underline, so the colour is the only thing saying it is clickable - which is
                      why it lifts a shade under the pointer rather than staying put. -->
                 <TextBlock x:Name="XLink" Grid.Row="2" Text="@MateoPCTech" FontSize="11.5" FontWeight="Bold"
-                           Foreground="{StaticResource BrandBrush}" Cursor="Hand" Margin="0,5,0,0"
+                           Foreground="{DynamicResource BrandBrush}" Cursor="Hand" Margin="0,5,0,0"
                            HorizontalAlignment="Left" MouseLeftButtonUp="XLink_Click"
                            ToolTip="https://x.com/MateoPCTech">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Style.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Foreground" Value="{StaticResource BrandHoverBrush}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource BrandHoverBrush}"/>
                                 </Trigger>
                             </Style.Triggers>
                         </Style>
@@ -186,7 +186,12 @@
                                             Padding="7,2" FontSize="11" Margin="0,0,4,0" ToolTip="Open the hardware monitor in its own window"/>
                                     <!-- No Tray button: the title bar's minimise already goes to the tray, via the
                                          StateChanged handler in MainWindow.xaml.cs. -->
-                                    <Button Content="Log" Click="OpenLog_Click" Padding="7,2" FontSize="11"/>
+                                    <Button Content="Log" Click="OpenLog_Click" Padding="7,2" FontSize="11" Margin="0,0,4,0"/>
+                                    <!-- One button, showing the mode you are in, the way Roch Viewer
+                                         does it: a Light/Dark pair spends half its width naming the
+                                         mode you are not in. -->
+                                    <Button x:Name="ThemeButton" Content="Dark" Click="Theme_Click"
+                                            Padding="7,2" FontSize="11" ToolTip="Switch between light and dark"/>
                                 </StackPanel>
                             </Grid>
                             <TextBlock Text="{Binding Device.Name}" FontSize="14.5" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
@@ -396,7 +401,7 @@
                                 <Button Grid.Column="2" Content="Revert" Command="{Binding RevertCommand}" ToolTip="Sliders back to the applied values"/>
                                 <Button Grid.Column="4" Content="Reset" Style="{StaticResource DangerButton}" Command="{Binding ResetCommand}" ToolTip="Driver defaults (also clears the voltage curve)"/>
                             </Grid>
-                            <TextBlock Style="{StaticResource Muted}" Margin="0,6,0,0" Text="Unapplied changes" Foreground="{StaticResource WarnBrush}"
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,6,0,0" Text="Unapplied changes" Foreground="{DynamicResource WarnBrush}"
                                        Visibility="{Binding PendingChanges, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
                     </Border>
@@ -433,7 +438,7 @@
                                               ToolTip="Press Save, then a number, to store the current settings in that slot"/>
                             </Grid>
 
-                            <TextBlock Style="{StaticResource Muted}" Margin="0,5,0,0" Foreground="{StaticResource WarnBrush}"
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,5,0,0" Foreground="{DynamicResource WarnBrush}"
                                        Text="Pick a slot to save into (press Save again to cancel)"
                                        Visibility="{Binding SaveArmed, Converter={StaticResource BoolToVis}}"/>
 

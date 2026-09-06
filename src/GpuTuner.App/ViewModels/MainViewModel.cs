@@ -60,6 +60,9 @@ public sealed class MainViewModel : ObservableObject
         RevertCommand = new RelayCommand(Revert);
         ArmCommand = new RelayCommand(o => SetLever(o, true));
         DisarmCommand = new RelayCommand(o => SetLever(o, false));
+        // One button per lever now, so it has to work out which way it is going.
+        ToggleLeverCommand = new RelayCommand(o =>
+            SetLever(o, !(o is string n && Enum.TryParse<XocLever>(n, true, out var l) && _xocArmed.Has(l))));
         SlotCommand = new RelayCommand(p => OnSlotClicked(ToSlotNumber(p)));
         NudgeCommand = new RelayCommand(Nudge);
         for (int i = 1; i <= SlotCount; i++) Slots.Add(new ProfileSlot(i));
@@ -384,32 +387,31 @@ public sealed class MainViewModel : ObservableObject
     {
         get
         {
-            if (_xocArmed == XocLever.None)
-            {
-                // "Nothing armed" is about this session; it says nothing about what an earlier one
-                // left on the card. Rail ceilings survive the process that set them, so a launch can
-                // open onto raised rails with every gate shut - and claiming driver defaults there
-                // would be the window describing a card it had just read otherwise.
-                var raised = new List<string>();
-                if (HasVoltageRail && VoltageRailMax > StockNvvddMaxMv) raised.Add("NVVDD");
-                if (HasMsvddRail && MsvddRailMax > StockMsvddMaxMv) raised.Add("MSVDD");
-                return raised.Count == 0
-                    ? "Nothing armed - the card is running the driver's own values."
-                    : $"Nothing armed here, but {string.Join(" and ", raised)} "
-                      + (raised.Count > 1 ? "are" : "is")
-                      + " above the driver's default - raised before this session started. "
-                      + "Enable, then Disable, to put it back.";
-            }
-
             var names = new List<string>();
             void Add(XocLever l, string name) { if (_xocArmed.Has(l)) names.Add(name); }
             Add(XocLever.Nvvdd, "NVVDD"); Add(XocLever.Msvdd, "MSVDD"); Add(XocLever.Xbar, "XBAR");
             Add(XocLever.Sys, "SYS"); Add(XocLever.Video, "video"); Add(XocLever.ClockRange, "clock range");
-            string list = string.Join(", ", names);
 
-            return _svc.ArmedOnCard.Has(_xocArmed)
+            // What an earlier session left on the card, which is a separate question from what is
+            // armed in this one - and does not stop being true because something else got armed
+            // since. Rail ceilings outlive the process that set them.
+            var raised = new List<string>();
+            if (HasVoltageRail && !_xocArmed.Has(XocLever.Nvvdd) && VoltageRailMax > StockNvvddMaxMv) raised.Add("NVVDD");
+            if (HasMsvddRail && !_xocArmed.Has(XocLever.Msvdd) && MsvddRailMax > StockMsvddMaxMv) raised.Add("MSVDD");
+            string carried = raised.Count == 0
+                ? ""
+                : $" {string.Join(" and ", raised)} {(raised.Count > 1 ? "are" : "is")} above the "
+                  + "driver's default, raised before this session started.";
+
+            if (names.Count == 0)
+                return (carried.Length == 0
+                    ? "Nothing armed - the card is running the driver's own values."
+                    : "Nothing armed here, but" + carried + " Enable, then Disable, to put it back.");
+
+            string list = string.Join(", ", names);
+            return (_svc.ArmedOnCard.Has(_xocArmed)
                 ? $"Live on the card: {list}."
-                : $"Armed: {list}. Press Apply to send them to the card.";
+                : $"Armed: {list}. Press Apply to send them to the card.") + carried;
         }
     }
 
@@ -785,6 +787,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand RevertCommand { get; }
     public RelayCommand ArmCommand { get; }
     public RelayCommand DisarmCommand { get; }
+    public RelayCommand ToggleLeverCommand { get; }
 
     // ------------------------------------------------------------------ actions
     public TuningProfile BuildProfileFromEditor(string name) => new()

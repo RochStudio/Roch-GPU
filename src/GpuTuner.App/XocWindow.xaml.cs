@@ -16,6 +16,6 @@ public partial class XocWindow : Window
     {
         DataContext = vm;
         InitializeComponent();
-        WindowTheme.ApplyOnOpen(this);
+        Theme.Register(this);   // paints the chrome now, and follows every later light/dark switch
     }
 }

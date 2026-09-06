@@ -30,7 +30,7 @@
                     <TextBlock x:Name="Elapsed" Text="Running 00:00:00" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
                         <CheckBox x:Name="AutoOpen" Content="Auto-open" Click="AutoOpen_Click" VerticalAlignment="Center"
-                                  Margin="0,0,12,0" Foreground="{StaticResource MutedBrush}"
+                                  Margin="0,0,12,0" Foreground="{DynamicResource MutedBrush}"
                                   ToolTip="Open this window automatically at launch. It is the only thing that polls the driver, so leaving it off costs nothing until you open it."/>
                         <Button Content="Reset stats" Click="ResetStats_Click" Padding="10,3"/>
                     </StackPanel>
@@ -50,29 +50,29 @@
                                                 <ColumnDefinition Width="170"/><ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock x:Name="nm" Text="{Binding Name}" FontSize="11.5" Margin="4,0,0,0" Foreground="{StaticResource TextBrush}"/>
-                                            <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" FontSize="11.5" Margin="6,0,6,0" Foreground="{StaticResource AccentBrush}"/>
-                                            <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{StaticResource MutedBrush}"/>
-                                            <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{StaticResource MutedBrush}"/>
-                                            <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" FontSize="11.5" Margin="6,0,6,0" Foreground="{StaticResource MutedBrush}"/>
+                                            <TextBlock x:Name="nm" Text="{Binding Name}" FontSize="11.5" Margin="4,0,0,0" Foreground="{DynamicResource TextBrush}"/>
+                                            <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource AccentBrush}"/>
+                                            <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource MutedBrush}"/>
+                                            <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource MutedBrush}"/>
+                                            <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource MutedBrush}"/>
                                         </Grid>
                                     </Border>
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IsBanded}" Value="True">
-                                            <Setter TargetName="band" Property="Background" Value="{StaticResource PanelAltBrush}"/>
+                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelAltBrush}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsColumnHeader}" Value="True">
                                             <Setter TargetName="band" Property="Background" Value="Transparent"/>
-                                            <Setter TargetName="nm" Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                            <Setter TargetName="cur" Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                            <Setter TargetName="mn" Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                            <Setter TargetName="mx" Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                            <Setter TargetName="av" Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                            <Setter TargetName="nm" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                            <Setter TargetName="cur" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                            <Setter TargetName="mn" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                            <Setter TargetName="mx" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                            <Setter TargetName="av" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsHeader}" Value="True">
-                                            <Setter TargetName="band" Property="Background" Value="{StaticResource PanelAltBrush}"/>
+                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelAltBrush}"/>
                                             <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
-                                            <Setter TargetName="nm" Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                            <Setter TargetName="nm" Property="Foreground" Value="{DynamicResource TextBrush}"/>
                                             <Setter TargetName="band" Property="Margin" Value="0,4,0,0"/>
                                         </DataTrigger>
                                     </DataTemplate.Triggers>
