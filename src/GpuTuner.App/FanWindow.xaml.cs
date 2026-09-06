@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using GpuTuner.App.Native;
 using GpuTuner.App.ViewModels;
 using GpuTuner.Core.Models;
@@ -105,14 +106,49 @@ public partial class FanWindow : Window
                 Maximum = _vm.Caps.FanMaxPercent <= 0 ? 100 : _vm.Caps.FanMaxPercent,
                 Value = i < _vm.PerFanPercents.Length ? _vm.PerFanPercents[i] : _vm.FixedFan,
                 Style = (Style)FindResource("Tight"),
+                // Snap to the same 5% grid the main window's fan slider uses, so dragging lands on
+                // the figures the arrows step through rather than between them.
+                TickFrequency = Step,
                 Tag = i
             };
             slider.ValueChanged += Slider_Changed;
             _sliders.Add(slider);
 
+            // An arrow either side, as on every other slider in the app: a fan duty is worth dialling
+            // in exactly, and dragging a 30-to-100 track to a particular 5 is fiddly.
+            var track = new Grid { Margin = new Thickness(0, 1, 0, 0) };
+            track.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            track.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var down = Nudge("◀", slider, -Step, new Thickness(0, 0, 4, 0));
+            var up = Nudge("▶", slider, +Step, new Thickness(4, 0, 0, 0));
+            Grid.SetColumn(slider, 1);
+            Grid.SetColumn(up, 2);
+            track.Children.Add(down);
+            track.Children.Add(slider);
+            track.Children.Add(up);
+
             FanRows.Children.Add(head);
-            FanRows.Children.Add(slider);
+            FanRows.Children.Add(track);
         }
+    }
+
+    /// <summary>The step the arrows take, and the grid the slider snaps to. The same constant the
+    /// main window nudges its fan slider by, so the two cannot drift apart.</summary>
+    private const int Step = ClockStep.FanPercent;
+
+    /// <summary>One nudge arrow, holdable, clamped to the slider's own range.</summary>
+    private RepeatButton Nudge(string glyph, Slider target, int by, Thickness margin) 
+    {
+        var b = new RepeatButton
+        {
+            Content = glyph,
+            Style = (Style)FindResource("Nudge"),
+            Margin = margin
+        };
+        b.Click += (_, _) => target.Value = Math.Clamp(target.Value + by, target.Minimum, target.Maximum);
+        return b;
     }
 
     /// <summary>Linked sliders move as one; unlinked, each is its own fan.</summary>
