@@ -173,10 +173,19 @@ startup --enable <profile> | --disable | --status
 terminal; `info`, `monitor` and `--mock` do not.
 
 The **Startup** tick in the window registers the same task as `startup --enable`, and unticking it
-removes the task rather than only clearing the tick. The task applies the profile and exits, leaving
-nothing resident — so clocks, limits and voltages survive to the desktop, but a *software* fan curve
-(NVIDIA) does not, since no process is left to step it. AMD's fan curve is the driver's own and is
-unaffected.
+removes the task rather than only clearing the tick. The task applies the profile and then leaves the
+app in the tray, so a *software* fan curve (NVIDIA) keeps running — something has to stay alive to
+step it. Clocks, limits and voltages would have survived either way, and AMD's fan curve is the
+driver's own.
+
+Because it is already running, opening the app from the desktop afterwards brings that copy back from
+the tray rather than starting a second one. Two elevated copies writing the same card is not a state
+worth allowing, and the check happens before the elevation prompt, so a redundant launch costs
+nothing.
+
+It does not appear in Task Manager's Startup tab: that list reads the Run registry key and the
+Startup folder, and neither can run elevated without a prompt at every logon. A Scheduled Task can,
+which is why it is one — manage it there, or with `startup --disable`.
 
 ---
 

@@ -5,7 +5,7 @@ namespace GpuTuner.Core.Services;
 
 /// <summary>
 /// Registers a Windows Task Scheduler entry that runs the app elevated at logon with
-/// "--apply-profile &lt;name&gt; --exit": apply the profile, then quit.
+/// "--apply-profile &lt;name&gt; --minimized": apply the profile, then sit in the tray.
 /// Uses schtasks.exe so we need no COM interop or NuGet packages. Windows-only.
 /// </summary>
 public static class StartupTaskService
@@ -24,13 +24,17 @@ public static class StartupTaskService
     /// <summary>
     /// Create/replace the task. exePath must be the full path to the executable.
     ///
-    /// Always --exit: apply the profile and quit, leaving nothing resident. The window and the
-    /// CLI both register through here, and while they disagreed about this the task quietly
-    /// changed behaviour depending on which of the two had been used last.
+    /// Always --minimized: apply the profile, then stay in the tray. The window and the CLI both
+    /// register through here, and while they disagreed about this the task quietly changed
+    /// behaviour depending on which of the two had been used last.
     ///
-    /// The cost is that a *software* fan curve (NVIDIA) cannot run at logon, because no process
-    /// is left to step it. Clocks, limits and voltages all stick, and AMD's fan curve is the
-    /// driver's own so it is unaffected. Add a resident mode back here if that is ever wanted.
+    /// Resident rather than apply-and-quit, which is what a *software* fan curve needs: nothing
+    /// steps it if no process is left alive. Clocks, limits and voltages stick either way, and
+    /// AMD's fan curve is the driver's own so it never depended on this.
+    ///
+    /// It also means the app is already running when someone opens it from the desktop, which is
+    /// why SingleInstance exists - two elevated copies writing the same card is the failure this
+    /// mode would otherwise introduce.
     /// </summary>
     public static void Register(string exePath, string profileName)
     {
@@ -44,7 +48,7 @@ public static class StartupTaskService
         if (Exists()) Run("schtasks", $"/Delete /F /TN \"{TaskName}\"");
 
         // /RL HIGHEST = run elevated; /SC ONLOGON; /DELAY gives the driver a few seconds to settle.
-        string args = $"--apply-profile \"{profileName}\" --exit";
+        string args = $"--apply-profile \"{profileName}\" --minimized";
         string tr = $"\\\"{exePath}\\\" {args.Replace("\"", "\\\"")}";
         var (code, output) = Run("schtasks",
             $"/Create /F /TN \"{TaskName}\" /SC ONLOGON /RL HIGHEST /DELAY 0000:15 /TR \"{tr}\"");

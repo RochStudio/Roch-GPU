@@ -48,6 +48,8 @@ public partial class MainWindow : Window
         svc.StartPolling(Math.Max(250, App.Settings.PollIntervalMs));
 
         Theme.Register(this);   // paints the chrome now, and follows every later light/dark switch
+        // A second launch cannot open a window of its own, so it asks this one to come forward.
+        Native.SingleInstance.ListenForShowRequests(() => Dispatcher.BeginInvoke(RestoreFromTray));
         ThemeButton.Content = Theme.IsDark ? "Dark" : "Light";
         SetupTray();
         UpdatePollDetail();              // monitor starts closed, so the poll starts paused
@@ -241,7 +243,7 @@ public partial class MainWindow : Window
         ShowInTaskbar = false;
     }
 
-    private void RestoreFromTray()
+    internal void RestoreFromTray()
     {
         Show();
         ShowInTaskbar = true;

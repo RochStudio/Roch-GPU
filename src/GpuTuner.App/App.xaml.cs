@@ -34,6 +34,16 @@ public partial class App : Application
         Settings = Store.LoadSettings();
         Native.Theme.Apply(Settings.DarkMode);   // before any window exists, so none of them flashes the other mode
 
+        // Claimed here rather than in the entry point because the elevated relaunch is a new process:
+        // the unelevated one that started it has already gone, and whichever copy actually runs the
+        // window is the one that should hold the handle.
+        if (!Native.SingleInstance.Claim())
+        {
+            Native.SingleInstance.AskExistingToShow();
+            Shutdown(0);
+            return;
+        }
+
         var args = e.Args.ToList();
         bool mock = args.Contains("--mock") || Settings.UseMockBackend;
         bool exitAfter = args.Contains("--exit");

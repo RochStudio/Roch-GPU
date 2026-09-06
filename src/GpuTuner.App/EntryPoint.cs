@@ -35,6 +35,15 @@ public static class EntryPoint
             finally { RestoreConsoleEncoding(); }
         }
 
+        // Before the prompt, not after: a second launch while the logon copy sits in the tray should
+        // cost nothing at all, and asking for elevation first would cost a UAC dialog to then do
+        // nothing with. See SingleInstance for why "access denied" counts as yes here.
+        if (Native.SingleInstance.AlreadyRunning())
+        {
+            Native.SingleInstance.AskExistingToShow();
+            return 0;
+        }
+
         // The window writes clocks, so it wants elevation — but asking for it in the manifest would
         // break the other half. A manifest-elevated process is launched fresh and does not inherit
         // the caller's console, so `RochGPU.exe info` would print into a console nobody can see.
