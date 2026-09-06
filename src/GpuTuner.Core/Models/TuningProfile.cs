@@ -79,6 +79,21 @@ public sealed class TuningProfile
 
     public FanMode FanMode { get; set; } = FanMode.Auto;
     public int FixedFanPercent { get; set; } = 50;
+
+    /// <summary>
+    /// A duty per fan, when they are not all to run together. Empty means "use FixedFanPercent for
+    /// all of them", which is what every profile saved before this existed says - and what most
+    /// people want, so it stays the default rather than being migrated into three equal numbers.
+    ///
+    /// Only meaningful on a card that reports more than one cooler. NVAPI addresses them separately
+    /// on a 5070 Ti (ids 1, 2 and 3, each with its own policy, level and tachometer), so this is a
+    /// real control there rather than three sliders writing the same register.
+    /// </summary>
+    public int[] FixedFanPercents { get; set; } = Array.Empty<int>();
+
+    /// <summary>The duty for one fan, falling back to the shared one when no per-fan list is set.</summary>
+    public int FanPercentFor(int index) =>
+        index >= 0 && index < FixedFanPercents.Length ? FixedFanPercents[index] : FixedFanPercent;
     public FanCurve FanCurve { get; set; } = new();
 
     public DateTime ModifiedUtc { get; set; } = DateTime.UtcNow;
@@ -109,6 +124,7 @@ public sealed class TuningProfile
         MemoryTimingLevel = MemoryTimingLevel,
         FanMode = FanMode,
         FixedFanPercent = FixedFanPercent,
+        FixedFanPercents = (int[])FixedFanPercents.Clone(),
         FanCurve = FanCurve.Clone(),
         ModifiedUtc = ModifiedUtc
     };
@@ -168,6 +184,11 @@ public sealed class TuningProfile
         if (TargetVoltageMv > 0 && caps.MaxVoltageMv > 0)
             TargetVoltageMv = Math.Clamp(TargetVoltageMv, caps.MinVoltageMv, caps.MaxVoltageMv);
         FixedFanPercent = Math.Clamp(FixedFanPercent, caps.FanMinPercent, caps.FanMaxPercent);
+        for (int i = 0; i < FixedFanPercents.Length; i++)
+            FixedFanPercents[i] = Math.Clamp(FixedFanPercents[i], caps.FanMinPercent, caps.FanMaxPercent);
+        // A list longer than the card has fans would write to coolers that are not there.
+        if (caps.FanCount > 0 && FixedFanPercents.Length > caps.FanCount)
+            FixedFanPercents = FixedFanPercents[..caps.FanCount];
         if (caps.MemoryTimingOptions.Count > 0)
             MemoryTimingLevel = Math.Clamp(MemoryTimingLevel, 0, caps.MemoryTimingOptions.Count - 1);
         FanCurve.Normalize();

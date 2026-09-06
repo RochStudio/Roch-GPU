@@ -385,7 +385,16 @@ public sealed class TuningService : IDisposable
                         break;
                     case FanMode.Fixed:
                         _activeCurve = null;
-                        Try("Fan fixed", () => Backend.SetFanSpeed(GpuIndex, -1, p.FixedFanPercent));
+                        if (p.FixedFanPercents.Length == 0)
+                            Try("Fan fixed", () => Backend.SetFanSpeed(GpuIndex, -1, p.FixedFanPercent));
+                        else
+                            // Cooler ids start at 1, not 0: the index here is the position in the
+                            // list, the id is what the driver answers to.
+                            for (int i = 0; i < p.FixedFanPercents.Length; i++)
+                            {
+                                int id = i + 1, duty = p.FixedFanPercents[i];
+                                Try($"Fan {id} fixed", () => Backend.SetFanSpeed(GpuIndex, id, duty));
+                            }
                         break;
                     case FanMode.Curve:
                         if (Capabilities.FanCurveIsHardware)
@@ -863,6 +872,79 @@ public sealed class TuningService : IDisposable
     /// to hand back — and resetting it here silently threw away the user's fan settings on every
     /// exit, including ones a startup profile had just applied seconds earlier.
     /// </summary>
+    /// <summary>
+    /// Write only the fans. The fan window is a decision about fans, so it does not carry a
+    /// half-finished clock edit from the main window onto the card as a side effect - the same
+    /// reason the XOC buttons write one lever and nothing else.
+    ///
+    /// <paramref name="perFan"/> empty means one duty for every fan.
+    /// </summary>
+    public IReadOnlyList<string> SetFans(FanMode mode, int percent, int[] perFan, FanCurve curve)
+    {
+        var errors = new List<string>();
+        if (!Capabilities.CanSetFanSpeed)
+        {
+            errors.Add("This card exposes no fan control.");
+            return errors;
+        }
+
+        lock (_lock)
+        {
+            void Try(string what, Action a)
+            {
+                try { a(); Log?.Invoke($"{what}: ok"); }
+                catch (Exception e) { errors.Add($"{what}: {e.Message}"); Log?.Invoke($"{what}: FAILED - {e.Message}"); }
+            }
+
+            int lo = Capabilities.FanMinPercent, hi = Capabilities.FanMaxPercent <= 0 ? 100 : Capabilities.FanMaxPercent;
+            switch (mode)
+            {
+                case FanMode.Auto:
+                    _activeCurve = null;
+                    Try("Fan auto", () => Backend.SetFanAuto(GpuIndex));
+                    break;
+
+                case FanMode.Fixed:
+                    _activeCurve = null;
+                    if (perFan.Length < 2)
+                        Try("Fan fixed", () => Backend.SetFanSpeed(GpuIndex, -1, Math.Clamp(percent, lo, hi)));
+                    else
+                        // Cooler ids start at 1; the list position is the fan, the id is what the
+                        // driver answers to.
+                        for (int i = 0; i < perFan.Length; i++)
+                        {
+                            int id = i + 1, duty = Math.Clamp(perFan[i], lo, hi);
+                            Try($"Fan {id} fixed", () => Backend.SetFanSpeed(GpuIndex, id, duty));
+                        }
+                    break;
+
+                case FanMode.Curve:
+                    if (Capabilities.FanCurveIsHardware)
+                    {
+                        _activeCurve = null;
+                        Try("Fan curve", () => Backend.SetFanCurve(GpuIndex, curve));
+                    }
+                    else
+                    {
+                        _activeCurve = curve.Clone();
+                        _activeCurve.ResetState();
+                        _lastCurveFanSent = double.NaN;
+                    }
+                    break;
+            }
+
+            // Keep the applied profile describing the card, so the summary line and a later Revert
+            // both agree with what the fans are actually doing.
+            if (AppliedProfile != null)
+            {
+                AppliedProfile.FanMode = mode;
+                AppliedProfile.FixedFanPercent = percent;
+                AppliedProfile.FixedFanPercents = (int[])perFan.Clone();
+            }
+        }
+        return errors;
+    }
+
     public void ReleaseFanControl()
     {
         lock (_lock)

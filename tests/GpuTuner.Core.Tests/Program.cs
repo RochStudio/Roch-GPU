@@ -277,6 +277,30 @@ using (var svc = new TuningService(new MockBackend()))
     Check("a legacy shut gate arms nothing", legacyOff.XocArmed == XocLever.None);
 }
 
+// ---- Per-fan duties. A card can report several coolers the driver addresses separately - a 5070 Ti
+// has three, each with its own policy, level and tachometer - so a profile can carry one duty each.
+{
+    var fanCaps = new GpuCapabilities { CanSetFanSpeed = true, FanMinPercent = 30, FanMaxPercent = 100, FanCount = 3 };
+
+    // Empty is the default and means "one duty for all", which is what every profile saved before
+    // per-fan existed says. It must not turn into three equal numbers behind the user's back.
+    var shared = new TuningProfile { FixedFanPercent = 55 };
+    Check("no per-fan list by default", shared.FixedFanPercents.Length == 0);
+    Check("every fan falls back to the shared duty", shared.FanPercentFor(0) == 55 && shared.FanPercentFor(2) == 55);
+
+    var each = new TuningProfile { FixedFanPercent = 40, FixedFanPercents = new[] { 45, 65, 90 } };
+    Check("per-fan duties are read back by index", each.FanPercentFor(1) == 65);
+    Check("a fan past the end falls back", each.FanPercentFor(9) == 40);
+    Check("per-fan duties survive a clone", each.Clone().FixedFanPercents[2] == 90);
+
+    // Clamped like everything else, and never longer than the card has fans: writing the fourth
+    // entry would address a cooler that is not there.
+    var wild = new TuningProfile { FixedFanPercents = new[] { 5, 150, 60, 60 } };
+    wild.ClampTo(fanCaps);
+    Check("per-fan duties clamp into range", wild.FixedFanPercents[0] == 30 && wild.FixedFanPercents[1] == 100);
+    Check("the list is cut to the fan count", wild.FixedFanPercents.Length == 3);
+}
+
 // ---- Curve span: the V/F curve runs through BOTH struct regions, not just the "GPU" one.
 // Regression: the struct-based reader stopped at the 80-entry GPU array and reported a 4070 Ti's
 // curve as 80 points ending at 945 mV, while the raw reader saw all 103 ending at 1090. Anything

@@ -306,7 +306,20 @@ public static class CommandLine
         if (o.TryGetValue("fan", out var fan))
         {
             if (fan.Equals("auto", StringComparison.OrdinalIgnoreCase)) p.FanMode = FanMode.Auto;
-            else { p.FanMode = FanMode.Fixed; p.FixedFanPercent = int.Parse(fan); }
+            else
+            {
+                p.FanMode = FanMode.Fixed;
+                // "--fan 60" is every fan; "--fan 60,80,80" is one duty each, in cooler order.
+                var parts = fan.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length == 1) p.FixedFanPercent = int.Parse(parts[0]);
+                else
+                {
+                    p.FixedFanPercents = parts.Select(int.Parse).ToArray();
+                    p.FixedFanPercent = p.FixedFanPercents[0];
+                    if (svc.Capabilities.FanCount > 0 && parts.Length > svc.Capabilities.FanCount)
+                        notes.Add($"{TuningService.NotePrefix} this card reports {svc.Capabilities.FanCount} fan(s) — the extra duties are ignored.");
+                }
+            }
         }
         notes.AddRange(svc.Apply(p));
         return Report(notes);

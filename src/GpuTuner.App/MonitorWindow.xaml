@@ -124,25 +124,6 @@
             </DockPanel>
         </Border>
 
-        <!-- Fan curve editor: only when the fan mode is Curve -->
-        <Border Grid.Row="1" Style="{StaticResource Panel}" Padding="12,10" Margin="0,10,0,0" Height="230"
-                Visibility="{Binding IsCurveFan, Converter={StaticResource BoolToVis}}">
-            <DockPanel>
-                <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBlock Text="FAN CURVE" Style="{StaticResource SectionTitle}" Margin="0"/>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <TextBlock Text="Hysteresis" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBox x:Name="HystBox" Width="36" Text="3" TextChanged="CurveParam_Changed"/>
-                        <TextBlock Text="°C   Min step" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="6,0,6,0"/>
-                        <TextBox x:Name="StepBox" Width="36" Text="2" TextChanged="CurveParam_Changed"/>
-                        <TextBlock Text="%" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="4,0,12,0"/>
-                        <Button Content="Default curve" Click="DefaultCurve_Click" Padding="8,3"/>
-                    </StackPanel>
-                </Grid>
-                <c:FanCurveEditor x:Name="CurveEditor"/>
-            </DockPanel>
-        </Border>
     </Grid>
     </DockPanel>
 </Window>

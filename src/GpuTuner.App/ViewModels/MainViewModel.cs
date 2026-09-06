@@ -359,6 +359,18 @@ public sealed class MainViewModel : ObservableObject
         get => _fanModeIndex;
         set { if (Set(ref _fanModeIndex, value)) { Dirty(); OnPropertyChanged(nameof(IsFixedFan)); OnPropertyChanged(nameof(IsCurveFan)); } }
     }
+    /// <summary>Per-fan duties, empty when they all run together. Owned here so the fan window and
+    /// the main window's single slider cannot drift apart.</summary>
+    public int[] PerFanPercents { get; private set; } = Array.Empty<int>();
+
+    /// <summary>The fan window wrote to the card; bring this window's controls into line with it.</summary>
+    public void SyncFansFromService(FanMode mode, int[] perFan)
+    {
+        PerFanPercents = (int[])perFan.Clone();
+        FanModeIndex = (int)mode;
+        RefreshAppliedSummary();
+    }
+
     public bool IsFixedFan => _fanModeIndex == 1;
     public bool IsCurveFan => _fanModeIndex == 2;
 
@@ -818,6 +830,7 @@ public sealed class MainViewModel : ObservableObject
         MemoryTimingLevel = MemoryTimingIndex,
         FanMode = (FanMode)FanModeIndex,
         FixedFanPercent = FixedFan,
+        FixedFanPercents = (int[])PerFanPercents.Clone(),
         FanCurve = EditorCurve.Clone()
     };
 
@@ -846,6 +859,7 @@ public sealed class MainViewModel : ObservableObject
         MemoryTimingIndex = p.MemoryTimingLevel;
         FanModeIndex = (int)p.FanMode;
         FixedFan = p.FixedFanPercent;
+        PerFanPercents = (int[])p.FixedFanPercents.Clone();
         EditorCurve = p.FanCurve.Clone();
         OnPropertyChanged(nameof(EditorCurve));
         RaiseTexts();

@@ -1,0 +1,86 @@
+﻿<Window x:Class="GpuTuner.App.FanWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:GpuTuner.App.Controls"
+        xmlns:conv="clr-namespace:GpuTuner.App.Converters"
+        Title="Fan Control" SizeToContent="Height" Width="560" MinWidth="460"
+        WindowStartupLocation="CenterOwner"
+        Style="{StaticResource {x:Type Window}}">
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
+    <DockPanel Margin="12">
+
+        <!-- Mode first: it decides which of the two panels below is worth looking at. -->
+        <Border DockPanel.Dock="Top" Style="{StaticResource Panel}" Padding="12,10" Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="FAN CONTROL" Style="{StaticResource SectionTitle}"/>
+                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                    <RadioButton x:Name="ModeAuto" Content="Auto" GroupName="FanMode" Margin="0,0,16,0"
+                                 Checked="Mode_Changed" Foreground="{DynamicResource TextBrush}"
+                                 ToolTip="The driver's own fan behaviour"/>
+                    <RadioButton x:Name="ModeFixed" Content="Fixed" GroupName="FanMode" Margin="0,0,16,0"
+                                 Checked="Mode_Changed" Foreground="{DynamicResource TextBrush}"
+                                 ToolTip="Hold a duty, whatever the temperature does"/>
+                    <RadioButton x:Name="ModeCurve" Content="Curve" GroupName="FanMode"
+                                 Checked="Mode_Changed" Foreground="{DynamicResource TextBrush}"
+                                 ToolTip="Follow temperature. This app steps the fans, so it has to stay running."/>
+                </StackPanel>
+                <TextBlock x:Name="ModeNote" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,7,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="10,7" Margin="0,8,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="Status" Style="{StaticResource Muted}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="Apply" Click="Apply_Click" Style="{StaticResource PrimaryButton}"
+                        Padding="14,4" MinWidth="90"
+                        ToolTip="Write the fan settings to the card now"/>
+            </Grid>
+        </Border>
+
+        <!-- Fixed: one row per cooler the card actually reports. Built in code rather than laid out
+             here, because how many there are is a property of the card, not of the window. -->
+        <Border x:Name="FixedPanel" Style="{StaticResource Panel}" Padding="12,10"
+                Visibility="Collapsed">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="FIXED SPEED" Style="{StaticResource SectionTitle}" Margin="0"/>
+                        <CheckBox x:Name="LinkFans" Grid.Column="1" Content="Move together" IsChecked="True"
+                                  Click="LinkFans_Click" Foreground="{DynamicResource MutedBrush}"
+                                  ToolTip="One slider drives them all. Untick to set each fan on its own."/>
+                    </Grid>
+                    <TextBlock x:Name="FixedNote" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,2,0,6"/>
+                </StackPanel>
+                <StackPanel x:Name="FanRows" DockPanel.Dock="Top"/>
+                <TextBlock/>
+            </DockPanel>
+        </Border>
+
+        <!-- Curve: the editor that used to sit in the monitor window, where it had nothing to do with
+             the sensor table it was under. -->
+        <Border x:Name="CurvePanel" Style="{StaticResource Panel}" Padding="12,10" Visibility="Collapsed">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="FAN CURVE" Style="{StaticResource SectionTitle}" Margin="0"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <TextBlock Text="Hysteresis" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBox x:Name="HystBox" Width="36" Text="3" TextChanged="CurveParam_Changed"/>
+                        <TextBlock Text="°C   Min step" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="6,0,6,0"/>
+                        <TextBox x:Name="StepBox" Width="36" Text="2" TextChanged="CurveParam_Changed"/>
+                        <TextBlock Text="%" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="4,0,12,0"/>
+                        <Button Content="Default curve" Click="DefaultCurve_Click" Padding="8,3"/>
+                    </StackPanel>
+                </Grid>
+                <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Text="A curve is stepped by this app, so it stops when the app does — closing hands the fans back to the driver. One curve drives every fan: the driver's own per-cooler policy is what a fixed duty writes, and a curve overrides it from out here."/>
+                <c:FanCurveEditor x:Name="CurveEditor" Height="240"/>
+            </DockPanel>
+        </Border>
+    </DockPanel>
+</Window>

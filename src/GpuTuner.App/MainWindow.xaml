@@ -218,6 +218,10 @@
                                     HorizontalAlignment="Stretch" FontWeight="SemiBold"
                                     Visibility="{Binding HasXoc, Converter={StaticResource BoolToVis}}"
                                     ToolTip="Extreme OC: rail ranges, the crossbar, SYS and video clocks, and the clock range"/>
+                            <Button Content="Fan" Click="Fan_Click" Padding="10,4" Margin="0,0,0,7"
+                                    HorizontalAlignment="Stretch" FontWeight="SemiBold"
+                                    IsEnabled="{Binding Caps.CanSetFanSpeed}"
+                                    ToolTip="Fan control: a duty per fan, or a curve"/>
 
                             <!-- 1a. Over-voltage percentage (Afterburner's "Core Voltage (%)"). Raises the
                                  ceiling above the top of the V/F table; separate lever from the cap below. -->

@@ -129,6 +129,20 @@ public partial class MainWindow : Window
     private void TitleMinimize_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     /// <summary>Goes through Close() so the "fan control is active" prompt still runs.</summary>
+    /// <summary>
+    /// The fan window. Owned like the others: one at a time, and it goes away with this window.
+    /// </summary>
+    private FanWindow? _fanWindow;
+
+    private void Fan_Click(object sender, RoutedEventArgs e)
+    {
+        if (_fanWindow is { IsLoaded: true }) { _fanWindow.Activate(); return; }
+        _fanWindow = new FanWindow(_svc, _vm) { Owner = this };
+        _fanWindow.Closed += (_, _) => { _fanWindow = null; UpdatePollDetail(); };
+        _fanWindow.Show();
+        UpdatePollDetail();   // it wants live readings, so the poll has to stop being a background one
+    }
+
     private void Theme_Click(object sender, RoutedEventArgs e)
     {
         bool dark = Theme.Toggle();
@@ -262,7 +276,11 @@ public partial class MainWindow : Window
     /// </summary>
     private void UpdatePollDetail()
     {
-        bool paused = _monitorWindow == null;
+        // Any window showing live readings counts, not just the monitor. The fan window shows a duty
+        // and an RPM per fan, and background polling raises no telemetry at all - so leaving it out
+        // of this left three readouts sitting at an em dash for as long as the window was open,
+        // which reads as three broken sensors rather than as a poll nobody asked for.
+        bool paused = _monitorWindow == null && _fanWindow == null;
         _svc.BackgroundMode = paused;
         if (!paused) return;
 
