@@ -371,6 +371,35 @@ public sealed class MainViewModel : ObservableObject
         RefreshAppliedSummary();
     }
 
+    /// <summary>The slot lit up in the profile bar, or null when none is.</summary>
+    public string? ActiveSlotName => Slots.FirstOrDefault(s => s.IsActive && s.Occupied)?.Name;
+
+    /// <summary>
+    /// Write the fan settings into the saved profile behind the active slot, leaving everything else
+    /// in it alone.
+    ///
+    /// Applying and saving are separate everywhere else in this window, and for clocks that is right
+    /// - you try a value before you keep it. Fans are not like that: the reason to set a curve is for
+    /// the machine to run it, including after a reboot, and a curve that was applied but never saved
+    /// is exactly the trap that made a logon apply come up with a two-day-old fixed duty instead.
+    /// </summary>
+    public string SaveFansToActiveSlot(FanMode mode, int percent, int[] perFan, FanCurve curve)
+    {
+        string? name = ActiveSlotName;
+        if (name == null) return "not saved - no profile slot is active";
+
+        var p = _store.Load(name);
+        if (p == null) return $"not saved - '{name}' could not be read";
+
+        p.FanMode = mode;
+        p.FixedFanPercent = percent;
+        p.FixedFanPercents = (int[])perFan.Clone();
+        p.FanCurve = curve.Clone();
+        _store.Save(p);
+        RefreshSlots();
+        return $"saved to {name}";
+    }
+
     public bool IsFixedFan => _fanModeIndex == 1;
     public bool IsCurveFan => _fanModeIndex == 2;
 

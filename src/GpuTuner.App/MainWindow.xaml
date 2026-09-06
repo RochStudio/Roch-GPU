@@ -363,32 +363,6 @@
                                       Visibility="{Binding HasZeroRpm, Converter={StaticResource BoolToVis}}"/>
 
                             <!-- 6. Fan speed -->
-                            <Grid Margin="0,14,0,0" IsEnabled="{Binding Caps.CanSetFanSpeed}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Fan Speed (%)" Style="{StaticResource RowLabel}"/>
-                                <ComboBox Grid.Column="1" Width="92" Margin="0,0,6,0" SelectedIndex="{Binding FanModeIndex, Mode=TwoWay}" FontSize="12">
-                                    <ComboBoxItem Content="Auto"/>
-                                    <ComboBoxItem Content="Fixed"/>
-                                    <ComboBoxItem Content="Curve"/>
-                                </ComboBox>
-                                <TextBox Grid.Column="2" Style="{StaticResource ValueBox}"
-                                         IsEnabled="{Binding IsFixedFan}"
-                                         Text="{Binding FixedFanInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                            </Grid>
-                            <Grid Margin="0,1,0,0" IsEnabled="{Binding IsFixedFan}">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                              Command="{Binding NudgeCommand}" CommandParameter="fan:-1"/>
-                                <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.FanMinPercent}" Maximum="{Binding Caps.FanMaxPercent}"
-                                    Value="{Binding FixedFan, Mode=TwoWay}" TickFrequency="5" IsEnabled="{Binding IsFixedFan}"/>
-                                <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                              Command="{Binding NudgeCommand}" CommandParameter="fan:1"/>
-                            </Grid>
-                            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
-                                       Visibility="{Binding IsCurveFan, Converter={StaticResource BoolToVis}}"
-                                       Text="Curve: open Fan to edit it — drag points, or type each one's temperature and duty."/>
                         </StackPanel>
                     </Border>
 

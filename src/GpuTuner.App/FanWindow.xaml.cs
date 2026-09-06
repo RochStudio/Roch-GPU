@@ -353,6 +353,15 @@ public partial class FanWindow : Window
 
         // Keep the main window's own fan controls telling the same story.
         _vm.SyncFansFromService(mode, duties);
+
+        // And keep the saved profile telling it too. Without this the fans are the one setting you
+        // can apply, watch work, reboot, and find gone - which is exactly what happened.
+        if (ok)
+        {
+            string saved = _vm.SaveFansToActiveSlot(mode, (int)Math.Round(_sliders.Count > 0 ? _sliders[0].Value : 50),
+                                                    duties, _vm.EditorCurve);
+            Status.Text += "  ·  " + saved;
+        }
     }
 
     private string Describe(FanMode mode, int[] duties) => mode switch

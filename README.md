@@ -78,6 +78,9 @@ showing everything greyed out.
 | Zero RPM / memory timing | — | ✓ |
 | V/F curve editor | ✓ | no editable curve on RDNA 4 |
 
+Fan control is its own window too — a duty per fan, or a curve — and applying there saves the fan
+settings into the active profile slot, so what you set is what comes back at logon.
+
 Plus a hardware monitor in its own window — a table of every sensor the card reports, with
 its current, minimum, maximum and running average, grouped and foldable — five profile slots,
 apply-at-logon, tray operation and the CLI.
