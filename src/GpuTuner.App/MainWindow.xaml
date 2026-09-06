@@ -72,8 +72,9 @@
             <Setter Property="Height" Value="30"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
-            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -82,7 +83,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="Background" Value="{StaticResource PanelAltBrush}"/>
+                                <Setter TargetName="b" Property="Background" Value="{StaticResource TitleHoverBrush}"/>
                                 <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -93,7 +94,7 @@
         <Style x:Key="TitleCloseButton" TargetType="Button" BasedOn="{StaticResource TitleButton}">
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource DangerBrush}"/>
+                    <Setter Property="Background" Value="{StaticResource CloseHoverBrush}"/>
                     <Setter Property="Foreground" Value="#FFFFFFFF"/>
                 </Trigger>
             </Style.Triggers>
@@ -106,18 +107,22 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Custom title bar: drag to move, minimise and close only. -->
-        <Border Background="{StaticResource BgBrush}" MouseLeftButtonDown="TitleBar_MouseDown">
+        <!-- Custom title bar, laid out like Roch Viewer's: logo, then the name and version in plain
+             white. The brand red is not spent here - the logo already carries it, and the red is what
+             the values and the link below use to mean "live" and "clickable". -->
+        <Border Height="30" Background="{StaticResource HeaderBrush}" MouseLeftButtonDown="TitleBar_MouseDown">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
-                    <TextBlock Text="Roch" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                    <TextBlock Text="GPU" FontSize="12.5" FontWeight="Bold" Margin="4,0,0,0"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                    <Image Source="pack://application:,,,/icon.png" Width="18" Height="18"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="{Binding TitleText}" FontSize="12.5" FontWeight="Bold" Margin="6,0,10,0"
+                               VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button Style="{StaticResource TitleButton}" Content="&#xE921;" Click="TitleMinimize_Click"
+                    <Button Style="{StaticResource TitleButton}" Content="&#x2013;" Click="TitleMinimize_Click"
                             ToolTip="Minimise"/>
-                    <Button Style="{StaticResource TitleCloseButton}" Content="&#xE8BB;" Click="TitleClose_Click"
+                    <Button Style="{StaticResource TitleCloseButton}" Content="&#x2715;" Click="TitleClose_Click"
                             ToolTip="Close"/>
                 </StackPanel>
             </Grid>
@@ -131,6 +136,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <TextBlock Text="{Binding Status}" Foreground="{Binding StatusIsError, Converter={StaticResource StatusBrush}}"
                            TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis"
@@ -138,6 +144,23 @@
                 <TextBlock Grid.Row="1" Text="{Binding AppliedSummary}" Style="{StaticResource Muted}"
                            TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"
                            ToolTip="{Binding AppliedSummary}"/>
+                <!-- Same footer link Roch Viewer carries, and the same affordance: no button edge and
+                     no underline, so the colour is the only thing saying it is clickable - which is
+                     why it lifts a shade under the pointer rather than staying put. -->
+                <TextBlock x:Name="XLink" Grid.Row="2" Text="@MateoPCTech" FontSize="11.5" FontWeight="Bold"
+                           Foreground="{StaticResource BrandBrush}" Cursor="Hand" Margin="0,5,0,0"
+                           HorizontalAlignment="Left" MouseLeftButtonUp="XLink_Click"
+                           ToolTip="https://x.com/MateoPCTech">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource BrandHoverBrush}"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
             </Grid>
         </Border>
 

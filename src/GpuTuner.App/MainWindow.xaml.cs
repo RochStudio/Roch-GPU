@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
@@ -127,6 +127,18 @@ public partial class MainWindow : Window
 
     /// <summary>Goes through Close() so the "fan control is active" prompt still runs.</summary>
     private void TitleClose_Click(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>
+    /// The footer link. UseShellExecute is what sends a URL to the browser rather than trying to run
+    /// it as a program; without it this throws. A browser that will not open is worth a status line,
+    /// not a crash dialog on top of a tuning tool.
+    /// </summary>
+    private void XLink_Click(object sender, MouseButtonEventArgs e)
+    {
+        const string url = "https://x.com/MateoPCTech";
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) { _vm.Status = $"Could not open {url}: {ex.Message}"; _vm.StatusIsError = true; }
+    }
 
     /// <summary>Right-click a numbered profile slot to wipe it. Left-click loads/saves (see MainViewModel).</summary>
     private void Slot_RightClick(object sender, MouseButtonEventArgs e)

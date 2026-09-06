@@ -78,7 +78,7 @@ showing everything greyed out.
 | Zero RPM / memory timing | — | ✓ |
 | V/F curve editor | ✓ | no editable curve on RDNA 4 |
 
-Plus a hardware monitor in its own window — graphs, or a **Telemetry** table of every sensor with
+Plus a hardware monitor in its own window — a table of every sensor the card reports, with
 its current, minimum, maximum and running average, grouped and foldable — five profile slots,
 apply-at-logon, tray operation and the CLI.
 

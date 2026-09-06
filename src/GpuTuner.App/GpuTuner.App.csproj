@@ -51,5 +51,8 @@
     <!-- ApplicationIcon covers the exe and the title bar, but the tray needs an Icon object at
          runtime, so the same file is embedded and loaded at the shell's small-icon size. -->
     <EmbeddedResource Include="..\..\assets\RochGPU.ico" LogicalName="RochGPU.ico" />
+    <!-- The title strip shows the logo beside the name, as Roch Viewer's does. A Resource
+         rather than an EmbeddedResource: pack://application URIs only see the former. -->
+    <Resource Include="..\..\assets\icon.png" Link="icon.png" />
   </ItemGroup>
 </Project>

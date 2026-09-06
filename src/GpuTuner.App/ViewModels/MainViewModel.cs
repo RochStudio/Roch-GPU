@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using GpuTuner.Core.Models;
@@ -79,6 +80,17 @@ public sealed class MainViewModel : ObservableObject
     }
 
     // ------------------------------------------------------------------ static info
+
+    /// <summary>
+    /// Name and version for the title strip, the way Roch Viewer shows it. Read from the assembly
+    /// rather than typed here, so bumping the version in one csproj cannot leave the window claiming
+    /// the old one.
+    /// </summary>
+    public static string TitleText { get; } = "Roch GPU " +
+        (typeof(MainViewModel).Assembly
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion.Split('+')[0] ?? "");
+
     public GpuCapabilities Caps { get; }
     public GpuDevice Device { get; }
     public string BackendName { get; }
@@ -187,13 +199,13 @@ public sealed class MainViewModel : ObservableObject
     /// Ceiling of the core voltage rail, in mV. Raising it lets the card select voltages above its
     /// stock maximum — the boost and the cap both operate underneath whatever this allows.
     /// </summary>
-    public int VoltageRailMax { get => _rail; set { if (SetTuned(ref _rail, value, Caps.VoltageRailMinMv, Math.Max(Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv), nameof(VoltageRailMax))) { OnPropertyChanged(nameof(VoltageRailRangeText)); OnPropertyChanged(nameof(BoostCeilingMv)); } } }
+    public int VoltageRailMax { get => _rail; set { if (SetTuned(ref _rail, value, Caps.VoltageRailMinMv, Math.Max(Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv), nameof(VoltageRailMax))) { OnPropertyChanged(nameof(VoltageRailRangeText)); OnPropertyChanged(nameof(BoostCeilingMv)); OnPropertyChanged(nameof(XocStatusText)); } } }
 
     /// <summary>Floor of the core rail: the lowest voltage it may drop to.</summary>
     public int VoltageRailFloor { get => _railFloor; set { if (SetTuned(ref _railFloor, value, Caps.VoltageRailFloorMinMv, Math.Max(Caps.VoltageRailFloorMinMv, Caps.VoltageRailFloorMaxMv), nameof(VoltageRailFloor))) OnPropertyChanged(nameof(VoltageRailRangeText)); } }
 
     /// <summary>Floor of the MSVDD rail.</summary>
-    public int MsvddRailFloor { get => _msvddFloor; set { if (SetTuned(ref _msvddFloor, value, Caps.MsvddRailFloorMinMv, Math.Max(Caps.MsvddRailFloorMinMv, Caps.MsvddRailFloorMaxMv), nameof(MsvddRailFloor))) OnPropertyChanged(nameof(MsvddRangeText)); } }
+    public int MsvddRailFloor { get => _msvddFloor; set { if (SetTuned(ref _msvddFloor, value, Caps.MsvddRailFloorMinMv, Math.Max(Caps.MsvddRailFloorMinMv, Caps.MsvddRailFloorMaxMv), nameof(MsvddRailFloor))) OnPropertyChanged(nameof(MsvddRangeText)); OnPropertyChanged(nameof(XocStatusText)); } }
 
     /// <summary>Ceiling of the MSVDD rail, in mV. Separate supply from NVVDD.</summary>
     public int MsvddRailMax { get => _msvdd; set { if (SetTuned(ref _msvdd, value, Caps.MsvddRailMinMv, Math.Max(Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv), nameof(MsvddRailMax))) OnPropertyChanged(nameof(MsvddRangeText)); } }
@@ -373,7 +385,21 @@ public sealed class MainViewModel : ObservableObject
         get
         {
             if (_xocArmed == XocLever.None)
-                return "Nothing armed - the card is running the driver's own values.";
+            {
+                // "Nothing armed" is about this session; it says nothing about what an earlier one
+                // left on the card. Rail ceilings survive the process that set them, so a launch can
+                // open onto raised rails with every gate shut - and claiming driver defaults there
+                // would be the window describing a card it had just read otherwise.
+                var raised = new List<string>();
+                if (HasVoltageRail && VoltageRailMax > StockNvvddMaxMv) raised.Add("NVVDD");
+                if (HasMsvddRail && MsvddRailMax > StockMsvddMaxMv) raised.Add("MSVDD");
+                return raised.Count == 0
+                    ? "Nothing armed - the card is running the driver's own values."
+                    : $"Nothing armed here, but {string.Join(" and ", raised)} "
+                      + (raised.Count > 1 ? "are" : "is")
+                      + " above the driver's default - raised before this session started. "
+                      + "Enable, then Disable, to put it back.";
+            }
 
             var names = new List<string>();
             void Add(XocLever l, string name) { if (_xocArmed.Has(l)) names.Add(name); }
@@ -460,11 +486,22 @@ public sealed class MainViewModel : ObservableObject
     public string MsvddRailFloorRangeText =>
         $"{Caps.MsvddRailFloorMinMv} ... {Caps.MsvddRailFloorMaxMv} mV (stock {Caps.MsvddRailStockFloorMv} mV).";
     /// <summary>One line for the whole rail: both ends, and whether either has been moved.</summary>
+    /// <summary>
+    /// The rail ceilings the driver shipped with, which is NOT what the rail happens to read now.
+    /// Caps carries the value seen when this run started, so a session that opens with an earlier
+    /// tune standing sees a raised ceiling there and would call it stock. The figure recorded the
+    /// first time this GPU was ever seen is the real one, and it is the one Disable restores to -
+    /// so the label and the slider must both use it or they describe a different card than the
+    /// button does.
+    /// </summary>
+    public int StockNvvddMaxMv => _svc.NvvddDefaultMaxMv > 0 ? _svc.NvvddDefaultMaxMv : Caps.VoltageRailStockMaxMv;
+    public int StockMsvddMaxMv => _svc.MsvddDefaultMaxMv > 0 ? _svc.MsvddDefaultMaxMv : Caps.MsvddRailStockMaxMv;
+
     public string VoltageRailRangeText
     {
         get
         {
-            bool stock = VoltageRailMax == Caps.VoltageRailStockMaxMv && VoltageRailFloor == Caps.VoltageRailStockFloorMv;
+            bool stock = VoltageRailMax == StockNvvddMaxMv && VoltageRailFloor == Caps.VoltageRailStockFloorMv;
             return $"{VoltageRailFloor} - {VoltageRailMax} mV" + (stock ? " (stock)" : "");
         }
     }
@@ -472,7 +509,7 @@ public sealed class MainViewModel : ObservableObject
     {
         get
         {
-            bool stock = MsvddRailMax == Caps.MsvddRailStockMaxMv && MsvddRailFloor == Caps.MsvddRailStockFloorMv;
+            bool stock = MsvddRailMax == StockMsvddMaxMv && MsvddRailFloor == Caps.MsvddRailStockFloorMv;
             return $"{MsvddRailFloor} - {MsvddRailMax} mV" + (stock ? " (stock)" : "");
         }
     }
@@ -789,8 +826,8 @@ public sealed class MainViewModel : ObservableObject
         TempLimit = p.TempLimitC;
         VoltageBoost = p.VoltageBoostPercent;
         VoltageOffset = p.VoltageOffsetMv;
-        VoltageRailMax = p.VoltageRailMaxMv > 0 ? p.VoltageRailMaxMv : Caps.VoltageRailStockMaxMv;
-        MsvddRailMax = p.MsvddRailMaxMv > 0 ? p.MsvddRailMaxMv : Caps.MsvddRailStockMaxMv;
+        VoltageRailMax = p.VoltageRailMaxMv > 0 ? p.VoltageRailMaxMv : StockNvvddMaxMv;
+        MsvddRailMax = p.MsvddRailMaxMv > 0 ? p.MsvddRailMaxMv : StockMsvddMaxMv;
         VoltageRailFloor = p.VoltageRailFloorMv > 0 ? p.VoltageRailFloorMv : Caps.VoltageRailStockFloorMv;
         MsvddRailFloor = p.MsvddRailFloorMv > 0 ? p.MsvddRailFloorMv : Caps.MsvddRailStockFloorMv;
         XbarOffset = p.XbarOffsetMhz;
@@ -874,11 +911,11 @@ public sealed class MainViewModel : ObservableObject
         switch (lever)
         {
             case XocLever.Nvvdd:
-                VoltageRailMax = Caps.VoltageRailStockMaxMv;
+                VoltageRailMax = StockNvvddMaxMv;
                 VoltageRailFloor = Caps.VoltageRailStockFloorMv;
                 break;
             case XocLever.Msvdd:
-                MsvddRailMax = Caps.MsvddRailStockMaxMv;
+                MsvddRailMax = StockMsvddMaxMv;
                 MsvddRailFloor = Caps.MsvddRailStockFloorMv;
                 break;
             case XocLever.Xbar: XbarOffset = 0; break;

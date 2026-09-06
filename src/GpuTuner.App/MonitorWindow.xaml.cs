@@ -21,8 +21,6 @@ public partial class MonitorWindow : Window
     private readonly TuningService _svc;
     private readonly MainViewModel _vm;
     private bool _suppressCurveEvents;
-    private bool _powerInWatts;
-    private double _peakCore;
 
     public MonitorWindow(TuningService svc, MainViewModel vm)
     {
@@ -46,10 +44,7 @@ public partial class MonitorWindow : Window
         };
         _vm.PropertyChanged += Vm_PropertyChanged;
 
-        int cap = svc.History.Capacity;
-        foreach (var g in new[] { GCore, GVolt, GPower, GTemp, GLoad, GMem, GFan }) g.Capacity = cap;
-
-        // Draw the backlog immediately instead of waiting for the next poll.
+        // Draw the last sample immediately instead of waiting for the next poll.
         if (svc.Latest != null) Render(svc.Latest);
         svc.TelemetryUpdated += OnTelemetry;
 
@@ -80,19 +75,6 @@ public partial class MonitorWindow : Window
     /// </summary>
     private TelemetryTable? _table;
 
-    /// <summary>Only worth reading while the table is on screen; the graphs do not show them.</summary>
-    private System.Collections.Generic.IReadOnlyDictionary<string, double>? ReadDomainClocks() =>
-        ViewTable?.IsChecked == true ? _svc.MeasureExtraClocks() : null;
-
-    private void View_Changed(object sender, RoutedEventArgs e)
-    {
-        if (GraphScroll == null || TableScroll == null) return;   // fires during InitializeComponent
-        bool table = ViewTable.IsChecked == true;
-        TableScroll.Visibility = table ? Visibility.Visible : Visibility.Collapsed;
-        TableFooter.Visibility = table ? Visibility.Visible : Visibility.Collapsed;
-        GraphScroll.Visibility = table ? Visibility.Collapsed : Visibility.Visible;
-    }
-
     /// <summary>When the running figures were last started from nothing.</summary>
     private DateTime _statsSince = DateTime.UtcNow;
 
@@ -115,48 +97,9 @@ public partial class MonitorWindow : Window
             _table = new TelemetryTable(t, _svc.Capabilities);
             TableRows.ItemsSource = _table.Rows;
         }
-        _table.Add(t, ReadDomainClocks());
+        // The table is the only view, so these are always on screen and always worth reading.
+        _table.Add(t, _svc.MeasureExtraClocks());
         Elapsed.Text = "Running " + (DateTime.UtcNow - _statsSince).ToString(@"hh\:mm\:ss");
-
-        VCore.Text = t.CoreClockMhz.ToString("0");
-        if (t.CoreClockMhz > _peakCore)
-        {
-            _peakCore = t.CoreClockMhz;
-            TCore.Text = $"Core clock, MHz   ·   peak {_peakCore:0}";
-        }
-        VVolt.Text = double.IsNaN(t.VoltageMv) ? "—" : t.VoltageMv.ToString("0");
-
-        // AMD's PMLog reports board watts, not % of TDP. Switch the graph over the first time a
-        // watt reading arrives, rather than drawing a permanently flat zero line.
-        if (!_powerInWatts && t.PowerPercent <= 0 && t.PowerWatts > 0)
-        {
-            _powerInWatts = true;
-            TPower.Text = "Power, W";
-            GPower.AutoScale = true;
-            GPower.MinSpan = 50;
-            GPower.Unit = "W";
-        }
-        VPower.Text = (_powerInWatts ? t.PowerWatts : t.PowerPercent).ToString("0");
-
-        VTemp.Text = t.TemperatureC.ToString("0");
-        string tt = "GPU temperature, °C";
-        if (!double.IsNaN(t.HotSpotC)) tt += $"   ·   hot spot {t.HotSpotC:0}°";
-        if (!double.IsNaN(t.MemoryTemperatureC)) tt += $"   ·   memory {t.MemoryTemperatureC:0}°";
-        TTemp.Text = tt;
-
-        VLoad.Text = t.GpuLoadPercent.ToString("0");
-        VMem.Text = t.MemoryClockMhz.ToString("0");
-        VFan.Text = t.FanPercent.ToString("0");
-        TFan.Text = t.FanRpm > 0 ? $"Fan speed, %   ·   {t.FanRpm:0} rpm" : "Fan speed, %";
-
-        var hist = _svc.History.Snapshot();
-        GCore.Values = hist.Select(h => h.CoreClockMhz).ToArray();
-        GVolt.Values = hist.Select(h => h.VoltageMv).ToArray();
-        GPower.Values = hist.Select(h => _powerInWatts ? h.PowerWatts : h.PowerPercent).ToArray();
-        GTemp.Values = hist.Select(h => h.TemperatureC).ToArray();
-        GLoad.Values = hist.Select(h => h.GpuLoadPercent).ToArray();
-        GMem.Values = hist.Select(h => h.MemoryClockMhz).ToArray();
-        GFan.Values = hist.Select(h => h.FanPercent).ToArray();
 
         CurveEditor.SetLive(t.TemperatureC, t.FanPercent);
     }

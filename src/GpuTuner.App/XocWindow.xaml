@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Extreme OC" Height="666" Width="380" ResizeMode="NoResize"
+        Title="Extreme OC" SizeToContent="Height" MinHeight="600" Width="380" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>

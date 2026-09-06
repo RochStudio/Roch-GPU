@@ -21,17 +21,11 @@
                 <Grid DockPanel.Dock="Top">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock Text="HARDWARE MONITOR" Style="{StaticResource SectionTitle}"/>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
-                        <RadioButton x:Name="ViewGraphs" Content="Graphs" IsChecked="True" GroupName="MonView"
-                                     Checked="View_Changed" Margin="0,0,10,0" Foreground="{StaticResource MutedBrush}"/>
-                        <RadioButton x:Name="ViewTable" Content="Telemetry" GroupName="MonView"
-                                     Checked="View_Changed" Foreground="{StaticResource MutedBrush}"/>
-                    </StackPanel>
                 </Grid>
 
                 <!-- Every sensor with its running figures, the way a monitoring tool shows them:
                      four columns, grouped, and each group folds away. -->
-                <Grid x:Name="TableFooter" DockPanel.Dock="Bottom" Margin="0,6,10,0" Visibility="Collapsed">
+                <Grid x:Name="TableFooter" DockPanel.Dock="Bottom" Margin="0,6,10,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock x:Name="Elapsed" Text="Running 00:00:00" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -43,7 +37,7 @@
                 </Grid>
 
                 <Grid>
-                <ScrollViewer x:Name="TableScroll" VerticalScrollBarVisibility="Auto" Visibility="Collapsed" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer x:Name="TableScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="0,0,10,0">
                         <ItemsControl x:Name="TableRows" HorizontalContentAlignment="Stretch">
                             <ItemsControl.ItemTemplate>
@@ -88,58 +82,6 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- How long these figures cover, and a way to start them again: a maximum from an
-                     hour ago says nothing about the run happening now. -->
-
-                <ScrollViewer x:Name="GraphScroll" VerticalScrollBarVisibility="Auto">
-                    <StackPanel x:Name="GraphStack" Margin="0,0,10,0">
-
-                        <!-- Each row: title + live value on top, graph under. -->
-                        <Grid Margin="0,0,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock x:Name="TCore" Text="Core clock, MHz" Style="{StaticResource GraphTitle}"/>
-                            <TextBlock x:Name="VCore" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource CoreBrush}"/>
-                        </Grid>
-                        <c:LineGraph x:Name="GCore" Height="72" Stroke="{StaticResource CoreBrush}" AutoScale="True" MinSpan="400"/>
-
-                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Core voltage, mV" Style="{StaticResource GraphTitle}"/>
-                            <TextBlock x:Name="VVolt" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource VoltBrush}"/>
-                        </Grid>
-                        <c:LineGraph x:Name="GVolt" Height="72" Stroke="{StaticResource VoltBrush}" AutoScale="True" MinSpan="150"/>
-
-                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock x:Name="TPower" Text="Power, % TDP" Style="{StaticResource GraphTitle}"/>
-                            <TextBlock x:Name="VPower" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource PowerBrush}"/>
-                        </Grid>
-                        <c:LineGraph x:Name="GPower" Height="72" Stroke="{StaticResource PowerBrush}" Minimum="0" Maximum="120" Unit="%"/>
-                        <!-- Vendors that report watts instead of % TDP retitle this graph and switch it
-                             to auto-scale at runtime; see MainWindow.OnTelemetry. -->
-
-                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock x:Name="TTemp" Text="GPU temperature, °C" Style="{StaticResource GraphTitle}"/>
-                            <TextBlock x:Name="VTemp" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource TempBrush}"/>
-                        </Grid>
-                        <c:LineGraph x:Name="GTemp" Height="72" Stroke="{StaticResource TempBrush}" Minimum="20" Maximum="100" Unit="°"/>
-
-                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="GPU usage, %" Style="{StaticResource GraphTitle}"/>
-                            <TextBlock x:Name="VLoad" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource LoadBrush}"/>
-                        </Grid>
-                        <c:LineGraph x:Name="GLoad" Height="72" Stroke="{StaticResource LoadBrush}" Minimum="0" Maximum="100" Unit="%"/>
-
-                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Memory clock, MHz" Style="{StaticResource GraphTitle}"/>
-                            <TextBlock x:Name="VMem" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource MemBrush}"/>
-                        </Grid>
-                        <c:LineGraph x:Name="GMem" Height="72" Stroke="{StaticResource MemBrush}" AutoScale="True" MinSpan="600"/>
-
-                        <Grid Margin="0,7,0,2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock x:Name="TFan" Text="Fan speed, %" Style="{StaticResource GraphTitle}"/>
-                            <TextBlock x:Name="VFan" Grid.Column="1" Text="—" Style="{StaticResource GraphValue}" Foreground="{StaticResource FanBrush}"/>
-                        </Grid>
-                        <c:LineGraph x:Name="GFan" Height="72" Stroke="{StaticResource FanBrush}" Minimum="0" Maximum="100" Unit="%"/>
-                    </StackPanel>
-                </ScrollViewer>
                 </Grid>
             </DockPanel>
         </Border>
