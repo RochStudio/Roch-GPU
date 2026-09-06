@@ -27,6 +27,8 @@ command and you get the CLI. Nothing to install — no .NET runtime, no DLLs bes
 |---|---|---|
 | <img src="assets/screenshots/main.png" alt="Main window on an NVIDIA card" width="230"> | <img src="assets/screenshots/xoc.png" alt="Extreme OC window" width="250"> | <img src="assets/screenshots/monitor.png" alt="Hardware monitor" width="290"> |
 
+<img src="assets/screenshots/fan.png" alt="Fan control" width="480">
+
 <img src="assets/screenshots/curve.png" alt="V/F curve editor" width="840">
 
 **AMD (RX 9070 XT)** — the same binary against a different driver. The window is built from what
@@ -72,9 +74,10 @@ showing everything greyed out.
 | Clock range | pin the graphics clock to a min/max window | — |
 | SYS clock | offset, MHz | — |
 | Video clock | offset, MHz | — |
+| HUBCLK, DISPCLK, L2CLK, reference | read-only, in the monitor | — |
 | Power limit | % of TDP | % offset |
 | Temperature limit | ✓ | driver-owned, hidden |
-| Fan | fixed %, or a software curve | fixed %, or a hardware curve |
+| Fan | a duty per fan, or a software curve | one duty, or a hardware curve |
 | Zero RPM / memory timing | — | ✓ |
 | V/F curve editor | ✓ | no editable curve on RDNA 4 |
 
@@ -85,8 +88,9 @@ Plus a hardware monitor in its own window — a table of every sensor the card r
 its current, minimum, maximum and running average, grouped and foldable — five profile slots,
 apply-at-logon, tray operation and the CLI.
 
-The monitor is also the only thing that polls the driver. Close it and there is no driver call at
-all, so the main window can sit on a second screen costing nothing while you play.
+Nothing polls the driver unless a window is showing live readings — the monitor, or the fan window
+with its per-fan RPM. Close both and there is no driver call at all, so the main window can sit on a
+second screen costing nothing while you play.
 
 Offsets snap to the driver's own granularity, so the number on the slider is the number that reaches
 the card. The sliders are also narrowed to a range worth dragging — **−150 to +495 MHz** on core and
@@ -104,6 +108,27 @@ the undervolt, and is where the voltage cap lives.
 
 A marker shows where the card actually stops — the table describes voltages well above anything a
 given card selects, so the unreachable stretch is shaded rather than left looking tunable.
+
+### Fan control
+
+Its own window, from the **Fan** button. Three modes:
+
+- **Auto** — the driver's own behaviour.
+- **Fixed** — a duty per fan. A card that reports several coolers gets a slider each, because the
+  driver addresses them separately: on a 5070 Ti, ids 1, 2 and 3 each have their own policy, level
+  and tachometer. *Move together* is on by default and drives them as one.
+- **Curve** — points against temperature, dragged on the plot or typed as a table underneath, with
+  every point listed rather than only the selected one. Double-click the plot to add a point,
+  right-click one to remove it.
+
+A curve is stepped by this app on NVIDIA, so it stops when the app does, and the app asks before
+closing while one is running. On AMD the curve is the driver's own and needs nothing resident.
+
+**Apply writes the card and saves the fan settings into the active profile slot**, leaving the rest
+of that profile alone. Applying and saving are separate elsewhere — for clocks that is right, you
+try a value before you keep it — but the reason to set a curve is for the machine to run it,
+including after a reboot, so a curve that was applied and never saved is a trap rather than a
+choice.
 
 ### Light and dark
 
@@ -334,7 +359,7 @@ setup.ps1                  as above, plus SDK install and launch (driven by SETU
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
 src/GpuTuner.App           the executable — WPF window, and the entry point that picks a half
 src/GpuTuner.Cli           the command-line half, compiled into the same executable
-tests/GpuTuner.Core.Tests  dependency-free test runner (237 checks, no hardware needed)
+tests/GpuTuner.Core.Tests  dependency-free test runner (258 checks, no hardware needed)
 tools/amd                  read-only PowerShell probes used to map the AMD driver surface
 .github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md

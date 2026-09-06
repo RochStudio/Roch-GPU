@@ -376,44 +376,7 @@ public sealed class TuningService : IDisposable
                 Try("Memory timing", () => Backend.SetMemoryTiming(GpuIndex, p.MemoryTimingLevel));
 
             if (Capabilities.CanSetFanSpeed)
-            {
-                switch (p.FanMode)
-                {
-                    case FanMode.Auto:
-                        _activeCurve = null;
-                        Try("Fan auto", () => Backend.SetFanAuto(GpuIndex));
-                        break;
-                    case FanMode.Fixed:
-                        _activeCurve = null;
-                        if (p.FixedFanPercents.Length == 0)
-                            Try("Fan fixed", () => Backend.SetFanSpeed(GpuIndex, -1, p.FixedFanPercent));
-                        else
-                            // Cooler ids start at 1, not 0: the index here is the position in the
-                            // list, the id is what the driver answers to.
-                            for (int i = 0; i < p.FixedFanPercents.Length; i++)
-                            {
-                                int id = i + 1, duty = p.FixedFanPercents[i];
-                                Try($"Fan {id} fixed", () => Backend.SetFanSpeed(GpuIndex, id, duty));
-                            }
-                        break;
-                    case FanMode.Curve:
-                        if (Capabilities.FanCurveIsHardware)
-                        {
-                            // The driver runs it, so it survives this app closing — and no polling
-                            // loop means no fan oscillation if the app is busy.
-                            _activeCurve = null;
-                            Try("Fan curve", () => Backend.SetFanCurve(GpuIndex, p.FanCurve));
-                        }
-                        else
-                        {
-                            _activeCurve = p.FanCurve.Clone();
-                            _activeCurve.ResetState();
-                            _lastCurveFanSent = double.NaN;
-                            // First step happens on next poll using the live temperature.
-                        }
-                        break;
-                }
-            }
+                WriteFans(p.FanMode, p.FixedFanPercent, p.FixedFanPercents, p.FanCurve, Try);
 
             if (ManualCurveActive && (Capabilities.CanSetVoltageCurve || Capabilities.CanSetCoreOffset))
             {
@@ -845,6 +808,57 @@ public sealed class TuningService : IDisposable
         _pollCts = null; _pollTask = null;
     }
 
+    /// <summary>
+    /// The one place fans are written. Both an apply and the fan window's own button come through
+    /// here, which is the point: while they were two copies they had drifted - one clamped the
+    /// duties and the other did not, and a one-element list meant "just cooler 1" to one of them and
+    /// "all of them" to the other, so a three-fan card would have been left with two fans untouched.
+    /// </summary>
+    private void WriteFans(FanMode mode, int percent, int[] perFan, FanCurve curve, Action<string, Action> Try)
+    {
+        int lo = Capabilities.FanMinPercent, hi = Capabilities.FanMaxPercent <= 0 ? 100 : Capabilities.FanMaxPercent;
+        switch (mode)
+        {
+            case FanMode.Auto:
+                _activeCurve = null;
+                Try("Fan auto", () => Backend.SetFanAuto(GpuIndex));
+                break;
+
+            case FanMode.Fixed:
+                _activeCurve = null;
+                // Fewer than two duties is one duty for every fan: -1 is "all coolers", and a single
+                // entry addressed to cooler 1 would leave the rest of them wherever they were.
+                if (perFan.Length < 2)
+                    Try("Fan fixed", () => Backend.SetFanSpeed(GpuIndex, -1, Math.Clamp(percent, lo, hi)));
+                else
+                    // Cooler ids start at 1: the list position is the fan, the id is what the driver
+                    // answers to.
+                    for (int i = 0; i < perFan.Length; i++)
+                    {
+                        int id = i + 1, duty = Math.Clamp(perFan[i], lo, hi);
+                        Try($"Fan {id} fixed", () => Backend.SetFanSpeed(GpuIndex, id, duty));
+                    }
+                break;
+
+            case FanMode.Curve:
+                if (Capabilities.FanCurveIsHardware)
+                {
+                    // The driver runs it, so it survives this app closing - and no polling loop
+                    // means no fan oscillation if the app is busy.
+                    _activeCurve = null;
+                    Try("Fan curve", () => Backend.SetFanCurve(GpuIndex, curve));
+                }
+                else
+                {
+                    _activeCurve = curve.Clone();
+                    _activeCurve.ResetState();
+                    _lastCurveFanSent = double.NaN;
+                    // First step happens on the next poll, using the live temperature.
+                }
+                break;
+        }
+    }
+
     private void RunFanCurve(GpuTelemetry t)
     {
         FanCurve? curve;
@@ -896,42 +910,7 @@ public sealed class TuningService : IDisposable
                 catch (Exception e) { errors.Add($"{what}: {e.Message}"); Log?.Invoke($"{what}: FAILED - {e.Message}"); }
             }
 
-            int lo = Capabilities.FanMinPercent, hi = Capabilities.FanMaxPercent <= 0 ? 100 : Capabilities.FanMaxPercent;
-            switch (mode)
-            {
-                case FanMode.Auto:
-                    _activeCurve = null;
-                    Try("Fan auto", () => Backend.SetFanAuto(GpuIndex));
-                    break;
-
-                case FanMode.Fixed:
-                    _activeCurve = null;
-                    if (perFan.Length < 2)
-                        Try("Fan fixed", () => Backend.SetFanSpeed(GpuIndex, -1, Math.Clamp(percent, lo, hi)));
-                    else
-                        // Cooler ids start at 1; the list position is the fan, the id is what the
-                        // driver answers to.
-                        for (int i = 0; i < perFan.Length; i++)
-                        {
-                            int id = i + 1, duty = Math.Clamp(perFan[i], lo, hi);
-                            Try($"Fan {id} fixed", () => Backend.SetFanSpeed(GpuIndex, id, duty));
-                        }
-                    break;
-
-                case FanMode.Curve:
-                    if (Capabilities.FanCurveIsHardware)
-                    {
-                        _activeCurve = null;
-                        Try("Fan curve", () => Backend.SetFanCurve(GpuIndex, curve));
-                    }
-                    else
-                    {
-                        _activeCurve = curve.Clone();
-                        _activeCurve.ResetState();
-                        _lastCurveFanSent = double.NaN;
-                    }
-                    break;
-            }
+            WriteFans(mode, percent, perFan, curve, Try);
 
             // Keep the applied profile describing the card, so the summary line and a later Revert
             // both agree with what the fans are actually doing.

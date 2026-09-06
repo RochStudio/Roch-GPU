@@ -301,6 +301,38 @@ using (var svc = new TuningService(new MockBackend()))
     Check("the list is cut to the fan count", wild.FixedFanPercents.Length == 3);
 }
 
+// ---- Fan writes go through one routine, so an apply and the fan window cannot disagree. They did:
+// a one-element list meant "cooler 1 only" on one path and "all fans" on the other, which would have
+// left two of three fans untouched.
+using (var svc = new TuningService(new MockBackend()))
+{
+    svc.Initialize();
+
+    svc.Apply(new TuningProfile { FanMode = FanMode.Fixed, FixedFanPercent = 55 });
+    var st = svc.Backend.ReadTuningState(0);
+    Check("a shared duty reaches the fans", st.FanPercent == 55 && st.FanManual);
+
+    // One entry is still "all fans", not "the first fan" - checked per cooler, because that is where
+    // the two paths disagreed and a single reported duty would hide it.
+    var mock = (MockBackend)svc.Backend;
+    svc.SetFans(FanMode.Fixed, 40, new[] { 40, 40, 40 }, new FanCurve());
+    svc.Apply(new TuningProfile { FanMode = FanMode.Fixed, FixedFanPercent = 70, FixedFanPercents = new[] { 70 } });
+    Check("a one-entry list reaches every cooler", mock.FanPercents.All(v => v == 70));
+
+    // And a real per-fan list still addresses them one at a time.
+    svc.SetFans(FanMode.Fixed, 45, new[] { 45, 65, 90 }, new FanCurve());
+    Check("a per-fan list addresses each cooler",
+          mock.FanPercents[0] == 45 && mock.FanPercents[1] == 65 && mock.FanPercents[2] == 90);
+
+    // And out-of-range duties are clamped on the apply path too, not only from the fan window.
+    svc.Apply(new TuningProfile { FanMode = FanMode.Fixed, FixedFanPercent = 250 });
+    int max = svc.Capabilities.FanMaxPercent <= 0 ? 100 : svc.Capabilities.FanMaxPercent;
+    Check("an apply clamps the fan duty", svc.Backend.ReadTuningState(0).FanPercent == max);
+
+    svc.SetFans(FanMode.Auto, 50, Array.Empty<int>(), new FanCurve());
+    Check("auto releases the fans", !svc.Backend.ReadTuningState(0).FanManual);
+}
+
 // ---- Curve span: the V/F curve runs through BOTH struct regions, not just the "GPU" one.
 // Regression: the struct-based reader stopped at the 80-entry GPU array and reported a 4070 Ti's
 // curve as 80 points ending at 945 mV, while the raw reader saw all 103 ending at 1090. Anything

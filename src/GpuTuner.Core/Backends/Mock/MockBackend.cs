@@ -34,7 +34,7 @@ public sealed class MockBackend : IGpuBackend
         PowerLimitMinPercent = 50, PowerLimitMaxPercent = 115, PowerLimitDefaultPercent = 100,
         TempLimitMinC = 65, TempLimitMaxC = 88, TempLimitDefaultC = 83,
         VoltageBoostMinPercent = 0, VoltageBoostMaxPercent = 100,
-        FanMinPercent = 0, FanMaxPercent = 100, FanCount = 2,
+        FanMinPercent = 0, FanMaxPercent = 100, FanCount = 3,
         // The gated levers, with a stock MSVDD ceiling below its NVVDD twin the way a real Blackwell
         // card ships, so the disarm path is tested against two different defaults rather than one.
         CanSetVoltageRail = true, CanSetMsvddRail = true, CanSetXbarOffset = true,
@@ -139,7 +139,21 @@ public sealed class MockBackend : IGpuBackend
         _voltOffset = offsetMv;
         if (offsetMv != 0) _core = extraClockMhz;   // curve carries the core offset while undervolting
     }
-    public void SetFanSpeed(int gpuIndex, int fanIndex, int percent) { _fanManual = true; _fan = percent; }
+    /// <summary>
+    /// One duty per cooler, because the real driver addresses them separately and a mock that
+    /// forgets that agrees with any bug about it. A mock that ignored fanIndex is what let an apply
+    /// path address only cooler 1 and leave the other two alone without a test noticing.
+    /// </summary>
+    public int[] FanPercents { get; } = { 50, 50, 50 };
+
+    public void SetFanSpeed(int gpuIndex, int fanIndex, int percent)
+    {
+        _fanManual = true;
+        _fan = percent;
+        // -1 is every cooler; otherwise the id is 1-based, as NVAPI numbers them.
+        for (int i = 0; i < FanPercents.Length; i++)
+            if (fanIndex < 0 || fanIndex == i + 1) FanPercents[i] = percent;
+    }
     public void SetFanAuto(int gpuIndex) => _fanManual = false;
     public void ResetToDefaults(int gpuIndex)
     {

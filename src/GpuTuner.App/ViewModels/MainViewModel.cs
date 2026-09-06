@@ -58,8 +58,6 @@ public sealed class MainViewModel : ObservableObject
         LoadProfileCommand = new RelayCommand(LoadSelectedProfile, () => SelectedProfile != null);
         DeleteProfileCommand = new RelayCommand(DeleteSelectedProfile, () => SelectedProfile != null);
         RevertCommand = new RelayCommand(Revert);
-        ArmCommand = new RelayCommand(o => SetLever(o, true));
-        DisarmCommand = new RelayCommand(o => SetLever(o, false));
         // One button per lever now, so it has to work out which way it is going.
         ToggleLeverCommand = new RelayCommand(o =>
             SetLever(o, !(o is string n && Enum.TryParse<XocLever>(n, true, out var l) && _xocArmed.Has(l))));
@@ -266,7 +264,6 @@ public sealed class MainViewModel : ObservableObject
             case "xbar": XbarOffset += CoreStepMhz * dir; break;
             case "sys": SysOffset += CoreStepMhz * dir; break;
             case "video": VideoOffset += CoreStepMhz * dir; break;
-            case "fan": FixedFan += FanStepPercent * dir; break;
         }
     }
 
@@ -301,7 +298,6 @@ public sealed class MainViewModel : ObservableObject
     public string VideoOffsetInput { get => Signed(_video); set => ParseInto(value, v => VideoOffset = v, nameof(VideoOffset)); }
     public string XbarOffsetInput { get => Signed(_xbar); set => ParseInto(value, v => XbarOffset = v, nameof(XbarOffset)); }
     public string VoltageRailMaxInput { get => _rail.ToString(); set => ParseInto(value, v => VoltageRailMax = v, nameof(VoltageRailMax)); }
-    public string FixedFanInput { get => _fanFixed.ToString(); set => ParseInto(value, v => FixedFan = v, nameof(FixedFan)); }
 
     /// <summary>Parse a user-typed offset: leading +/- allowed, whitespace trimmed, trailing units ignored.</summary>
     public static bool TryParseSigned(string? s, out int value)
@@ -579,7 +575,6 @@ public sealed class MainViewModel : ObservableObject
     public string XbarOffsetRangeText =>
         $"{Caps.XbarOffsetMinMhz:+#;-#;0} … {Caps.XbarOffsetMaxMhz:+#;-#;0} MHz. Offsets the crossbar, which no public "
         + "NVAPI surface exposes; the GPU's own frequency counter is used to verify the write landed.";
-    public string FixedFanText => $"{FixedFan} %";
     // ------------------------------------------------------------------ live telemetry
     private GpuTelemetry? _t;
     private int _lastCeiling, _lastBoostCeiling;
@@ -826,8 +821,6 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand LoadProfileCommand { get; }
     public RelayCommand DeleteProfileCommand { get; }
     public RelayCommand RevertCommand { get; }
-    public RelayCommand ArmCommand { get; }
-    public RelayCommand DisarmCommand { get; }
     public RelayCommand ToggleLeverCommand { get; }
 
     // ------------------------------------------------------------------ actions
