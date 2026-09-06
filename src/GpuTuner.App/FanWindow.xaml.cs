@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using GpuTuner.App.Native;
 using GpuTuner.App.ViewModels;
 using GpuTuner.Core.Models;
@@ -49,6 +50,8 @@ public partial class FanWindow : Window
             _vm.EditorCurve.Points = CurveEditor.Points.ToList();
             _vm.MarkCurveDirty();
         };
+        CurveEditor.SelectionChanged += (_, _) => ShowSelectedPoint();
+        ShowSelectedPoint();
 
         (_vm.FanModeIndex switch
         {
@@ -134,6 +137,49 @@ public partial class FanWindow : Window
         }
     }
 
+    /// <summary>
+    /// Put the selected point into the two boxes. With nothing selected they are empty and disabled
+    /// rather than showing a stale point: a box holding a number that edits nothing is worse than an
+    /// empty one, because it invites a value that goes nowhere.
+    /// </summary>
+    private void ShowSelectedPoint()
+    {
+        var sel = CurveEditor.Selected;
+        bool has = sel.HasValue;
+        _loading = true;
+        PointTemp.IsEnabled = PointFan.IsEnabled = has;
+        PointTemp.Text = has ? sel!.Value.TemperatureC.ToString("0", CultureInfo.CurrentCulture) : "";
+        PointFan.Text = has ? sel!.Value.FanPercent.ToString("0", CultureInfo.CurrentCulture) : "";
+        PointLabel.Text = has ? $"Point {CurveEditor.SelectedIndex + 1}" : "Point";
+        // Short enough to fit beside the boxes at this window width; the add and remove gestures are
+        // explained in the paragraph above, where there is room for them.
+        PointHint.Text = has ? "Enter to apply" : "Click a point to edit it";
+        _loading = false;
+    }
+
+    private void PointBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        CommitPoint();
+        e.Handled = true;
+    }
+
+    private void PointBox_Commit(object sender, RoutedEventArgs e) => CommitPoint();
+
+    /// <summary>
+    /// Send whatever is typed to the editor, then read the point back into the boxes. The read-back
+    /// matters: a temperature is held between its neighbours, so the number that lands is not always
+    /// the number typed, and the box has to show which one won.
+    /// </summary>
+    private void CommitPoint()
+    {
+        if (_loading || CurveEditor.Selected is null) return;
+        double? t = double.TryParse(PointTemp.Text, NumberStyles.Any, CultureInfo.CurrentCulture, out var tv) ? tv : null;
+        double? f = double.TryParse(PointFan.Text, NumberStyles.Any, CultureInfo.CurrentCulture, out var fv) ? fv : null;
+        CurveEditor.TryUpdateSelected(t, f);
+        ShowSelectedPoint();
+    }
+
     /// <summary>The step the arrows take, and the grid the slider snaps to. The same constant the
     /// main window nudges its fan slider by, so the two cannot drift apart.</summary>
     private const int Step = ClockStep.FanPercent;
@@ -216,6 +262,7 @@ public partial class FanWindow : Window
         CurveEditor.SetPoints(_vm.EditorCurve.Points);
         _loading = false;
         _vm.MarkCurveDirty();
+        ShowSelectedPoint();
     }
 
     /// <summary>

@@ -77,8 +77,33 @@
                         <Button Content="Default curve" Click="DefaultCurve_Click" Padding="8,3"/>
                     </StackPanel>
                 </Grid>
+                <!-- Typed entry for the selected point. Dragging is quick but imprecise; a fan curve
+                     is usually described in round numbers ("60% at 70 degrees") and those are
+                     awkward to hit with a mouse on a 110-degree track. -->
+                <Grid DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PointLabel" Text="Point" Style="{StaticResource RowLabel}"
+                               VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBox x:Name="PointTemp" Grid.Column="1" Style="{StaticResource ValueBox}" Width="52"
+                             KeyDown="PointBox_KeyDown" LostFocus="PointBox_Commit"
+                             ToolTip="Temperature for the selected point, in °C"/>
+                    <TextBlock Grid.Column="2" Text="°C" Style="{StaticResource Muted}"
+                               VerticalAlignment="Center" Margin="5,0,14,0"/>
+                    <TextBox x:Name="PointFan" Grid.Column="3" Style="{StaticResource ValueBox}" Width="52"
+                             KeyDown="PointBox_KeyDown" LostFocus="PointBox_Commit"
+                             ToolTip="Fan duty for the selected point, in %"/>
+                    <TextBlock Grid.Column="4" Text="%" Style="{StaticResource Muted}"
+                               VerticalAlignment="Center" Margin="5,0,14,0"/>
+                    <TextBlock x:Name="PointHint" Grid.Column="5" Style="{StaticResource Muted}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+
                 <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"
-                           Text="A curve is stepped by this app, so it stops when the app does — closing hands the fans back to the driver. One curve drives every fan: the driver's own per-cooler policy is what a fixed duty writes, and a curve overrides it from out here."/>
+                           Text="Drag a point, or select one and type its temperature and duty. Double-click the plot to add a point, right-click one to remove it. A curve is stepped by this app, so it stops when the app does — closing hands the fans back to the driver, and one curve drives every fan."/>
                 <c:FanCurveEditor x:Name="CurveEditor" Height="240"/>
             </DockPanel>
         </Border>

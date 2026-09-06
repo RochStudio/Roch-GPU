@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -27,13 +27,60 @@ public sealed class FanCurveEditor : FrameworkElement
 
     public event EventHandler? CurveChanged;
 
+    /// <summary>
+    /// Raised when a different point becomes the selected one, so a panel of boxes can follow it.
+    /// Separate from CurveChanged: picking a point changes nothing about the curve.
+    /// </summary>
+    public event EventHandler? SelectionChanged;
+
+    /// <summary>
+    /// The point being edited, which outlives the drag that chose it. _dragIndex only exists while
+    /// the mouse is down, so typing a value needed something that survives letting go.
+    /// </summary>
+    public int SelectedIndex { get; private set; } = -1;
+
+    public FanPoint? Selected =>
+        SelectedIndex >= 0 && SelectedIndex < _points.Count ? _points[SelectedIndex] : null;
+
+    /// <summary>
+    /// Move the selected point by typed values, either of which may be left alone. Temperature is
+    /// held strictly between its neighbours for the same reason a drag is: two points at one
+    /// temperature is not a curve the fan controller can read.
+    /// </summary>
+    public bool TryUpdateSelected(double? tempC, double? fanPercent)
+    {
+        if (Selected is not { } cur) return false;
+        int i = SelectedIndex;
+        double lo = i > 0 ? _points[i - 1].TemperatureC + 1 : TMin;
+        double hi = i < _points.Count - 1 ? _points[i + 1].TemperatureC - 1 : TMax;
+
+        double t = Math.Clamp(Math.Round(tempC ?? cur.TemperatureC), Math.Max(TMin, lo), Math.Min(TMax, hi));
+        double f = Math.Clamp(Math.Round(fanPercent ?? cur.FanPercent), FMin, FMax);
+        if (t == cur.TemperatureC && f == cur.FanPercent) return true;
+
+        _points[i] = new FanPoint(t, f);
+        Raise();
+        return true;
+    }
+
+    private void Select(int index)
+    {
+        if (SelectedIndex == index) return;
+        SelectedIndex = index;
+        InvalidateVisual();
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     public IReadOnlyList<FanPoint> Points => _points;
 
+    /// <summary>Replacing the points invalidates any index into the old ones.</summary>
     public void SetPoints(IEnumerable<FanPoint> pts)
     {
         _points = pts.OrderBy(p => p.TemperatureC).ToList();
         if (_points.Count < 2) _points = FanCurve.DefaultPoints();
+        SelectedIndex = -1;
         InvalidateVisual();
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private double _liveTemp = double.NaN, _liveFan = double.NaN;
@@ -117,7 +164,8 @@ public sealed class FanCurveEditor : FrameworkElement
         for (int i = 0; i < pts.Count; i++)
         {
             var s = ToScreen(pts[i]);
-            dc.DrawEllipse(i == _dragIndex ? CurveBrush : PointFill, ptPen, s, 5, 5);
+            bool live = i == _dragIndex || i == SelectedIndex;
+            dc.DrawEllipse(live ? CurveBrush : PointFill, ptPen, s, live ? 6 : 5, live ? 6 : 5);
             if (i == _dragIndex)
             {
                 var ft = new FormattedText($"{pts[i].TemperatureC:0}°C → {pts[i].FanPercent:0}%", CultureInfo.InvariantCulture,
@@ -160,11 +208,15 @@ public sealed class FanCurveEditor : FrameworkElement
             _points.Add(np);
             _points = _points.OrderBy(p => p.TemperatureC).ToList();
             _dragIndex = _points.IndexOf(np);
+            Select(_dragIndex);
             CaptureMouse();
             Raise();
             return;
         }
         int hit = HitTest(pos);
+        // Clicking the empty plot clears the selection, so the boxes stop offering to edit a
+        // point the user is no longer pointing at.
+        Select(hit);
         if (hit >= 0) { _dragIndex = hit; CaptureMouse(); InvalidateVisual(); }
     }
 
@@ -179,6 +231,7 @@ public sealed class FanCurveEditor : FrameworkElement
         d = new FanPoint(Math.Clamp(d.TemperatureC, lo, hi), d.FanPercent);
         _points[_dragIndex] = d;
         Raise();
+        SelectionChanged?.Invoke(this, EventArgs.Empty);   // the boxes track the drag
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
@@ -197,7 +250,9 @@ public sealed class FanCurveEditor : FrameworkElement
         if (hit >= 0 && _points.Count > 2)
         {
             _points.RemoveAt(hit);
+            if (SelectedIndex >= _points.Count) SelectedIndex = -1;
             Raise();
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
