@@ -47,10 +47,17 @@ public sealed class FanCurveEditor : FrameworkElement
     /// held strictly between its neighbours for the same reason a drag is: two points at one
     /// temperature is not a curve the fan controller can read.
     /// </summary>
-    public bool TryUpdateSelected(double? tempC, double? fanPercent)
+    public bool TryUpdateSelected(double? tempC, double? fanPercent) =>
+        TryUpdatePoint(SelectedIndex, tempC, fanPercent);
+
+    /// <summary>Highlight one point without waiting for a click on the plot.</summary>
+    public void SelectPoint(int index) => Select(index >= 0 && index < _points.Count ? index : -1);
+
+    /// <summary>As above, for any point rather than the selected one.</summary>
+    public bool TryUpdatePoint(int i, double? tempC, double? fanPercent)
     {
-        if (Selected is not { } cur) return false;
-        int i = SelectedIndex;
+        if (i < 0 || i >= _points.Count) return false;
+        var cur = _points[i];
         double lo = i > 0 ? _points[i - 1].TemperatureC + 1 : TMin;
         double hi = i < _points.Count - 1 ? _points[i + 1].TemperatureC - 1 : TMax;
 

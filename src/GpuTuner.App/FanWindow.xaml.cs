@@ -49,9 +49,10 @@ public partial class FanWindow : Window
             if (_loading) return;
             _vm.EditorCurve.Points = CurveEditor.Points.ToList();
             _vm.MarkCurveDirty();
+            ShowPoints();     // dragging, adding and removing all land here
         };
-        CurveEditor.SelectionChanged += (_, _) => ShowSelectedPoint();
-        ShowSelectedPoint();
+        CurveEditor.SelectionChanged += (_, _) => ShowPoints();
+        ShowPoints();
 
         (_vm.FanModeIndex switch
         {
@@ -137,47 +138,113 @@ public partial class FanWindow : Window
         }
     }
 
+    /// <summary>The boxes for each point, in the editor's own order.</summary>
+    private readonly List<(TextBox Temp, TextBox Fan)> _pointRows = new();
+
     /// <summary>
-    /// Put the selected point into the two boxes. With nothing selected they are empty and disabled
-    /// rather than showing a stale point: a box holding a number that edits nothing is worse than an
-    /// empty one, because it invites a value that goes nowhere.
+    /// Show every point, not just the selected one: a curve is read as a set of pairs, and comparing
+    /// them means seeing them together.
+    ///
+    /// Rows are rebuilt only when the number of points changes. Rebuilding on every change would
+    /// tear down the box being typed into on the first keystroke that reached the editor.
     /// </summary>
-    private void ShowSelectedPoint()
+    private void ShowPoints()
     {
-        var sel = CurveEditor.Selected;
-        bool has = sel.HasValue;
+        var pts = CurveEditor.Points;
+        if (_pointRows.Count != pts.Count) RebuildPointRows(pts.Count);
+
+        for (int i = 0; i < _pointRows.Count && i < pts.Count; i++)
+        {
+            // Never overwrite the box under the caret: the value there is half-typed, and the point
+            // it belongs to has not been told about it yet.
+            var (temp, fan) = _pointRows[i];
+            if (!temp.IsKeyboardFocusWithin) temp.Text = pts[i].TemperatureC.ToString("0", CultureInfo.CurrentCulture);
+            if (!fan.IsKeyboardFocusWithin) fan.Text = pts[i].FanPercent.ToString("0", CultureInfo.CurrentCulture);
+        }
+        PointHint.Text = $"{pts.Count} points  ·  Enter to apply";
+    }
+
+    private void RebuildPointRows(int count)
+    {
         _loading = true;
-        PointTemp.IsEnabled = PointFan.IsEnabled = has;
-        PointTemp.Text = has ? sel!.Value.TemperatureC.ToString("0", CultureInfo.CurrentCulture) : "";
-        PointFan.Text = has ? sel!.Value.FanPercent.ToString("0", CultureInfo.CurrentCulture) : "";
-        PointLabel.Text = has ? $"Point {CurveEditor.SelectedIndex + 1}" : "Point";
-        // Short enough to fit beside the boxes at this window width; the add and remove gestures are
-        // explained in the paragraph above, where there is room for them.
-        PointHint.Text = has ? "Enter to apply" : "Click a point to edit it";
+        _pointRows.Clear();
+        PointRows.Items.Clear();
+
+        for (int i = 0; i < count; i++)
+        {
+            int index = i;
+            var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
+            foreach (var w in new[] { GridLength.Auto, GridLength.Auto, GridLength.Auto,
+                                      GridLength.Auto, GridLength.Auto, new GridLength(1, GridUnitType.Star) })
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = w });
+
+            var num = new TextBlock
+            {
+                Text = (i + 1).ToString(CultureInfo.CurrentCulture),
+                Style = (Style)FindResource("Muted"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Width = 20
+            };
+            var temp = PointBox(index, isTemp: true);
+            var fan = PointBox(index, isTemp: false);
+            var degrees = Unit("°C");
+            var percent = Unit("%");
+
+            Grid.SetColumn(temp, 1); Grid.SetColumn(degrees, 2);
+            Grid.SetColumn(fan, 3); Grid.SetColumn(percent, 4);
+            row.Children.Add(num); row.Children.Add(temp); row.Children.Add(degrees);
+            row.Children.Add(fan); row.Children.Add(percent);
+
+            _pointRows.Add((temp, fan));
+            PointRows.Items.Add(row);
+        }
         _loading = false;
     }
 
-    private void PointBox_KeyDown(object sender, KeyEventArgs e)
+    private TextBlock Unit(string text) => new()
     {
-        if (e.Key != Key.Enter) return;
-        CommitPoint();
-        e.Handled = true;
+        Text = text,
+        Style = (Style)FindResource("Muted"),
+        VerticalAlignment = VerticalAlignment.Center,
+        Margin = new Thickness(5, 0, 14, 0)
+    };
+
+    private TextBox PointBox(int index, bool isTemp)
+    {
+        var box = new TextBox { Style = (Style)FindResource("ValueBox"), Width = 52, Tag = index };
+        // Typing into a row is a way of pointing at that point, so the plot highlights it too.
+        box.GotKeyboardFocus += (_, _) => CurveEditor.SelectPoint(index);
+        box.LostFocus += (_, _) => CommitPoint(index);
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Enter) return;
+            CommitPoint(index);
+            e.Handled = true;
+        };
+        return box;
     }
 
-    private void PointBox_Commit(object sender, RoutedEventArgs e) => CommitPoint();
-
     /// <summary>
-    /// Send whatever is typed to the editor, then read the point back into the boxes. The read-back
-    /// matters: a temperature is held between its neighbours, so the number that lands is not always
-    /// the number typed, and the box has to show which one won.
+    /// Send one row to the editor, then read the point back into it. The read-back matters: a
+    /// temperature is held between its neighbours, so the number that lands is not always the number
+    /// typed, and the box has to show which one won.
     /// </summary>
-    private void CommitPoint()
+    private void CommitPoint(int index)
     {
-        if (_loading || CurveEditor.Selected is null) return;
-        double? t = double.TryParse(PointTemp.Text, NumberStyles.Any, CultureInfo.CurrentCulture, out var tv) ? tv : null;
-        double? f = double.TryParse(PointFan.Text, NumberStyles.Any, CultureInfo.CurrentCulture, out var fv) ? fv : null;
-        CurveEditor.TryUpdateSelected(t, f);
-        ShowSelectedPoint();
+        if (_loading || index < 0 || index >= _pointRows.Count) return;
+        var (temp, fan) = _pointRows[index];
+        double? t = double.TryParse(temp.Text, NumberStyles.Any, CultureInfo.CurrentCulture, out var tv) ? tv : null;
+        double? f = double.TryParse(fan.Text, NumberStyles.Any, CultureInfo.CurrentCulture, out var fv) ? fv : null;
+        CurveEditor.TryUpdatePoint(index, t, f);
+
+        var pts = CurveEditor.Points;
+        if (index < pts.Count)
+        {
+            _loading = true;
+            temp.Text = pts[index].TemperatureC.ToString("0", CultureInfo.CurrentCulture);
+            fan.Text = pts[index].FanPercent.ToString("0", CultureInfo.CurrentCulture);
+            _loading = false;
+        }
     }
 
     /// <summary>The step the arrows take, and the grid the slider snaps to. The same constant the
@@ -262,7 +329,7 @@ public partial class FanWindow : Window
         CurveEditor.SetPoints(_vm.EditorCurve.Points);
         _loading = false;
         _vm.MarkCurveDirty();
-        ShowSelectedPoint();
+        ShowPoints();
     }
 
     /// <summary>
