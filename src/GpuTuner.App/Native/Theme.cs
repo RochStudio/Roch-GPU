@@ -31,6 +31,7 @@ public static class Theme
         ("TextBrush",        "#FF0F172A", "#FFFFFFFF"),
         ("MutedBrush",       "#FF475569", "#FFB0B0B0"),
         ("HeaderBrush",      "#FFE2E8F0", "#FF1C1C1C"),
+        ("HighlightBrush",   "#FFE8EEF5", "#FF171717"),
         // The brand red is saturated in light and lifted in dark: the dark one on a light ground is
         // too pale to read, and the light one on near-black is too dark. Roch Viewer splits it for
         // the same reason.

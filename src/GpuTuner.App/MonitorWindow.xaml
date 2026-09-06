@@ -8,6 +8,37 @@
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- Roch Viewer's telemetry uses a switch here rather than a check box, 32 by 16 with the
+             track filling when it is on. Its "on" colour is the neutral #343434, not the brand red -
+             a setting that costs an extra poll is not something to advertise. -->
+        <Style x:Key="Switch" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="track" Width="32" Height="16" CornerRadius="8"
+                                    Background="{DynamicResource BorderBrush}"
+                                    BorderBrush="{DynamicResource MutedBrush}" BorderThickness="1">
+                                <Ellipse x:Name="knob" Width="12" Height="12" Fill="{DynamicResource MutedBrush}"
+                                         HorizontalAlignment="Left" Margin="1,0,0,0"/>
+                            </Border>
+                            <ContentPresenter Margin="7,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="track" Property="Background" Value="{DynamicResource TitleHoverBrush}"/>
+                                <Setter TargetName="knob" Property="Fill" Value="{DynamicResource TextBrush}"/>
+                                <Setter TargetName="knob" Property="HorizontalAlignment" Value="Right"/>
+                                <Setter TargetName="knob" Property="Margin" Value="0,0,1,0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <DockPanel Margin="8">
     <Grid>
@@ -27,12 +58,12 @@
                      four columns, grouped, and each group folds away. -->
                 <Grid x:Name="TableFooter" DockPanel.Dock="Bottom" Margin="0,6,10,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBlock x:Name="Elapsed" Text="Running 00:00:00" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="Elapsed" Text="Running: 00:00:00" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <CheckBox x:Name="AutoOpen" Content="Auto-open" Click="AutoOpen_Click" VerticalAlignment="Center"
+                        <ToggleButton x:Name="AutoOpen" Content="Auto-open" Click="AutoOpen_Click" Style="{StaticResource Switch}"
                                   Margin="0,0,12,0" Foreground="{DynamicResource MutedBrush}"
                                   ToolTip="Open this window automatically at launch. It is the only thing that polls the driver, so leaving it off costs nothing until you open it."/>
-                        <Button Content="Reset stats" Click="ResetStats_Click" Padding="10,3"/>
+                        <Button Content="Reset Stats" Click="ResetStats_Click" Padding="10,3" MinWidth="90"/>
                     </StackPanel>
                 </Grid>
 
@@ -47,22 +78,29 @@
                                            >
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="170"/><ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="150"/><ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
                                             <TextBlock x:Name="nm" Text="{Binding Name}" FontSize="11.5" Margin="4,0,0,0" Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource AccentBrush}"/>
-                                            <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource MutedBrush}"/>
-                                            <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource MutedBrush}"/>
-                                            <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource MutedBrush}"/>
+                                            <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource BrandBrush}"/>
+                                            <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource BrandBrush}"/>
+                                            <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource BrandBrush}"/>
+                                            <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" FontSize="11.5" Margin="6,0,6,0" Foreground="{DynamicResource BrandBrush}"/>
                                         </Grid>
                                     </Border>
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IsBanded}" Value="True">
-                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelAltBrush}"/>
+                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource HighlightBrush}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsColumnHeader}" Value="True">
-                                            <Setter TargetName="band" Property="Background" Value="Transparent"/>
+                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                            <!-- Bold there too: the column strip is a heading, and it
+                                                 repeats under every section, so it has to read as one. -->
+                                            <Setter TargetName="nm" Property="FontWeight" Value="Bold"/>
+                                            <Setter TargetName="cur" Property="FontWeight" Value="Bold"/>
+                                            <Setter TargetName="mn" Property="FontWeight" Value="Bold"/>
+                                            <Setter TargetName="mx" Property="FontWeight" Value="Bold"/>
+                                            <Setter TargetName="av" Property="FontWeight" Value="Bold"/>
                                             <Setter TargetName="nm" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
                                             <Setter TargetName="cur" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
                                             <Setter TargetName="mn" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
@@ -70,8 +108,8 @@
                                             <Setter TargetName="av" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsHeader}" Value="True">
-                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelAltBrush}"/>
-                                            <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
+                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                            <Setter TargetName="nm" Property="FontWeight" Value="Bold"/>
                                             <Setter TargetName="nm" Property="Foreground" Value="{DynamicResource TextBrush}"/>
                                             <Setter TargetName="band" Property="Margin" Value="0,4,0,0"/>
                                         </DataTrigger>

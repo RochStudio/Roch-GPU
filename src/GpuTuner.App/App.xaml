@@ -16,6 +16,10 @@
         <SolidColorBrush x:Key="MutedBrush" Color="#FFB0B0B0"/>
         <!-- The title strip sits a shade above the body, as it does there. -->
         <SolidColorBrush x:Key="HeaderBrush" Color="#FF1C1C1C"/>
+        <!-- The telemetry band, one step off the panel rather than a shade of its own: Roch Viewer
+             tints alternate rows #171717 against a #161616 table, which reads as texture and not as
+             stripes. -->
+        <SolidColorBrush x:Key="HighlightBrush" Color="#FF171717"/>
         <!-- Brand red for text: links and live values. Not a fill - the buttons keep their own red. -->
         <SolidColorBrush x:Key="BrandBrush" Color="#FFFF4D4D"/>
         <SolidColorBrush x:Key="BrandHoverBrush" Color="#FFFF8080"/>

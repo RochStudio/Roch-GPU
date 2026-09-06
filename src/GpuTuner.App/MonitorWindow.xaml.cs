@@ -102,7 +102,7 @@ public partial class MonitorWindow : Window
         }
         // The table is the only view, so these are always on screen and always worth reading.
         _table.Add(t, extra);
-        Elapsed.Text = "Running " + (DateTime.UtcNow - _statsSince).ToString(@"hh\:mm\:ss");
+        Elapsed.Text = "Running: " + (DateTime.UtcNow - _statsSince).ToString(@"hh\:mm\:ss");
 
         CurveEditor.SetLive(t.TemperatureC, t.FanPercent);
     }
