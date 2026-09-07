@@ -599,13 +599,10 @@ public sealed class MainViewModel : ObservableObject
         : $"pinned to {_lockLo} - {_lockHi} MHz";
     public string ClockLockRangeText =>
         $"{Caps.ClockLockMinMhz} … {Caps.ClockLockMaxMhz} MHz. Holds the graphics clock inside a window; both at the low end unpins it.";
-    public string SysOffsetText => $"{SysOffset:+#;-#;0} MHz on the SYS clock";
-    public string VideoOffsetText => $"{VideoOffset:+#;-#;0} MHz on the video clock";
     public string SysOffsetRangeText =>
         $"{Caps.SysOffsetMinMhz:+#;-#;0} \u2026 {Caps.SysOffsetMaxMhz:+#;-#;0} MHz. The SYS domain, from the same private family as the crossbar.";
     public string VideoOffsetRangeText =>
         $"{Caps.VideoOffsetMinMhz:+#;-#;0} \u2026 {Caps.VideoOffsetMaxMhz:+#;-#;0} MHz. Drives the video encode/decode clock.";
-    public string XbarOffsetText => $"{XbarOffset:+#;-#;0} MHz on the interconnect clock";
     public string XbarOffsetRangeText =>
         $"{Caps.XbarOffsetMinMhz:+#;-#;0} … {Caps.XbarOffsetMaxMhz:+#;-#;0} MHz. Offsets the crossbar, which no public "
         + "NVAPI surface exposes; the GPU's own frequency counter is used to verify the write landed.";

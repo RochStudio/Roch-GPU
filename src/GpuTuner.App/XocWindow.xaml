@@ -129,16 +129,10 @@
                                           Command="{Binding NudgeCommand}" CommandParameter="xbar:1"/>
                         </Grid>
                     </StackPanel>
-                    <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding XbarOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding XbarOffsetRangeText}"
-                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Xbar}"/>
-                        <Button Grid.Column="1" Style="{StaticResource Gate}"
-                                Command="{Binding ToggleLeverCommand}" CommandParameter="Xbar"
-                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Xbar}"
-                                ToolTip="Write this offset to the card now, or put it back"/>
-                    </Grid>
+                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
+                            Command="{Binding ToggleLeverCommand}" CommandParameter="Xbar"
+                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Xbar}"
+                            ToolTip="Write this offset to the card now, or put it back"/>
                 </StackPanel>
 
                 <!-- SYS clock offset -->
@@ -161,16 +155,10 @@
                                           Command="{Binding NudgeCommand}" CommandParameter="sys:1"/>
                         </Grid>
                     </StackPanel>
-                    <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding SysOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding SysOffsetRangeText}"
-                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Sys}"/>
-                        <Button Grid.Column="1" Style="{StaticResource Gate}"
-                                Command="{Binding ToggleLeverCommand}" CommandParameter="Sys"
-                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Sys}"
-                                ToolTip="Write this offset to the card now, or put it back"/>
-                    </Grid>
+                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
+                            Command="{Binding ToggleLeverCommand}" CommandParameter="Sys"
+                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Sys}"
+                            ToolTip="Write this offset to the card now, or put it back"/>
                 </StackPanel>
 
                 <!-- Video clock offset -->
@@ -193,16 +181,10 @@
                                           Command="{Binding NudgeCommand}" CommandParameter="video:1"/>
                         </Grid>
                     </StackPanel>
-                    <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding VideoOffsetText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding VideoOffsetRangeText}"
-                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Video}"/>
-                        <Button Grid.Column="1" Style="{StaticResource Gate}"
-                                Command="{Binding ToggleLeverCommand}" CommandParameter="Video"
-                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Video}"
-                                ToolTip="Write this offset to the card now, or put it back"/>
-                    </Grid>
+                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
+                            Command="{Binding ToggleLeverCommand}" CommandParameter="Video"
+                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Video}"
+                            ToolTip="Write this offset to the card now, or put it back"/>
                 </StackPanel>
 
                 <!-- Clock range. The one lever here that can only hold the card down rather than push
