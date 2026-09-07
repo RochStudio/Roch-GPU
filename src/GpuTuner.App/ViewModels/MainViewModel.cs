@@ -225,20 +225,20 @@ public sealed class MainViewModel : ObservableObject
     /// Ceiling of the core voltage rail, in mV. Raising it lets the card select voltages above its
     /// stock maximum — the boost and the cap both operate underneath whatever this allows.
     /// </summary>
-    public int VoltageRailMax { get => _rail; set { if (SetTuned(ref _rail, value, Caps.VoltageRailMinMv, Math.Max(Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv), nameof(VoltageRailMax))) { OnPropertyChanged(nameof(VoltageRailRangeText)); OnPropertyChanged(nameof(BoostCeilingMv)); OnPropertyChanged(nameof(XocStatusText)); } } }
+    public int VoltageRailMax { get => _rail; set { if (SetTuned(ref _rail, value, Caps.VoltageRailMinMv, Math.Max(Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv), nameof(VoltageRailMax))) { OnPropertyChanged(nameof(BoostCeilingMv)); OnPropertyChanged(nameof(XocStatusText)); } } }
 
     /// <summary>Floor of the core rail: the lowest voltage it may drop to.</summary>
-    public int VoltageRailFloor { get => _railFloor; set { if (SetTuned(ref _railFloor, value, Caps.VoltageRailFloorMinMv, Math.Max(Caps.VoltageRailFloorMinMv, Caps.VoltageRailFloorMaxMv), nameof(VoltageRailFloor))) OnPropertyChanged(nameof(VoltageRailRangeText)); } }
+    public int VoltageRailFloor { get => _railFloor; set => SetTuned(ref _railFloor, value, Caps.VoltageRailFloorMinMv, Math.Max(Caps.VoltageRailFloorMinMv, Caps.VoltageRailFloorMaxMv), nameof(VoltageRailFloor)); }
 
     /// <summary>Floor of the MSVDD rail.</summary>
-    public int MsvddRailFloor { get => _msvddFloor; set { if (SetTuned(ref _msvddFloor, value, Caps.MsvddRailFloorMinMv, Math.Max(Caps.MsvddRailFloorMinMv, Caps.MsvddRailFloorMaxMv), nameof(MsvddRailFloor))) OnPropertyChanged(nameof(MsvddRangeText)); OnPropertyChanged(nameof(XocStatusText)); } }
+    public int MsvddRailFloor { get => _msvddFloor; set { if (SetTuned(ref _msvddFloor, value, Caps.MsvddRailFloorMinMv, Math.Max(Caps.MsvddRailFloorMinMv, Caps.MsvddRailFloorMaxMv), nameof(MsvddRailFloor))) OnPropertyChanged(nameof(XocStatusText)); } }
 
     /// <summary>Ceiling of the MSVDD rail, in mV. Separate supply from NVVDD.</summary>
-    public int MsvddRailMax { get => _msvdd; set { if (SetTuned(ref _msvdd, value, Caps.MsvddRailMinMv, Math.Max(Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv), nameof(MsvddRailMax))) OnPropertyChanged(nameof(MsvddRangeText)); } }
+    public int MsvddRailMax { get => _msvdd; set => SetTuned(ref _msvdd, value, Caps.MsvddRailMinMv, Math.Max(Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv), nameof(MsvddRailMax)); }
 
     /// <summary>Crossbar clock offset in MHz. Snaps to the same 15 MHz grid as the core clock.</summary>
-    public int ClockLockMin { get => _lockLo; set { if (SetTuned(ref _lockLo, value, Caps.ClockLockMinMhz, Math.Max(Caps.ClockLockMinMhz, Caps.ClockLockMaxMhz), nameof(ClockLockMin))) { OnPropertyChanged(nameof(ClockLockText)); OnPropertyChanged(nameof(ClockLockIsOff)); } } }
-    public int ClockLockMax { get => _lockHi; set { if (SetTuned(ref _lockHi, value, Caps.ClockLockMinMhz, Math.Max(Caps.ClockLockMinMhz, Caps.ClockLockMaxMhz), nameof(ClockLockMax))) { OnPropertyChanged(nameof(ClockLockText)); OnPropertyChanged(nameof(ClockLockIsOff)); } } }
+    public int ClockLockMin { get => _lockLo; set { if (SetTuned(ref _lockLo, value, Caps.ClockLockMinMhz, Math.Max(Caps.ClockLockMinMhz, Caps.ClockLockMaxMhz), nameof(ClockLockMin))) OnPropertyChanged(nameof(ClockLockIsOff)); } }
+    public int ClockLockMax { get => _lockHi; set { if (SetTuned(ref _lockHi, value, Caps.ClockLockMinMhz, Math.Max(Caps.ClockLockMinMhz, Caps.ClockLockMaxMhz), nameof(ClockLockMax))) OnPropertyChanged(nameof(ClockLockIsOff)); } }
     public int SysOffset { get => _sys; set => SetTuned(ref _sys, ClockStep.SnapWithin(value, CoreStepMhz, Caps.SysOffsetMinMhz, Caps.SysOffsetMaxMhz), Caps.SysOffsetMinMhz, Caps.SysOffsetMaxMhz, nameof(SysOffset)); }
     public int VideoOffset { get => _video; set => SetTuned(ref _video, ClockStep.SnapWithin(value, CoreStepMhz, Caps.VideoOffsetMinMhz, Caps.VideoOffsetMaxMhz), Caps.VideoOffsetMinMhz, Caps.VideoOffsetMaxMhz, nameof(VideoOffset)); }
     public int XbarOffset { get => _xbar; set => SetTuned(ref _xbar, ClockStep.SnapWithin(value, CoreStepMhz, Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz), Caps.XbarOffsetMinMhz, Caps.XbarOffsetMaxMhz, nameof(XbarOffset)); }
@@ -570,22 +570,6 @@ public sealed class MainViewModel : ObservableObject
     public int StockNvvddMaxMv => _svc.NvvddDefaultMaxMv > 0 ? _svc.NvvddDefaultMaxMv : Caps.VoltageRailStockMaxMv;
     public int StockMsvddMaxMv => _svc.MsvddDefaultMaxMv > 0 ? _svc.MsvddDefaultMaxMv : Caps.MsvddRailStockMaxMv;
 
-    public string VoltageRailRangeText
-    {
-        get
-        {
-            bool stock = VoltageRailMax == StockNvvddMaxMv && VoltageRailFloor == Caps.VoltageRailStockFloorMv;
-            return $"{VoltageRailFloor} - {VoltageRailMax} mV" + (stock ? " (stock)" : "");
-        }
-    }
-    public string MsvddRangeText
-    {
-        get
-        {
-            bool stock = MsvddRailMax == StockMsvddMaxMv && MsvddRailFloor == Caps.MsvddRailStockFloorMv;
-            return $"{MsvddRailFloor} - {MsvddRailMax} mV" + (stock ? " (stock)" : "");
-        }
-    }
     /// <summary>
     /// A window covering the whole range constrains nothing, so it means unpinned. The slider cannot
     /// reach zero — its floor is the lowest clock the driver will lock to — so without this there
@@ -594,9 +578,6 @@ public sealed class MainViewModel : ObservableObject
     public bool ClockLockIsOff =>
         _lockLo <= Caps.ClockLockMinMhz && _lockHi >= Caps.ClockLockMaxMhz;
 
-    public string ClockLockText => ClockLockIsOff
-        ? "full range - the driver picks the clock"
-        : $"pinned to {_lockLo} - {_lockHi} MHz";
     public string ClockLockRangeText =>
         $"{Caps.ClockLockMinMhz} … {Caps.ClockLockMaxMhz} MHz. Holds the graphics clock inside a window; both at the low end unpins it.";
     public string SysOffsetRangeText =>

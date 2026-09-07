@@ -13,9 +13,9 @@
         <conv:XocLeverConverter x:Key="Armed"/>
 
         <!-- One button per lever, not a pair. The pair always had exactly one half clickable, so the
-             other half was only ever there to name the state - which the slider beside it and the
-             caption under it already do. Only the label changes, which is how Roch Viewer's own
-             light/dark button works: one control, naming what pressing it will do. -->
+             other half was only ever there to name the state - which the value box and the slider
+             beside it already do. Only the label changes, which is how Roch Viewer's own light/dark
+             button works: one control, naming what pressing it will do. -->
         <conv:XocGateLabelConverter x:Key="GateLabel"/>
         <Style x:Key="Gate" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
             <Setter Property="Height" Value="21"/>
@@ -67,16 +67,10 @@
                                        LowerValue="{Binding VoltageRailFloor, Mode=TwoWay}"
                                        UpperValue="{Binding VoltageRailMax, Mode=TwoWay}"/>
                     </StackPanel>
-                    <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding VoltageRailRangeText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding VoltageRailMaxRangeText}"
-                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Nvvdd}"/>
-                        <Button Grid.Column="1" Style="{StaticResource Gate}"
-                                Command="{Binding ToggleLeverCommand}" CommandParameter="Nvvdd"
-                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Nvvdd}"
-                                ToolTip="Write this rail range to the card now, or put it back"/>
-                    </Grid>
+                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
+                            Command="{Binding ToggleLeverCommand}" CommandParameter="Nvvdd"
+                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Nvvdd}"
+                            ToolTip="Write this rail range to the card now, or put it back"/>
                 </StackPanel>
 
                 <!-- MSVDD rail: floor and ceiling on one track -->
@@ -97,16 +91,10 @@
                                        LowerValue="{Binding MsvddRailFloor, Mode=TwoWay}"
                                        UpperValue="{Binding MsvddRailMax, Mode=TwoWay}"/>
                     </StackPanel>
-                    <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding MsvddRangeText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding MsvddRailMaxRangeText}"
-                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Msvdd}"/>
-                        <Button Grid.Column="1" Style="{StaticResource Gate}"
-                                Command="{Binding ToggleLeverCommand}" CommandParameter="Msvdd"
-                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Msvdd}"
-                                ToolTip="Write this rail range to the card now, or put it back"/>
-                    </Grid>
+                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
+                            Command="{Binding ToggleLeverCommand}" CommandParameter="Msvdd"
+                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Msvdd}"
+                            ToolTip="Write this rail range to the card now, or put it back"/>
                 </StackPanel>
 
                 <!-- Crossbar clock offset - private domain, not in PStates20 -->
@@ -206,16 +194,10 @@
                                        LowerValue="{Binding ClockLockMin, Mode=TwoWay}"
                                        UpperValue="{Binding ClockLockMax, Mode=TwoWay}"/>
                     </StackPanel>
-                    <Grid Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding ClockLockText}" Style="{StaticResource Muted}" VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding ClockLockRangeText}"
-                                   IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=ClockRange}"/>
-                        <Button Grid.Column="1" Style="{StaticResource Gate}"
-                                Command="{Binding ToggleLeverCommand}" CommandParameter="ClockRange"
-                                Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=ClockRange}"
-                                ToolTip="Pin the graphics clock inside this window now, or put it back"/>
-                    </Grid>
+                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
+                            Command="{Binding ToggleLeverCommand}" CommandParameter="ClockRange"
+                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=ClockRange}"
+                            ToolTip="Pin the graphics clock inside this window now, or put it back"/>
                 </StackPanel>
 
             </StackPanel>
