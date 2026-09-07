@@ -57,8 +57,15 @@ public static class ClockStep
     /// Practical crossbar offset range. The driver reports ±1000 MHz, which is the width of its delta
     /// field rather than anything the interconnect will run: the published gains for this domain are
     /// double figures, and the useful travel sits well inside the driver's number.
+    ///
+    /// The ceiling is 750 rather than the core's 495, because this domain has turned out to take far
+    /// more than the published figures suggest — a 5070 Ti holds +420 and reads it back, which is
+    /// already five times what anyone publishes. That is a slider end, not a measurement: nothing
+    /// here has been shown to be stable, the driver does no sanity check on this domain at all, and
+    /// a crossbar offset that is too high browns the card out rather than failing. 750 is on the
+    /// 15 MHz grid, so the end of the travel is a value the card can actually sit on.
     /// </summary>
-    public const int XbarOffsetPracticalMinMhz = -150, XbarOffsetPracticalMaxMhz = 495;
+    public const int XbarOffsetPracticalMinMhz = -150, XbarOffsetPracticalMaxMhz = 750;
 
     /// <summary>Intersect a driver-reported range with a practical one; never widens.</summary>
     public static (int min, int max) Narrow(int driverMin, int driverMax, int practicalMin, int practicalMax)

@@ -94,8 +94,11 @@ second screen costing nothing while you play.
 
 Offsets snap to the driver's own granularity, so the number on the slider is the number that reaches
 the card. The sliders are also narrowed to a range worth dragging — **−150 to +495 MHz** on core and
-crossbar, against the ±1000 the driver reports. That ±1000 is the width of the driver's delta field,
-not a claim about the silicon.
+**−150 to +750** on the crossbar, against the ±1000 the driver reports. That ±1000 is the width of
+the driver's delta field, not a claim about the silicon. The crossbar gets the longer travel because
+it takes far more than the published double-digit figures suggest: a 5070 Ti holds +420 and reads it
+back. That is a slider end rather than a measurement — nothing up there has been shown to be stable,
+and this is the one domain the driver sanity-checks not at all.
 
 ### V/F curve editor
 
