@@ -334,6 +334,12 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   table will show it as a long run.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
+- **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card
+  hard enough for Windows to reset the driver (`nvlddmkm` in the system event log), the voltage
+  lock goes with it — the log shows the cap reading back as 0 mV afterwards — while the clock and
+  memory offsets survive. Apply again to restore it. The app itself recovers: NVML sessions do not
+  survive a reset, and one that does not is now thrown away and reopened rather than failing every
+  call until the app is restarted.
 - **Nothing guards an apply-at-logon that crashed the machine.** If a tune hangs the card on boot,
   the logon task will apply it again on the next one. Hold Shift during logon to skip it, or clear it
   with `startup --disable` from another account or safe mode.

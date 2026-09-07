@@ -12,13 +12,24 @@ namespace GpuTuner.Core.Backends.Nvidia;
 /// Requires administrator rights (the app manifest asks for them) and driver r465 or newer.
 ///
 /// nvml.dll lives beside the driver in System32, so it is resolved by name with no path juggling.
+///
+/// One session per process, and it does not outlive a display driver reset — see
+/// <see cref="SessionMayBeStale"/> for what that looked like and how it is recovered.
 /// </summary>
 internal static class Nvml
 {
     private const string Dll = "nvml.dll";
 
-    // NVML return codes we care about; everything non-zero is a failure.
+    // NVML return codes. Success, plus the four that say this process's session no longer describes
+    // the card, rather than the request being wrong.
     private const int Success = 0;
+    private const int Uninitialized = 1;
+    private const int GpuIsLost = 15;
+    private const int ResetRequired = 16;
+    private const int Unknown = 999;
+
+    /// <summary>NVML_CLOCK_GRAPHICS.</summary>
+    private const int ClockGraphics = 0;
 
     [DllImport(Dll, EntryPoint = "nvmlInit_v2")] private static extern int Init();
     [DllImport(Dll, EntryPoint = "nvmlShutdown")] private static extern int Shutdown();
@@ -60,40 +71,14 @@ internal static class Nvml
     }
 
     /// <summary>Pin the graphics clock to [min, max] MHz. Returns null on success, else the reason.</summary>
-    public static string? LockGraphicsClocks(int gpuIndex, int minMhz, int maxMhz)
-    {
-        if (!IsAvailable) return LastError ?? "NVML unavailable";
-        lock (Gate)
-        {
-            try
-            {
-                int r = GetHandle((uint)gpuIndex, out var dev);
-                if (r != Success) return $"nvmlDeviceGetHandleByIndex: {Describe(r)}";
-                r = SetLocked(dev, (uint)Math.Max(0, minMhz), (uint)Math.Max(0, maxMhz));
-                return r == Success ? null : $"nvmlDeviceSetGpuLockedClocks({minMhz},{maxMhz}): {Describe(r)}";
-            }
-            catch (Exception e) { return e.Message; }
-        }
-    }
+    public static string? LockGraphicsClocks(int gpuIndex, int minMhz, int maxMhz) =>
+        Write(gpuIndex, $"nvmlDeviceSetGpuLockedClocks({minMhz},{maxMhz})",
+              dev => SetLocked(dev, (uint)Math.Max(0, minMhz), (uint)Math.Max(0, maxMhz)));
 
     /// <summary>Hand the clock range back to the driver. Returns null on success, else the reason.</summary>
-    public static string? ResetGraphicsClocks(int gpuIndex)
-    {
-        if (!IsAvailable) return LastError ?? "NVML unavailable";
-        lock (Gate)
-        {
-            try
-            {
-                int r = GetHandle((uint)gpuIndex, out var dev);
-                if (r != Success) return $"nvmlDeviceGetHandleByIndex: {Describe(r)}";
-                r = ResetLocked(dev);
-                return r == Success ? null : $"nvmlDeviceResetGpuLockedClocks: {Describe(r)}";
-            }
-            catch (Exception e) { return e.Message; }
-        }
-    }
+    public static string? ResetGraphicsClocks(int gpuIndex) =>
+        Write(gpuIndex, "nvmlDeviceResetGpuLockedClocks", ResetLocked);
 
-    /// <summary>Device name as NVML sees it — used to confirm the index lines up with the NVAPI one.</summary>
     /// <summary>
     /// Board power draw in watts, or NaN when NVML cannot say.
     ///
@@ -104,16 +89,8 @@ internal static class Nvml
     /// </summary>
     public static double PowerWatts(int gpuIndex)
     {
-        if (!IsAvailable) return double.NaN;
-        lock (Gate)
-        {
-            try
-            {
-                if (GetHandle((uint)gpuIndex, out var dev) != Success) return double.NaN;
-                return GetPowerUsage(dev, out uint mw) == Success ? mw / 1000.0 : double.NaN;
-            }
-            catch (Exception) { return double.NaN; }
-        }
+        uint mw = 0;
+        return Read(gpuIndex, dev => GetPowerUsage(dev, out mw)) ? mw / 1000.0 : double.NaN;
     }
 
     /// <summary>
@@ -122,36 +99,99 @@ internal static class Nvml
     /// </summary>
     public static int MaxGraphicsClockMhz(int gpuIndex)
     {
-        if (!IsAvailable) return 0;
+        uint mhz = 0;
+        return Read(gpuIndex, dev => GetMaxClock(dev, ClockGraphics, out mhz)) ? (int)mhz : 0;
+    }
+
+    /// <summary>Device name as NVML sees it — used to confirm the index lines up with the NVAPI one.</summary>
+    public static string? DeviceName(int gpuIndex)
+    {
+        var buf = new byte[96];
+        if (!Read(gpuIndex, dev => GetNameRaw(dev, buf, (uint)buf.Length))) return null;
+        int len = Array.IndexOf(buf, (byte)0);
+        return System.Text.Encoding.UTF8.GetString(buf, 0, len < 0 ? buf.Length : len);
+    }
+
+    /// <summary>
+    /// True when a return code means this process's session has gone stale rather than the request
+    /// being wrong — the one kind of failure a re-initialise can fix.
+    ///
+    /// A display driver reset invalidates every NVML session open across it. NVML has a code that
+    /// says exactly that, GPU_IS_LOST, but a 5070 Ti coming back from one answers with UNKNOWN
+    /// instead, which is why 999 is in this list. It was measured rather than assumed: a game took
+    /// the driver down (nvlddmkm event 14, then 153 three times), and from that moment
+    /// nvmlDeviceResetGpuLockedClocks returned 999 for as long as the app stayed open — eleven
+    /// times over three quarters of a minute — while every NVAPI write in the same process carried
+    /// on succeeding. A card that answers one library and not the other is not a broken card; it is
+    /// a session that did not survive the reset. A fresh process was fine, and shutting NVML down
+    /// and bringing it back up is what turns this process into a fresh one.
+    /// </summary>
+    internal static bool SessionMayBeStale(int result) =>
+        result is Uninitialized or GpuIsLost or ResetRequired or Unknown;
+
+    /// <summary>
+    /// Run a call that changes something, retrying once on a new session when the first failure
+    /// looks stale. Null on success, else the reason.
+    /// </summary>
+    private static string? Write(int gpuIndex, string name, Func<IntPtr, int> call)
+    {
+        if (!IsAvailable) return LastError ?? "NVML unavailable";
         lock (Gate)
         {
             try
             {
-                if (GetHandle((uint)gpuIndex, out var dev) != Success) return 0;
-                return GetMaxClock(dev, ClockGraphics, out uint mhz) == Success ? (int)mhz : 0;
+                var (r, reached) = Attempt(gpuIndex, call);
+                if (SessionMayBeStale(r) && Reestablish()) (r, reached) = Attempt(gpuIndex, call);
+                if (r == Success) return null;
+
+                string where = reached ? name : "nvmlDeviceGetHandleByIndex";
+                return SessionMayBeStale(r)
+                    ? $"{where}: {Describe(r)} — the display driver was reset out from under this " +
+                      "session, which a game crashing will do, and a new session could not reach " +
+                      "the card either. Restart Roch GPU."
+                    : $"{where}: {Describe(r)}";
             }
-            catch (Exception) { return 0; }
+            catch (Exception e) { return e.Message; }
         }
     }
 
-    /// <summary>NVML_CLOCK_GRAPHICS.</summary>
-    private const int ClockGraphics = 0;
-
-    public static string? DeviceName(int gpuIndex)
+    /// <summary>
+    /// Run a call that reads something, recovering the same way. False when there is no answer, so
+    /// each caller keeps its own way of saying "cannot say".
+    /// </summary>
+    private static bool Read(int gpuIndex, Func<IntPtr, int> call)
     {
-        if (!IsAvailable) return null;
+        if (!IsAvailable) return false;
         lock (Gate)
         {
             try
             {
-                if (GetHandle((uint)gpuIndex, out var dev) != Success) return null;
-                var buf = new byte[96];
-                if (GetNameRaw(dev, buf, (uint)buf.Length) != Success) return null;
-                int len = Array.IndexOf(buf, (byte)0);
-                return System.Text.Encoding.UTF8.GetString(buf, 0, len < 0 ? buf.Length : len);
+                int r = Attempt(gpuIndex, call).Result;
+                if (SessionMayBeStale(r) && Reestablish()) r = Attempt(gpuIndex, call).Result;
+                return r == Success;
             }
-            catch { return null; }
+            catch (Exception) { return false; }
         }
+    }
+
+    /// <summary>Fetch the device and run the call. Reached says whether the call itself was made.</summary>
+    private static (int Result, bool Reached) Attempt(int gpuIndex, Func<IntPtr, int> call)
+    {
+        int r = GetHandle((uint)gpuIndex, out var dev);
+        return r == Success ? (call(dev), true) : (r, false);
+    }
+
+    /// <summary>
+    /// Drop the session and open a new one. True when the new one initialised.
+    ///
+    /// Nothing rate-limits this because nothing needs to: a card that is genuinely gone fails the
+    /// re-initialise too, IsAvailable then answers false, and every later call stops at the top of
+    /// Read or Write without reaching here.
+    /// </summary>
+    private static bool Reestablish()
+    {
+        TryShutdown();
+        return IsAvailable;
     }
 
     private static string Describe(int result)

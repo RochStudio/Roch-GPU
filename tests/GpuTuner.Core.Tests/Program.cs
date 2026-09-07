@@ -817,6 +817,20 @@ using (var svc = new TuningService(counting))
     }
 }
 
+// ---- NVML: which failures are worth retrying on a new session
+// The card cannot be reset on demand to test the recovery itself, so what is tested is the decision
+// that drives it: a stale session is retried, a wrong request is not. 999 is in the first group
+// because that is what a 5070 Ti actually returned after a driver reset, not because the name
+// "UNKNOWN" invites it.
+Check("999 UNKNOWN retries", Nvml.SessionMayBeStale(999));
+Check("15 GPU_IS_LOST retries", Nvml.SessionMayBeStale(15));
+Check("16 RESET_REQUIRED retries", Nvml.SessionMayBeStale(16));
+Check("1 UNINITIALIZED retries", Nvml.SessionMayBeStale(1));
+Check("0 SUCCESS is not a failure", !Nvml.SessionMayBeStale(0));
+Check("3 NOT_SUPPORTED does not retry", !Nvml.SessionMayBeStale(3));
+Check("4 NO_PERMISSION does not retry", !Nvml.SessionMayBeStale(4));
+Check("2 INVALID_ARGUMENT does not retry", !Nvml.SessionMayBeStale(2));
+
 Console.WriteLine($"{pass} passed, {fail} failed");
 return fail == 0 ? 0 : 1;
 
