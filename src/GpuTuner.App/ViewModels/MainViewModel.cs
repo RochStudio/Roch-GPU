@@ -61,7 +61,12 @@ public sealed class MainViewModel : ObservableObject
         // The last slot applied on this card, or failing that the one the logon task applies - a
         // machine set up to apply at logon and never clicked since has only the second.
         settings.LastProfileByGpu.TryGetValue(svc.Device.Name, out var lastFanProfile);
-        if (store.Load(lastFanProfile ?? settings.StartupProfile ?? "") is { } sawFans)
+        // Fall through on the loaded profile, not on the name. A name that is recorded but no longer
+        // on disk - "Session", the throwaway name an Apply uses when no slot is selected - is not
+        // null, so a ?? chain over names stopped there and never reached the startup profile.
+        var fanSource = Load(lastFanProfile) ?? Load(settings.StartupProfile);
+        TuningProfile? Load(string? name) => string.IsNullOrEmpty(name) ? null : store.Load(name);
+        if (fanSource is { } sawFans)
         {
             FanModeIndex = (int)sawFans.FanMode;
             FixedFan = sawFans.FixedFanPercent;
@@ -919,7 +924,10 @@ public sealed class MainViewModel : ObservableObject
                 ? $"Applied at {DateTime.Now:HH:mm:ss}"
                 : string.Join("  |  ", errs);
             StatusIsError = false; PendingChanges = false;
-            App.Settings.LastProfileByGpu[Device.Name] = p.Name;
+            // Only a name that can be loaded again. An apply with no slot selected builds a
+            // throwaway profile called "Session" that is never written, and recording that left the
+            // setting pointing at a file which does not exist.
+            if (_store.Load(p.Name) != null) App.Settings.LastProfileByGpu[Device.Name] = p.Name;
         }
         else
         {
