@@ -52,7 +52,7 @@ Check("clamp temp", p.TempLimitC == 65);
 // ---- ProfileStore round trip
 var dir = Path.Combine(Path.GetTempPath(), "gputuner-tests-" + Guid.NewGuid().ToString("N"));
 var store = new ProfileStore(dir);
-var prof = new TuningProfile { Name = "My UV", CoreOffsetMhz = 150, MemoryOffsetMhz = 800, PowerLimitPercent = 85, TempLimitC = 78, FanMode = FanMode.Curve };
+var prof = new TuningProfile { Name = "My UV", CoreOffsetMhz = 150, MemoryOffsetMhz = 800, PowerLimitPercent = 85, TempLimitC = 78, FanMode = FanMode.Curve, FixedFanPercents = new[] { 45, 65, 90 } };
 prof.FanCurve.Points = new() { new(35, 25), new(75, 90) };
 prof.FanCurve.HysteresisC = 4;
 store.Save(prof);
@@ -62,6 +62,9 @@ Check("store core", back!.CoreOffsetMhz == 150);
 Check("store fanmode enum", back.FanMode == FanMode.Curve);
 Check("store curve points", back.FanCurve.Points.Count == 2 && back.FanCurve.Points[1].FanPercent == 90);
 Check("store hysteresis", Math.Abs(back.FanCurve.HysteresisC - 4) < 1e-9);
+// The card reports no curve and no per-fan split, so a profile losing either loses it for good:
+// there is nowhere else to read it back from.
+Check("store per-fan duties", back.FixedFanPercents.Length == 3 && back.FixedFanPercents[2] == 90);
 Check("store list", store.ListProfileNames().SequenceEqual(new[] { "My UV" }));
 Check("store delete", store.Delete("My UV") && store.ListProfileNames().Count == 0);
 var settings = new AppSettings { StartupProfile = "X", ApplyOnStartup = true, PollIntervalMs = 500 };

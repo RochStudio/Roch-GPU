@@ -50,6 +50,26 @@ public sealed class MainViewModel : ObservableObject
         var cur = svc.ReadCurrentAsProfile();
         cur.ClampTo(Caps);
         LoadIntoEditor(cur);
+
+        // ...except the fans, which the card cannot describe. The driver knows only "auto" or
+        // "manual at N%": it has no idea a curve is what put it there, and it stores no curve to
+        // read back. Seeding those from the card meant every restart came up as Auto with a default
+        // curve, whatever the profile said - and because Save writes the editor, pressing it after a
+        // restart would have written that default over the user's own curve.
+        //
+        // The saved profile is the only thing that knows, so the fan half comes from there.
+        // The last slot applied on this card, or failing that the one the logon task applies - a
+        // machine set up to apply at logon and never clicked since has only the second.
+        settings.LastProfileByGpu.TryGetValue(svc.Device.Name, out var lastFanProfile);
+        if (store.Load(lastFanProfile ?? settings.StartupProfile ?? "") is { } sawFans)
+        {
+            FanModeIndex = (int)sawFans.FanMode;
+            FixedFan = sawFans.FixedFanPercent;
+            PerFanPercents = (int[])sawFans.FixedFanPercents.Clone();
+            EditorCurve = sawFans.FanCurve.Clone();
+            OnPropertyChanged(nameof(EditorCurve));
+        }
+
         _pendingChanges = false;
 
         ApplyCommand = new RelayCommand(Apply, () => true);
