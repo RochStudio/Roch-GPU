@@ -106,6 +106,10 @@ Drag a point, or select one and use ↑/↓ to nudge it by a 5 MHz step (Shift =
 everything above it). Double-click resets a point, right-click resets all. **Flatten above N mV** is
 the undervolt, and is where the voltage cap lives.
 
+The cap is measured against the ceiling the card can actually reach, and that moves with the boost:
+a 5070 Ti tops out at 1035 mV stock and 1100 mV with the boost wound fully open, so a cap anywhere
+in between holds it under load rather than doing nothing.
+
 A marker shows where the card actually stops — the table describes voltages well above anything a
 given card selects, so the unreachable stretch is shaded rather than left looking tunable.
 
@@ -231,7 +235,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 That builds, tests and publishes `dist\RochGPU.exe`. If you don't have the SDK, `SETUP.bat` does the
 lot in one double-click.
 
-**Tests:** `dotnet run --project tests/GpuTuner.Core.Tests -c Release` → `259 passed, 0 failed`. The
+**Tests:** `dotnet run --project tests/GpuTuner.Core.Tests -c Release` → `272 passed, 0 failed`. The
 runner is dependency-free — the whole project has no NuGet packages at all — so most of the engine
 can be changed without a GPU in front of you.
 
@@ -365,7 +369,7 @@ setup.ps1                  as above, plus SDK install and launch (driven by SETU
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
 src/GpuTuner.App           the executable — WPF window, and the entry point that picks a half
 src/GpuTuner.Cli           the command-line half, compiled into the same executable
-tests/GpuTuner.Core.Tests  dependency-free test runner (259 checks, no hardware needed)
+tests/GpuTuner.Core.Tests  dependency-free test runner (272 checks, no hardware needed)
 tools/amd                  read-only PowerShell probes used to map the AMD driver surface
 .github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
