@@ -92,7 +92,7 @@ public partial class MainWindow : Window
             _curveWindow.Activate();
             return;
         }
-        _curveWindow = new CurveWindow(_svc) { Owner = this };
+        _curveWindow = new CurveWindow(_svc, _vm) { Owner = this };
         _curveWindow.Closed += (_, _) => _curveWindow = null;
         _curveWindow.Show();
     }

@@ -18,9 +18,15 @@ public partial class CurveWindow : Window
 {
     private readonly TuningService _svc;
 
-    public CurveWindow(TuningService svc)
+    // The main window's editor state. A flatten here is the same setting as its voltage cap, so it
+    // is told about one — otherwise pressing Apply over there would write the cap it still believed
+    // in and undo the flatten.
+    private readonly ViewModels.MainViewModel _vm;
+
+    public CurveWindow(TuningService svc, ViewModels.MainViewModel vm)
     {
         _svc = svc;
+        _vm = vm;
         InitializeComponent();
         Theme.Register(this);   // paints the chrome now, and follows every later light/dark switch
 
@@ -106,6 +112,7 @@ public partial class CurveWindow : Window
                 nv.SetVoltageLock(_svc.GpuIndex, mv);
                 Editor.SetVoltageCap(mv);
                 Editor.FlattenFrom(mv);            // mirror it in the plot's own points too
+                _vm.TargetVoltage = mv;            // and in the main window, which saves and applies it
                 Say($"Voltage capped at {mv} mV — applied to the GPU now. Check the live voltage.");
                 return;
             }

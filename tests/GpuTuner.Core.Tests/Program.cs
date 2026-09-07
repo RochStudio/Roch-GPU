@@ -684,6 +684,27 @@ using (var svc = new TuningService(counting))
         Check("both: boost kept", both.Backend.ReadTuningState(0).VoltageBoostPercent == 40);
         Check("both: cap kept", both.Backend.ReadVoltageLockMv(0) == 950);
 
+        // A cap between the stock ceiling and the boosted roof. That gap is where an undervolt on a
+        // boosted card lives, and the cap used to vanish inside it: it was measured against the
+        // *stock* ceiling, so anything above that read as "capping nothing" and wrote 0 — silently,
+        // while every other field in the same profile landed normally.
+        var boostedCap = NewSvc();
+        boostedCap.Apply(new TuningProfile { VoltageBoostPercent = 100, TargetVoltageMv = curveTop + 30, PowerLimitPercent = 100, TempLimitC = 83 });
+        Check("cap above stock but under the boosted roof still locks",
+              boostedCap.Backend.ReadVoltageLockMv(0) == curveTop + 30);
+        Check("cap above stock keeps its boost",
+              boostedCap.Backend.ReadTuningState(0).VoltageBoostPercent == 100);
+
+        // At the roof it really is capping nothing, which is what makes the value usable as "off".
+        var atRoof = NewSvc();
+        atRoof.Apply(new TuningProfile { VoltageBoostPercent = 100, TargetVoltageMv = maxMv, PowerLimitPercent = 100, TempLimitC = 83 });
+        Check("cap at the boosted roof locks nothing", atRoof.Backend.ReadVoltageLockMv(0) == 0);
+
+        // The ceiling a cap is measured against moves with the boost, and is the stock one without.
+        var reachSvc = NewSvc();
+        Check("reach with no boost is the stock ceiling", reachSvc.ReachableCeilingMv(0) == curveTop);
+        Check("reach at full boost is the roof", reachSvc.ReachableCeilingMv(100) == maxMv);
+
         // An explicit boost is never overwritten by the legacy inference, even with a high target.
         var expl = NewSvc();
         expl.Apply(new TuningProfile { VoltageBoostPercent = 25, TargetVoltageMv = maxMv, PowerLimitPercent = 100, TempLimitC = 83 });

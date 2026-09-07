@@ -489,6 +489,13 @@ public sealed class MainViewModel : ObservableObject
     /// <summary>What this card really tops out at — the curve's last point is a step below it.</summary>
     public int StockCeilingMv => _svc.StockCeilingMv;
 
+    /// <summary>
+    /// The highest voltage the card can select with the boost this window is showing. A cap is
+    /// measured against this rather than the stock ceiling, and a cap sitting at it means "no cap" —
+    /// one definition, shared with the service, so the window and the card cannot disagree.
+    /// </summary>
+    public int ReachableCeilingMv => _svc.ReachableCeilingMv(VoltageBoost);
+
     /// <summary>Top of the cap slider: the highest voltage the boost can actually reach here.</summary>
     public int BoostCeilingMv => _svc.BoostCeilingMv;
 
@@ -509,9 +516,11 @@ public sealed class MainViewModel : ObservableObject
                     ? "voltage control unavailable on this driver"
                     : "voltage control unavailable — " + Caps.CurveUnavailableReason;
             int ceiling = StockCeilingMv;
-            // At or above the ceiling this slider isn't capping anything — raising the ceiling is the
-            // boost control's job, not this one's.
-            if (TargetVoltage >= ceiling) return $"no cap — free to the ceiling ({ceiling} mV)";
+            // At or above what the card can reach, this isn't capping anything. That is the boosted
+            // roof, not the stock ceiling — with the boost open the card selects above stock, and
+            // saying "no cap" about a value it will actually be held to was simply wrong.
+            if (TargetVoltage >= ReachableCeilingMv)
+                return $"no cap — free to the ceiling ({ReachableCeilingMv} mV)";
             // Say which lever is holding it once applied — the private lock is ignored on some
             // drivers and the clock cap takes over, which changes what you'll see in a monitor.
             string how = _svc.VoltageLockMechanism;
@@ -869,10 +878,17 @@ public sealed class MainViewModel : ObservableObject
         ClockLockMaxMhz = HasClockLock && !ClockLockIsOff ? ClockLockMax : 0,
         VideoOffsetMhz = HasVideo ? VideoOffset : 0,
         XocArmed = XocArmed,
-        // The cap has no slider any more — the curve editor's flatten owns it. Carry whatever lock is
-        // actually on the card so pressing Apply here preserves a flatten set over there instead of
-        // overwriting it with a value this window last read at startup.
-        TargetVoltageMv = Math.Max(0, _svc.Backend.ReadVoltageLockMv(_svc.GpuIndex)),
+        // The cap has no slider in this window — the curve editor's flatten owns it — but it does
+        // have a value here: LoadIntoEditor sets it from the profile, and the flatten pushes its own
+        // back. This used to read the lock off the card instead, which meant an apply could only ever
+        // preserve a cap the card was already holding and never restore one from a profile. A driver
+        // reset clears the lock, and after one the saved cap became unreachable: every other field in
+        // the profile landed and the undervolt quietly did not.
+        //
+        // At or above the ceiling a cap is capping nothing, and is stored as 0 rather than as a
+        // number that only looks like a setting — the same reading LoadIntoEditor and VoltageCapText
+        // take of it, against the same ceiling.
+        TargetVoltageMv = TargetVoltage < ReachableCeilingMv ? TargetVoltage : 0,
         ZeroRpm = ZeroRpm,
         MemoryTimingLevel = MemoryTimingIndex,
         FanMode = (FanMode)FanModeIndex,
@@ -901,7 +917,10 @@ public sealed class MainViewModel : ObservableObject
         VideoOffset = p.VideoOffsetMhz;
         XocArmed = p.XocArmed;
         OnPropertyChanged(nameof(XocStatusText));   // live-ness may have changed even if the flags did not
-        TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : StockCeilingMv;
+        // "No cap" is the top of what the card can reach, not the stock ceiling: with a boost applied
+        // the two differ, and seeding the lower one would turn "uncapped" into a cap at stock the
+        // moment this was built back into a profile.
+        TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : ReachableCeilingMv;
         ZeroRpm = p.ZeroRpm;
         MemoryTimingIndex = p.MemoryTimingLevel;
         FanModeIndex = (int)p.FanMode;

@@ -179,6 +179,19 @@ public sealed class TuningService : IDisposable
         catch { _liveBoostPercent = 0; _liveLockMv = 0; _liveRailMaxMv = 0; }
     }
 
+    /// <summary>
+    /// The highest voltage the card can select once a given boost is applied — the ceiling a cap has
+    /// to be measured against, and the value that means "cap nothing".
+    ///
+    /// At boost 0 it is the stock ceiling. Wound open it is the roof the boost can reach, which on
+    /// this 5070 Ti is 1100 mV against a stock 1035: the 65 mV in between is exactly the range a cap
+    /// is for, and the range that used to be unreachable.
+    /// </summary>
+    public int ReachableCeilingMv(int boostPercent) =>
+        VoltagePlan.CeilingMv(boostPercent, 0,
+                              StockCeilingMv > 0 ? StockCeilingMv : Capabilities.MaxVoltageMv,
+                              BoostCeilingMv, Capabilities.StockMaxVoltageMv);
+
     /// <summary>True while no voltage lever is engaged, so live voltage still reflects stock.</summary>
     private bool VoltageIsUntouched
     {
@@ -323,7 +336,15 @@ public sealed class TuningService : IDisposable
 
                 // Below the ceiling the cap is enforced by the absolute lock, not by an offset that
                 // would be measured from whichever "stock" figure we happened to pick.
-                lockMv = p.TargetVoltageMv > 0 && p.TargetVoltageMv < ceiling ? p.TargetVoltageMv : 0;
+                //
+                // The ceiling to measure it against is the one this profile leaves behind, not the
+                // stock one. A boost lifts the roof, so a cap sitting between stock and that roof is
+                // a real instruction — and comparing it to stock threw it away silently: a cap of
+                // 1050 mV against a 1035 mV stock ceiling wrote nothing at all, on a profile that
+                // had just wound the boost fully open and raised the rail to 1050. Every other field
+                // landed, so the card ran uncapped while the profile said otherwise.
+                int reach = ReachableCeilingMv(boostPct);
+                lockMv = p.TargetVoltageMv > 0 && p.TargetVoltageMv < reach ? p.TargetVoltageMv : 0;
 
                 // A negative offset is how the CLI asks for an undervolt: --uv -90 means "hold 90 mV
                 // under the ceiling". It used to be zeroed here along with the curve delta, so the
