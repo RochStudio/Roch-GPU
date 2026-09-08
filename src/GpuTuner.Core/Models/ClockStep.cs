@@ -43,14 +43,20 @@ public static class ClockStep
     /// hang. Narrowing the slider to the range people actually tune in makes the useful part of the
     /// travel usable, and the numbers are on the 15/25 MHz grids so the ends stay reachable.
     ///
-    /// The core ceiling is 495 rather than a round 500 for that last reason: 500 is not a multiple of
-    /// 15, so it would be a slider end the card can never sit on. No Ada or Blackwell card holds a
-    /// plain +495 offset either, but the top of a slider should be optimistic, not impossible — it
-    /// used to be +750, which was neither.
+    /// The core ceiling is 750, and it is a multiple of 15 for that last reason — a round 500 or 800
+    /// would be a slider end the card can never sit on.
+    ///
+    /// It was 495 for a while, on the reasoning that no Ada or Blackwell card holds a plain +495 and
+    /// a slider top should be optimistic rather than impossible. That reasoning assumed a card at
+    /// stock voltage. It is wrong for the thing this tool is actually for: with the rails raised and
+    /// the boost wound open, the offsets that become reachable are nothing like the ones a stock
+    /// card holds, and a slider that stops at 495 stops before the card does. Neither end is a claim
+    /// that the value is stable — the whole point of an offset slider is that where it fails is
+    /// per-card and has to be found.
     ///
     /// These only ever narrow. A card whose driver reports less keeps its own smaller range.
     /// </summary>
-    public const int CoreOffsetPracticalMinMhz = -150, CoreOffsetPracticalMaxMhz = 495;
+    public const int CoreOffsetPracticalMinMhz = -150, CoreOffsetPracticalMaxMhz = 750;
     public const int MemoryOffsetPracticalMinMhz = -250, MemoryOffsetPracticalMaxMhz = 4000;
 
     /// <summary>

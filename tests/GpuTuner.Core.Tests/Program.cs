@@ -366,7 +366,7 @@ using (var svc = new TuningService(new MockBackend()))
 {
     // Ada reports the width of its delta field, not a tunable range.
     var c = ClockStep.Narrow(-1000, 1000, ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreOffsetPracticalMaxMhz);
-    Check("core narrowed to -150..+495", c == (-150, 495));
+    Check("core narrowed to -150..+750", c == (-150, 750));
     // Both ends must sit on the 15 MHz grid, or the slider has a stop the card can never occupy.
     Check("core practical ends are on the grid",
           ClockStep.CoreOffsetPracticalMinMhz % ClockStep.CoreMhz == 0 &&
