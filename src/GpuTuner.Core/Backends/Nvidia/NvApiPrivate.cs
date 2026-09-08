@@ -710,10 +710,18 @@ internal static class NvApiPrivate
     // (408322961, 408322967, 408322973, 408322980, 408323022), so it is a timestamp rather than a
     // reading — that much is measured. Pinning the rest needs samples taken under load and matched
     // against known board power, which is an experiment rather than a read.
-    // A 5070 Ti answers with six channels, all on the 12 V side: the board total, the PCIe slot, and
-    // four supply rails. The sub-volt channels mVolt+ also lists - NVVDD output and MSVDD, the ones
-    // an OCP limit actually guards - are NOT in this family's reply at either shape or either count,
-    // so they come from somewhere else and are not decoded here.
+    // A 5070 Ti answers with six channels, all on the 12 V side. Checked against mVolt+ reading the
+    // same card under the same load, they line up one for one: board total 25.75 A against its
+    // 26.375, then PCIe 12V 0.58/0.585, and its rails 218, 214, NVVDD-input and 212 at 25.17/25.790,
+    // 15.97/16.356, 9.90/10.142 and 6.07/6.214.
+    //
+    // The word at +0x04 is a bitmask, not a count: 0x18 returns five channels and 0x20 six, while
+    // anything from 0xFF up is refused outright. Six is all this driver will give.
+    //
+    // The sub-volt channels mVolt+ also lists - NVVDD output and MSVDD, the ones an OCP limit
+    // guards, the ones that reach 286 A under load - are in neither this family nor the ADC family,
+    // whose entries carry a voltage and no current. They are reachable somehow, because mVolt+ shows
+    // them; not from here, and not by guessing.
     private const uint FnPowerMonitorStatus = 0xF40238EF;
 
     /// <summary>

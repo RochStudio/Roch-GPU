@@ -386,12 +386,17 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   shapes*.
 - **The sub-volt rail currents are not readable, so the OCP limits have no live figure beside them.**
   The power monitor family (`0xF40238EF`) is decoded — current at +0x00 in milliamps, voltage at
-  +0x04 in microvolts, confirmed because the first channel's product reproduces the board total the
-  struct states separately — and a 5070 Ti answers with **six channels, all on the 12 V side**. The
-  ones an OCP limit actually guards, NVVDD output and MSVDD at about 0.8 V, are not in that reply at
-  either struct shape or any channel count tried. mVolt+ shows them, so they exist somewhere this
-  tool has not found. Until they are, the OCP sliders carry a limit with no live current to compare
-  it against.
+  +0x04 in microvolts — and checked against mVolt+ reading the same card under the same load, where
+  all six channels line up one for one: board total 25.75 A against its 26.375, PCIe 12V 0.58
+  against 0.585, and the rest within a few per cent. The word at +0x04 is a **bitmask, not a count**:
+  0x18 returns five channels, 0x20 returns six, and anything from 0xFF up is refused. Six is all
+  this driver gives, and all six are on the 12 V side.
+
+  The channels an OCP limit actually guards — NVVDD output and MSVDD at about 1.05 V, which reach
+  **286 A** under load against a 300 A limit — are in neither that family nor the ADC family, whose
+  entries carry a voltage and no current. mVolt+ displays them, so they are reachable somehow; not
+  from here, and not by guessing. Until they are found, the OCP sliders set a limit with no live
+  current to compare against.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card
