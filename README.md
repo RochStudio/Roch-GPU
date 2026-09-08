@@ -400,9 +400,16 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   **286 A** under load against a 300 A limit — are in neither that family nor the ADC family, whose
   entries carry a voltage and no current. Nor is HYDRA a way in: its exported
   `NvApi_GetPowerRailSnapshot` compiles to the same implementation calling these same two ids, so it
-  sees the same seven. mVolt+ shows twelve and keeps no plaintext entry points, so unlike HYDRA there
-  is no binary to read the answer out of. Until that changes, the OCP sliders set a limit with no
-  live current to compare against.
+  sees the same seven. And the OCP family's own fourth entry point — `0x67F31384`, struct 0xA70
+  version 4, the range call — reports the live current as **−1**: it carries a minimum, a default
+  and a maximum per channel and no reading. mVolt+ shows twelve channels and keeps no plaintext
+  entry points, so unlike HYDRA there is no binary to read the answer out of. Until that changes, the
+  OCP sliders set a limit with no live current to compare against.
+- **The OCP sliders offer more travel than the driver accepts.** That range call reports the core
+  limit as min 250 A, default 300 A, max **350 A**, where the sliders offer half the stock figure to
+  half again above it — 150 to 450 A. Values outside the driver's own window are refused cleanly and
+  the failure is reported, so nothing is written that should not be, but most of the travel at each
+  end cannot land. Reading the real bounds per channel would fix it.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card

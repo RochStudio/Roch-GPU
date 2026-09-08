@@ -617,6 +617,12 @@ internal static class NvApiPrivate
     // a store with the nearest preceding id is off by one. That gave 0xEDCF624E, which the driver
     // rejects for this struct with INCOMPATIBLE_STRUCT_VERSION. Pairing the store with the call it
     // actually follows gives 0xAFFC2279, which the driver accepts.
+    // The family's fourth entry point, 0x67F31384, is the range call: struct 0xA70 version 4, from
+    // HYDRA's own call site. It reports a minimum, a default and a maximum per channel - 250000,
+    // 300000 and 350000 milliamps for the core one, which is the real window rather than the
+    // half-to-half-again this tool offers - and it reports the live current as -1. So the current an
+    // OCP limit is actually guarding is not there either, and this was the last family that could
+    // plausibly have carried it.
     private const uint FnOcpGetControl = 0x8B3E7343, FnOcpSetControl = 0xAFFC2279;
     private const int OcpSize = 0x0A4C, OcpVersion = 1, OcpMaskOffset = 0x04, OcpMaskAll = 0x7FFF;
     private const int OcpEntries = 0x1C, OcpStride = 0x28, OcpEntryValue = 0x04;
