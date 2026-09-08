@@ -313,7 +313,8 @@ This writes voltage, clock and power settings to your GPU.
 - The **OCP limits** are protection, not performance. Raising one does not make a card faster; it
   moves the current at which the card stops itself out of the way, and the reason that limit is
   there is the hardware behind it. Lower is safer than stock, higher is the opposite.
-- **Reset** returns everything to driver defaults, and is the first thing to try if the card
+- **Reset to Defaults** writes the driver's own defaults to the card and loads them into the
+  sliders, and is the first thing to try if the card
   misbehaves.
 - A fan curve is enforced by this app on NVIDIA (closing it hands fans back to the driver — you are
   asked first) and by the driver itself on AMD.
