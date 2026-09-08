@@ -288,6 +288,21 @@ public static class CommandLine
             if (!svc.Capabilities.CanSetVoltageRail)
                 notes.Add($"{TuningService.NotePrefix} this card exposes no core voltage rail — {rail} mV ignored.");
         }
+        // Amps on the command line, milliamps in the profile: the same unit the window offers, for
+        // the same reason - the card quotes these figures in whole amps.
+        if (o.TryGetValue("nvvdd-ocp", out var nocp))
+        {
+            p.NvvddOcpMilliamps = int.Parse(nocp) * 1000;
+            if (!svc.Capabilities.CanSetOcp)
+                notes.Add($"{TuningService.NotePrefix} this card exposes no OCP limits — {nocp} A ignored.");
+        }
+        if (o.TryGetValue("msvdd-ocp", out var mocp))
+        {
+            p.MsvddOcpMilliamps = int.Parse(mocp) * 1000;
+            if (!svc.Capabilities.CanSetOcp)
+                notes.Add($"{TuningService.NotePrefix} this card exposes no OCP limits — {mocp} A ignored.");
+        }
+
         // Typing a gated flag is the arming gesture for that lever alone; the GUI has a button per
         // lever for it. A lever nobody named stays disarmed, and the apply puts it back to the
         // driver's own value rather than leaving an earlier tune half-standing underneath.
@@ -300,6 +315,8 @@ public static class CommandLine
         Arm(XocLever.Xbar, "xbar");
         Arm(XocLever.Sys, "sys");
         Arm(XocLever.Video, "video");
+        Arm(XocLever.NvvddOcp, "nvvdd-ocp");
+        Arm(XocLever.MsvddOcp, "msvdd-ocp");
         Arm(XocLever.ClockRange, "clock-min", "clock-max");
         if (p.XocArmed != XocLever.None)
             notes.Add($"{TuningService.NotePrefix} armed for this apply: {p.XocArmed}.");
@@ -385,7 +402,7 @@ public static class CommandLine
 
           RochGPU.exe info
           RochGPU.exe monitor [--interval 1000]
-          RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
+          RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
             each gated flag arms its own lever for that apply; a lever you do not name goes back to the driver's own value
           RochGPU.exe apply-profile <name> [--gpu 0]
           RochGPU.exe list-profiles

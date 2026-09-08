@@ -212,6 +212,8 @@ monitor [--interval 1000]     live telemetry until Ctrl+C
 apply --core 120 --mem 800 --power 110 --fan 60
 apply --volt 25 --uv -100     voltage boost %, and an undervolt in mV under the ceiling
 apply --nvvdd 1100 --msvdd 1050 --xbar 30 --sys 45 --video 30
+apply --nvvdd-ocp 280 --msvdd-ocp 110
+                              the OCP current limits, in whole amps
 apply --clock-min 1500 --clock-max 1800
                               pin the graphics clock; give one side only to pin at it
                               the gated levers — passing a flag arms that lever for that
@@ -301,6 +303,9 @@ This writes voltage, clock and power settings to your GPU.
 - Overclocking and undervolting can crash, corrupt work in progress, and in the extreme damage
   hardware. It may void your warranty.
 - Change one thing at a time, test it, and write down what worked.
+- The **OCP limits** are protection, not performance. Raising one does not make a card faster; it
+  moves the current at which the card stops itself out of the way, and the reason that limit is
+  there is the hardware behind it. Lower is safer than stock, higher is the opposite.
 - **Reset** returns everything to driver defaults, and is the first thing to try if the card
   misbehaves.
 - A fan curve is enforced by this app on NVIDIA (closing it hands fans back to the driver — you are
