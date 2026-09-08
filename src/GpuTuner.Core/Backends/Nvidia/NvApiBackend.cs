@@ -1659,6 +1659,20 @@ public sealed class NvApiBackend : IGpuBackend
         // what it says when handed a version it does not (the driver names the ones it does), and
         // whether an empty answer is the mask trap - a count or controller that has to be filled in
         // before the driver fills anything out.
+        Section("OCP current limits (read-only)", () =>
+        {
+            foreach (var line in NvApiPrivate.ProbeOcpShapes(g.Handle)) sb.AppendLine("  " + line);
+            var ch = NvApiPrivate.ReadOcpChannels(g.Handle);
+            sb.AppendLine($"  channels: {ch.Count}");
+            foreach (var c in ch)
+                sb.AppendLine($"    slot {c.Slot,2} selector={c.Selector,-6} value={c.Value,-8} {c.Words}");
+        });
+
+        Section("Rail OCP hunt (read-only)", () =>
+        {
+            foreach (var line in NvApiPrivate.HuntRailOcp(g.Handle)) sb.AppendLine("  " + line);
+        });
+
         Section("Policy shapes (thermal + power, read-only)", () =>
         {
             var points = new (string Name, uint Id)[]

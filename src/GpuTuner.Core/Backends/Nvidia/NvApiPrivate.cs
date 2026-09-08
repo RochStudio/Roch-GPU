@@ -599,6 +599,153 @@ internal static class NvApiPrivate
         return outp;
     }
 
+    // ---- OCP current limits -----------------------------------------------------------------
+    //
+    // The per-rail over-current protection limit, in amps: mVolt+ shows 300 A on NVVDD and 120 A on
+    // MSVDD, and HYDRA calls the same thing Core/Mem OCP.
+    //
+    // Not the voltage rail family, which was the obvious guess and carries no such field - measured,
+    // by scanning all three of its buffers for those two figures in every plausible unit and finding
+    // neither. It is its own family, and the layout below was read out of HYDRA's own NVAPI.dll
+    // rather than guessed: its exported NvApi_SetCoreOcpLimit and NvApi_SetMemOcpLimit are thunks
+    // that differ only in a selector - 1 for the core rail, 0x10 for memory - and both call one
+    // implementation that reads this family first, checks the requested value against a min and a
+    // max, and only then writes.
+    private const uint FnOcpGetControl = 0x8B3E7343;
+    private const int OcpSize = 0x0A4C, OcpVersion = 1, OcpMaskOffset = 0x04, OcpMaskAll = 0x7FFF;
+    private const int OcpEntries = 0x1C, OcpStride = 0x28, OcpEntryValue = 0x04;
+
+    /// <summary>One OCP channel: its selector, the limit it carries, and the entry's other words.</summary>
+    public readonly record struct OcpChannel(int Slot, int Selector, int Value, string Words);
+
+    /// <summary>
+    /// Read every OCP channel this card reports. Empty when the family is unavailable.
+    ///
+    /// Read-only. The entry point is the one HYDRA's setter calls to read the current state before
+    /// deciding whether a write is needed, so this is the same call it makes on the way in.
+    /// </summary>
+    public static List<OcpChannel> ReadOcpChannels(PhysicalGPUHandle handle)
+    {
+        var outp = new List<OcpChannel>();
+        var w = CallRaw(handle, FnOcpGetControl, OcpSize, OcpVersion, OcpMaskOffset, OcpMaskAll, out int status);
+        if (status != 0 || w.Length == 0) return outp;
+
+        for (int slot = 0; ; slot++)
+        {
+            int b = OcpEntries + slot * OcpStride;
+            if ((b + OcpStride) / 4 >= w.Length) break;
+            var words = new List<string>();
+            for (int off = 0; off < OcpStride; off += 4)
+            {
+                int v = w[(b + off) / 4];
+                if (v != 0) words.Add($"+0x{off:X2}={v}");
+            }
+            if (words.Count == 0) continue;
+            outp.Add(new OcpChannel(slot, w[b / 4], w[(b + OcpEntryValue) / 4], string.Join(" ", words)));
+        }
+        return outp;
+    }
+
+    /// <summary>Every shape of the OCP family this driver accepts, for the diag dump.</summary>
+    public static List<string> ProbeOcpShapes(PhysicalGPUHandle handle)
+    {
+        var outp = new List<string>();
+        outp.Add($"entry point 0x{FnOcpGetControl:X8} exported={Exposes(FnOcpGetControl)}");
+        foreach (var (size, ver) in new[] { (0x0A4C, 1), (0x0ACB0, 4), (0x0B0B0, 5) })
+            foreach (int mo in new[] { -1, 0x04, 0x88 })
+                foreach (uint mask in new uint[] { 0x7FFF, 1, 0x10 })
+                {
+                    if (mo < 0 && mask != 0x7FFF) continue;
+                    var w = CallRaw(handle, FnOcpGetControl, size, ver, mo, mask, out int st);
+                    if (st != 0 || w.Length == 0) continue;
+                    int nz = w.Count(x => x != 0);
+                    outp.Add($"  size=0x{size:X4} ver={ver} maskOff={(mo < 0 ? "none" : "0x" + mo.ToString("X2"))} " +
+                             $"mask=0x{mask:X4} -> status=0 nonZero={nz}");
+                }
+        return outp;
+    }
+
+    /// <summary>
+    /// Hunt the rail family's three buffers for the OCP current limit.
+    ///
+    /// mVolt+ 0.38 shows an "NVVDD OCP LIMIT" of 300 A with a range of 1..300, and an "MSVDD OCP
+    /// LIMIT" of 120 A with a range of 1..120 — two rails whose numbers differ, which is what makes
+    /// them findable. This walks the info, status and control buffers of the family this tool
+    /// already uses for the rail voltage ranges, and reports every word carrying one of those
+    /// figures in any plausible unit. A field reading 300 for rail 0 and 120 for rail 1 at the same
+    /// offset is the limit; one reading the same for both is not.
+    ///
+    /// Read-only: three GetXxx calls, no SetControl.
+    /// </summary>
+    public static List<string> HuntRailOcp(PhysicalGPUHandle handle)
+    {
+        var outp = new List<string>();
+        uint mask = ReadRailMask(handle);
+        if (mask == 0) { outp.Add("rail family unavailable (mask 0)"); return outp; }
+        outp.Add($"rail mask = 0x{mask:X8}");
+
+        // Amps as the driver might store them: whole, milli, micro. 1 is the minimum both rails
+        // report, so it marks a range floor sitting beside a ceiling.
+        var wanted = new Dictionary<int, string>();
+        foreach (var (amps, who) in new[] { (300, "NVVDD-max"), (120, "MSVDD-max"), (1, "min") })
+            foreach (var (scale, unit) in new[] { (1, "A"), (1000, "mA"), (1000000, "uA") })
+            {
+                long v = (long)amps * scale;
+                if (v <= int.MaxValue) wanted[(int)v] = $"{amps} {unit} ({who})";
+            }
+
+        void Scan(string label, byte[]? buf, int entry0, int stride)
+        {
+            if (buf == null) { outp.Add($"  {label}: call failed"); return; }
+            if (entry0 < 0)
+            {
+                for (int off = 0; off + 4 <= buf.Length; off += 4)
+                {
+                    int w = BitConverter.ToInt32(buf, off);
+                    if (wanted.TryGetValue(w, out var tag)) outp.Add($"  {label} +0x{off:X4} = {w}  <- {tag}");
+                }
+                return;
+            }
+            for (int r = 0, slot = 0; r < 32; r++)
+            {
+                if ((mask & (1u << r)) == 0) continue;
+                int b = entry0 + slot * stride;
+                slot++;
+                if (b + stride > buf.Length) break;
+                for (int off = 0; off + 4 <= stride; off += 4)
+                {
+                    int w = BitConverter.ToInt32(buf, b + off);
+                    if (wanted.TryGetValue(w, out var tag))
+                        outp.Add($"  {label} rail {r} +0x{off:X2} = {w}  <- {tag}");
+                }
+            }
+        }
+
+        Scan("info", RailCall(handle, FnVoltRailsGetInfo, VoltRailsInfoSize, mask), -1, 0);
+        Scan("status", RailCall(handle, FnVoltRailsGetStatus, VoltRailsStatusSize, mask), StatusEntries, StatusStride);
+        var ctrl = RailCall(handle, FnVoltRailsGetControl, VoltRailsControlSize, mask);
+        Scan("control", ctrl, ControlEntries, ControlStride);
+
+        // The control entry in full, both rails, so a field that differs between them shows up even
+        // when it carries none of the figures above.
+        if (ctrl != null)
+            for (int r = 0, slot = 0; r < 32; r++)
+            {
+                if ((mask & (1u << r)) == 0) continue;
+                int b = ControlEntries + slot * ControlStride;
+                slot++;
+                if (b + ControlStride > ctrl.Length) break;
+                var words = new List<string>();
+                for (int off = 0; off + 4 <= ControlStride; off += 4)
+                {
+                    int w = BitConverter.ToInt32(ctrl, b + off);
+                    if (w != 0) words.Add($"+0x{off:X2}={w}");
+                }
+                outp.Add($"  control rail {r} non-zero: {(words.Count == 0 ? "(all zero)" : string.Join(" ", words))}");
+            }
+        return outp;
+    }
+
     /// <summary>
     /// Call an entry point with a mask written at each candidate offset, and report what comes back.
     ///
