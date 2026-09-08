@@ -611,9 +611,58 @@ internal static class NvApiPrivate
     // that differ only in a selector - 1 for the core rail, 0x10 for memory - and both call one
     // implementation that reads this family first, checks the requested value against a min and a
     // max, and only then writes.
-    private const uint FnOcpGetControl = 0x8B3E7343;
+    // The write entry point took two goes to identify, and the first answer was wrong in a way worth
+    // recording. Reading HYDRA's initialiser, each id is resolved and its result stored to a global;
+    // the compiler schedules the NEXT id's "mov ecx" before the PREVIOUS result's store, so pairing
+    // a store with the nearest preceding id is off by one. That gave 0xEDCF624E, which the driver
+    // rejects for this struct with INCOMPATIBLE_STRUCT_VERSION. Pairing the store with the call it
+    // actually follows gives 0xAFFC2279, which the driver accepts.
+    private const uint FnOcpGetControl = 0x8B3E7343, FnOcpSetControl = 0xAFFC2279;
     private const int OcpSize = 0x0A4C, OcpVersion = 1, OcpMaskOffset = 0x04, OcpMaskAll = 0x7FFF;
     private const int OcpEntries = 0x1C, OcpStride = 0x28, OcpEntryValue = 0x04;
+
+    /// <summary>The OCP table slots carrying the two rail limits: NVVDD first, then MSVDD.</summary>
+    public const int OcpSlotNvvdd = 13, OcpSlotMsvdd = 14;
+
+    /// <summary>
+    /// Write one OCP channel's limit, in milliamps. Null on success, else the reason.
+    ///
+    /// Read-modify-write against the same buffer the getter fills, which is how HYDRA does it: every
+    /// other channel keeps whatever it already had, so a write to one rail cannot disturb the other.
+    ///
+    /// Measured end to end on a 5070 Ti: NVVDD 300 A -> 290 A read back as 290, and back to 300.
+    /// The driver bounds it to between half the default and 150 % of it and refuses anything outside,
+    /// so the range the caller may offer is not this code's to invent.
+    /// </summary>
+    public static string? WriteOcpLimit(PhysicalGPUHandle handle, int slot, int milliamps)
+    {
+        var fn = Resolve(FnOcpSetControl);
+        if (fn == null) return "the driver does not export the OCP control entry point";
+
+        var buf = Marshal.AllocHGlobal(OcpSize);
+        try
+        {
+            for (int i = 0; i < OcpSize; i += 4) Marshal.WriteInt32(buf, i, 0);
+            Marshal.WriteInt32(buf, 0, OcpSize | (OcpVersion << 16));
+            Marshal.WriteInt32(buf, OcpMaskOffset, OcpMaskAll);
+
+            var get = Resolve(FnOcpGetControl);
+            if (get == null) return "the driver does not export the OCP read entry point";
+            int st;
+            try { st = get(handle.MemoryAddress, buf); }
+            catch (Exception e) { return e.Message; }
+            if (st != 0) return $"reading the OCP limits first: status {st}";
+
+            int at = OcpEntries + slot * OcpStride + OcpEntryValue;
+            if (at + 4 > OcpSize) return $"OCP slot {slot} is outside the struct";
+            Marshal.WriteInt32(buf, at, milliamps);
+
+            try { st = fn(handle.MemoryAddress, buf); }
+            catch (Exception e) { return e.Message; }
+            return st == 0 ? null : $"nvapi 0x{FnOcpSetControl:X8}: status {st}";
+        }
+        finally { Marshal.FreeHGlobal(buf); }
+    }
 
     /// <summary>One OCP channel: its selector, the limit it carries, and the entry's other words.</summary>
     public readonly record struct OcpChannel(int Slot, int Selector, int Value, string Words);

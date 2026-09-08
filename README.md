@@ -375,9 +375,15 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   The layout was read out of HYDRA's own `NVAPI.dll`, whose exported `NvApi_SetCoreOcpLimit` and
   `NvApi_SetMemOcpLimit` are thunks differing only in a selector (1 for core, 0x10 for memory) into
   one implementation; that implementation bounds a write to **half the default at the bottom and
-  150 % of it at the top**, and writes through `0xEDCF624E` with the same struct. The read is in
-  `RochGPU.exe diag` under *OCP current limits*. The write is identified but has not been tried, so
-  there is no control for it yet.
+  150 % of it at the top**. The write goes through `0xAFFC2279` with the same struct, read-modify-
+  write so the other rail is untouched, and it works: measured on a 5070 Ti, NVVDD 300 A -> 290 A
+  read back as 290, then restored to 300, status 0 both ways. The read is in `RochGPU.exe diag`
+  under *OCP current limits*. There is no control for it in the window yet.
+
+  `0xAFFC2279` took two goes to find, and the wrong answer is worth recording: HYDRA's initialiser
+  resolves each id and stores the result to a global, and the compiler schedules the next id's load
+  before the previous result's store — so pairing a store with the nearest preceding id is off by
+  one. That gave `0xEDCF624E`, which the driver rejects for this struct.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card
