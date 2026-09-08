@@ -362,6 +362,21 @@ public sealed class NvApiBackend : IGpuBackend
 
     public GpuTelemetry ReadTelemetry(int gpuIndex)
     {
+        // Measured rail currents. Costs one private call, and only while something is on screen to
+        // show them — the same rule the rest of this method already follows.
+        double[] railAmps = Array.Empty<double>(), railVolts = Array.Empty<double>();
+        try
+        {
+            var rails = NvApiPrivate.ReadPowerRails(Gpu(gpuIndex).Handle);
+            if (rails.Count > 0)
+            {
+                railAmps = rails.Select(r => r.Milliamps / 1000.0).ToArray();
+                railVolts = rails.Select(r => r.Microvolts / 1000000.0).ToArray();
+            }
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+
         var g = Gpu(gpuIndex);
 
         double core = 0, mem = 0;
@@ -482,6 +497,7 @@ public sealed class NvApiBackend : IGpuBackend
             CoreClockMhz = core, MemoryClockMhz = mem,
             TemperatureC = temp, HotSpotC = hotspot, MemoryTemperatureC = memTemp,
             VoltageMv = voltage, PowerPercent = power, PowerWatts = double.IsNaN(watts) ? 0 : watts,
+            RailAmps = railAmps, RailVolts = railVolts,
             NvvddMv = nvvddMv, MsvddMv = msvddMv,
             GpuLoadPercent = load, MemoryLoadPercent = memLoad, MemoryUsedMb = memUsed,
             FanPercent = fanPcts.Count > 0 ? fanPcts.Max() : 0,
@@ -1696,6 +1712,12 @@ public sealed class NvApiBackend : IGpuBackend
         // what it says when handed a version it does not (the driver names the ones it does), and
         // whether an empty answer is the mask trap - a count or controller that has to be filled in
         // before the driver fills anything out.
+        Section("Power rails (read-only)", () =>
+        {
+            foreach (var (slot, ma, uv) in NvApiPrivate.ReadPowerRails(g.Handle))
+                sb.AppendLine($"    slot {slot,2}  {ma / 1000.0,8:0.000} A  {uv / 1000000.0,8:0.000} V  = {ma / 1000.0 * uv / 1000000.0,8:0.00} W");
+        });
+
         Section("OCP current limits (read-only)", () =>
         {
             // Only the one shape that is known good. An earlier version of this section swept sizes

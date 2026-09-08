@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU — Hardware Monitor" Height="900" Width="740" MinWidth="560" MinHeight="360"
+        Title="Roch GPU — Telemetry" Height="900" Width="740" MinWidth="560" MinHeight="360"
         WindowStartupLocation="Manual"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
@@ -51,7 +51,7 @@
             <DockPanel>
                 <Grid DockPanel.Dock="Top">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBlock Text="HARDWARE MONITOR" Style="{StaticResource SectionTitle}"/>
+                    <TextBlock Text="TELEMETRY" Style="{StaticResource SectionTitle}"/>
                 </Grid>
 
                 <!-- Every sensor with its running figures, the way a monitoring tool shows them:

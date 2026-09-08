@@ -200,6 +200,14 @@ public sealed record GpuTelemetry
     public double MsvddMv { get; init; } = double.NaN;
     public double PowerPercent { get; init; }       // % of TDP (0 when the vendor reports watts instead)
     public double PowerWatts { get; init; }         // board power draw; 0 when unavailable
+
+    /// <summary>
+    /// Measured 12 V rail currents, in amps, straight from the card's own power monitor rather than
+    /// divided out of the board watts. Index 0 is the board total; the rest are its supply rails.
+    /// Empty when the family is unavailable.
+    /// </summary>
+    public double[] RailAmps { get; init; } = Array.Empty<double>();
+    public double[] RailVolts { get; init; } = Array.Empty<double>();
     public double GpuLoadPercent { get; init; }
     public double MemoryLoadPercent { get; init; }
     public double MemoryUsedMb { get; init; }

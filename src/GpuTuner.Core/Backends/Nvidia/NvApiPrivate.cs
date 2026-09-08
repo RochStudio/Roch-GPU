@@ -710,7 +710,42 @@ internal static class NvApiPrivate
     // (408322961, 408322967, 408322973, 408322980, 408323022), so it is a timestamp rather than a
     // reading — that much is measured. Pinning the rest needs samples taken under load and matched
     // against known board power, which is an experiment rather than a read.
+    // A 5070 Ti answers with six channels, all on the 12 V side: the board total, the PCIe slot, and
+    // four supply rails. The sub-volt channels mVolt+ also lists - NVVDD output and MSVDD, the ones
+    // an OCP limit actually guards - are NOT in this family's reply at either shape or either count,
+    // so they come from somewhere else and are not decoded here.
     private const uint FnPowerMonitorStatus = 0xF40238EF;
+
+    /// <summary>
+    /// Every channel of the power monitor, decoded. Read-only, at the two shapes HYDRA calls.
+    ///
+    /// Layout established by cross-checking a raw dump against mVolt+'s telemetry on the same card
+    /// at the same idle: current sits at +0x00 in milliamps and voltage at +0x04 in microvolts, and
+    /// the proof is arithmetic rather than resemblance - the first channel reads 1782 mA at
+    /// 11891134 uV, whose product is 21.19 W, which is exactly the 21190 the struct carries at +0x08
+    /// as the board total. A layout that reproduces a number the struct states independently is the
+    /// right layout.
+    /// </summary>
+    public static List<(int Slot, int Milliamps, int Microvolts)> ReadPowerRails(PhysicalGPUHandle handle)
+    {
+        foreach (var (size, entry0, stride) in new[] { (0x059C, 0x28, 0x2C), (0x24D8, 0x5C, 0xD8) })
+        {
+            var w = CallRaw(handle, FnPowerMonitorStatus, size, 1, 0x04, 0x20, out int st);
+            if (st != 0 || w.Length == 0) continue;
+            var outp = new List<(int, int, int)>();
+            for (int slot = 0; slot < 32; slot++)
+            {
+                int b = entry0 + slot * stride;
+                if ((b + stride) / 4 >= w.Length) break;
+                int ma = w[b / 4], uv = w[(b + 4) / 4];
+                if (ma == 0 && uv == 0) continue;
+                if (ma < 0 || uv < 0) continue;
+                outp.Add((slot, ma, uv));
+            }
+            if (outp.Count > 0) return outp;
+        }
+        return new List<(int, int, int)>();
+    }
 
     /// <summary>One reading: the channel it came from, its two type words, and the value.</summary>
     public readonly record struct PowerChannel(int Slot, int TypeA, int TypeB, long Value, string Words);

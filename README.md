@@ -23,9 +23,9 @@ command and you get the CLI. Nothing to install — no .NET runtime, no DLLs bes
 
 **NVIDIA** — the full set, with the rails and crossbar behind XOC and the V/F curve editor.
 
-| Main window | Extreme OC (XOC) | Hardware monitor |
+| Main window | Extreme OC (XOC) | Telemetry |
 |---|---|---|
-| <img src="assets/screenshots/main.png" alt="Main window on an NVIDIA card" width="230"> | <img src="assets/screenshots/xoc.png" alt="Extreme OC window" width="250"> | <img src="assets/screenshots/monitor.png" alt="Hardware monitor" width="290"> |
+| <img src="assets/screenshots/main.png" alt="Main window on an NVIDIA card" width="230"> | <img src="assets/screenshots/xoc.png" alt="Extreme OC window" width="250"> | <img src="assets/screenshots/monitor.png" alt="Telemetry" width="290"> |
 
 <img src="assets/screenshots/fan.png" alt="Fan control" width="480">
 
@@ -36,9 +36,9 @@ the card reports, so it comes out differently: a voltage *offset* rather than a 
 memory clock rather than a delta, plus memory timing and zero RPM. XOC and the curve editor are
 missing entirely because RDNA 4 exposes neither — hidden rather than shown greyed out.
 
-| Main window | Hardware monitor |
+| Main window | Telemetry |
 |---|---|
-| <img src="assets/screenshots/amd-main.png" alt="Main window on an RX 9070 XT" width="230"> | <img src="assets/screenshots/amd-monitor.png" alt="Hardware monitor on an RX 9070 XT" width="330"> |
+| <img src="assets/screenshots/amd-main.png" alt="Main window on an RX 9070 XT" width="230"> | <img src="assets/screenshots/amd-monitor.png" alt="Telemetry on an RX 9070 XT" width="330"> |
 
 ---
 
@@ -75,7 +75,7 @@ showing everything greyed out.
 | NVVDD / MSVDD OCP | over-current limit, A — Blackwell | — |
 | SYS clock | offset, MHz | — |
 | Video clock | offset, MHz | — |
-| HUBCLK, DISPCLK, L2CLK, reference | read-only, in the monitor | — |
+| HUBCLK, DISPCLK, L2CLK, reference | read-only, in telemetry | — |
 | Power limit | % of TDP | % offset |
 | Temperature limit | ✓ | driver-owned, hidden |
 | Fan | a duty per fan, or a software curve | one duty, or a hardware curve |
@@ -85,17 +85,16 @@ showing everything greyed out.
 Fan control is its own window too — a duty per fan, or a curve — and applying there saves the fan
 settings into the active profile slot, so what you set is what comes back at logon.
 
-The monitor also carries **12 V input current**, derived from board draw. That is what the card
-pulls through the connector and the slot; it is not the per-rail current the OCP limits guard, which
-sits after the VRM at about a volt and runs to hundreds of amps. The private family that reports the
-per-rail figures answers, but which of its fields is current is not established — see Known
-Limitations.
+The telemetry window also carries **measured rail current** — six 12 V channels straight from the
+card's own power monitor, the first being the board total. Measured, not divided out of the board
+watts. These are not the current an OCP limit guards: those rails sit after the VRM at about a volt,
+and this family does not report them — see Known Limitations.
 
-Plus a hardware monitor in its own window — a table of every sensor the card reports, with
+Plus a telemetry window — a table of every sensor the card reports, with
 its current, minimum, maximum and running average, grouped and foldable — five profile slots,
 apply-at-logon, tray operation and the CLI.
 
-Nothing polls the driver unless a window is showing live readings — the monitor, or the fan window
+Nothing polls the driver unless a window is showing live readings — telemetry, or the fan window
 with its per-fan RPM. Close both and there is no driver call at all, so the main window can sit on a
 second screen costing nothing while you play.
 
@@ -385,14 +384,14 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   than clamps, so HYDRA's 150 % cannot be landing through this call either; whatever its driver
   restart is for, it is not this. `RochGPU.exe diag` prints the read-only probe under *Policy
   shapes*.
-- **Per-rail current is not decoded.** The monitor's 12 V input current is board draw divided by
-  12, which is honest but is not the current an OCP limit guards. The family that reports the real
-  per-rail figures — `0xF40238EF`, the one HYDRA uses for its rail snapshots — answers on both the
-  shapes HYDRA calls it with (0x59C and 0x24D8, version 1), and a 5070 Ti fills five entries at 0x28
-  on a 0x2C stride. Which field is amps is not established: the large word at +0x08 climbs steadily
-  between back-to-back calls, so that one is a timestamp rather than a reading, and the rest need
-  samples taken under load and matched against known board power before any of them goes on screen
-  next to real numbers.
+- **The sub-volt rail currents are not readable, so the OCP limits have no live figure beside them.**
+  The power monitor family (`0xF40238EF`) is decoded — current at +0x00 in milliamps, voltage at
+  +0x04 in microvolts, confirmed because the first channel's product reproduces the board total the
+  struct states separately — and a 5070 Ti answers with **six channels, all on the 12 V side**. The
+  ones an OCP limit actually guards, NVVDD output and MSVDD at about 0.8 V, are not in that reply at
+  either struct shape or any channel count tried. mVolt+ shows them, so they exist somewhere this
+  tool has not found. Until they are, the OCP sliders carry a limit with no live current to compare
+  it against.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card

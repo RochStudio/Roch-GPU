@@ -140,12 +140,18 @@ public sealed class TelemetryTable
 
         Group("Power");
         if (first.PowerWatts > 0) Sensor("watts", "Board draw", "W", 1);
-        // Input current on the 12 V side, from the board draw. Derived rather than measured, which
-        // is why it says "12 V input" and not just "current": it is what the card pulls through the
-        // connector and the slot, and it is NOT the per-rail current the OCP limits guard — those
-        // sit after the VRM, at about a volt, and run to hundreds of amps.
-        if (first.PowerWatts > 0) Sensor("amps12v", "12 V input current", "A", 1);
         Sensor("tdp", "Total, % of TDP", "%", 1);
+
+        // Measured 12 V rail currents, straight from the card's power monitor. Index 0 is the board
+        // total; the rest are the supply rails behind it, named by their voltage since the driver
+        // gives no names. These are NOT the current an OCP limit guards — those rails sit after the
+        // VRM at about a volt, and this family does not report them.
+        if (first.RailAmps.Length > 0)
+        {
+            Group("Rail current");
+            for (int i = 0; i < first.RailAmps.Length; i++)
+                Sensor($"railA{i}", i == 0 ? "Board total" : $"Rail {i}", "A", 2);
+        }
 
         Group("Fans");
         int fans = Math.Max(first.FanRpms.Length, 1);
@@ -189,7 +195,7 @@ public sealed class TelemetryTable
         Put("load", t.GpuLoadPercent);
         Put("memload", t.MemoryLoadPercent);
         Put("watts", t.PowerWatts);
-        Put("amps12v", t.PowerWatts / 12.0);
+        for (int i = 0; i < t.RailAmps.Length; i++) Put($"railA{i}", t.RailAmps[i]);
         Put("tdp", t.PowerPercent);
         Put("memused", t.MemoryUsedMb);
 
