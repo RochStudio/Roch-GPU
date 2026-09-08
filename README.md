@@ -85,9 +85,9 @@ showing everything greyed out.
 Fan control is its own window too — a duty per fan, or a curve — and applying there saves the fan
 settings into the active profile slot, so what you set is what comes back at logon.
 
-The telemetry window also carries **measured rail current** — six 12 V channels straight from the
-card's own power monitor: board total, PCIe slot, NVVDD input and three the driver names only by
-number. Measured, not divided out of the board watts. The names are positional, worked out by
+The telemetry window also carries **measured rail current** — seven 12 V channels straight from the
+card's own power monitor: board total, PCIe slot, NVVDD input, Misc0 input and three the driver
+names only by number. Measured, not divided out of the board watts. The names are positional, worked out by
 running mVolt+ against the same card under the same load and matching all six currents at once; a
 card reporting a different set is numbered plainly rather than given names from other hardware. These are not the current an OCP limit guards: those rails sit after the VRM at about a volt,
 and this family does not report them — see Known Limitations.
@@ -389,16 +389,20 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
 - **The sub-volt rail currents are not readable, so the OCP limits have no live figure beside them.**
   The power monitor family (`0xF40238EF`) is decoded — current at +0x00 in milliamps, voltage at
   +0x04 in microvolts — and checked against mVolt+ reading the same card under the same load, where
-  all six channels line up one for one: board total 25.75 A against its 26.375, PCIe 12V 0.58
-  against 0.585, and the rest within a few per cent. The word at +0x04 is a **bitmask, not a count**:
-  0x18 returns five channels, 0x20 returns six, and anything from 0xFF up is refused. Six is all
-  this driver gives, and all six are on the 12 V side.
+  every channel lines up one for one: board total 25.75 A against its 26.375, PCIe 12V 0.58
+  against 0.585, and the rest within a few per cent. The word at +0x04 is a **bitmask, not a count**,
+  and **bit 6 is invalid** — every mask containing it is refused (0x40, 0x7F, 0xFF all fail; 0x3F and
+  0x80 both work), which made the family look six wide until that was spotted. `0xBF` is every valid
+  bit and yields **seven** channels; bits from 8 up are refused, so seven is all there is, and all
+  seven are on the 12 V side.
 
   The channels an OCP limit actually guards — NVVDD output and MSVDD at about 1.05 V, which reach
   **286 A** under load against a 300 A limit — are in neither that family nor the ADC family, whose
-  entries carry a voltage and no current. mVolt+ displays them, so they are reachable somehow; not
-  from here, and not by guessing. Until they are found, the OCP sliders set a limit with no live
-  current to compare against.
+  entries carry a voltage and no current. Nor is HYDRA a way in: its exported
+  `NvApi_GetPowerRailSnapshot` compiles to the same implementation calling these same two ids, so it
+  sees the same seven. mVolt+ shows twelve and keeps no plaintext entry points, so unlike HYDRA there
+  is no binary to read the answer out of. Until that changes, the OCP sliders set a limit with no
+  live current to compare against.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card
