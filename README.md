@@ -108,7 +108,7 @@ showing everything greyed out.
 | MSVDD rail | floor and ceiling, mV — Blackwell only | — |
 | Measured rail voltages | NVVDD and MSVDD, mV | — |
 | XBAR clock | offset, MHz — writable on Blackwell only | — |
-| Clock range | pin the graphics clock to a min/max window | — |
+| Clock range | pin the graphics clock to a min/max window, bounds from the driver | — |
 | NVVDD / MSVDD OCP | over-current limit, A — Blackwell | — |
 | SYS clock | offset, MHz | — |
 | Video clock | offset, MHz | — |
@@ -300,7 +300,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 That builds, tests and publishes `dist\RochGPU.exe`. If you don't have the SDK, `SETUP.bat` does the
 lot in one double-click.
 
-**Tests:** `dotnet run --project tests/GpuTuner.Core.Tests -c Release` → `283 passed, 0 failed`. The
+**Tests:** `dotnet run --project tests/GpuTuner.Core.Tests -c Release` → `286 passed, 0 failed`. The
 runner is dependency-free — the whole project has no NuGet packages at all — so most of the engine
 can be changed without a GPU in front of you.
 
@@ -490,7 +490,7 @@ setup.ps1                  as above, plus SDK install and launch (driven by SETU
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
 src/GpuTuner.App           the executable — WPF window, and the entry point that picks a half
 src/GpuTuner.Cli           the command-line half, compiled into the same executable
-tests/GpuTuner.Core.Tests  dependency-free test runner (283 checks, no hardware needed)
+tests/GpuTuner.Core.Tests  dependency-free test runner (286 checks, no hardware needed)
 tools/amd                  read-only PowerShell probes used to map the AMD driver surface
 .github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md

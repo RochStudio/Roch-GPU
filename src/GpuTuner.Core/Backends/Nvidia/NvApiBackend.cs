@@ -1801,11 +1801,6 @@ public sealed class NvApiBackend : IGpuBackend
                 sb.AppendLine($"    slot {c.Slot,2} selector={c.Selector,-6} value={c.Value,-8} {c.Words}");
         });
 
-        Section("Rail OCP hunt (read-only)", () =>
-        {
-            foreach (var line in NvApiPrivate.HuntRailOcp(g.Handle)) sb.AppendLine("  " + line);
-        });
-
         Section("Policy shapes (thermal + power, read-only)", () =>
         {
             var points = new (string Name, uint Id)[]
@@ -2106,6 +2101,16 @@ public sealed class NvApiBackend : IGpuBackend
                 if (slots[i] != 0) sb.AppendLine($"  slot[{i,2}] = {slots[i]:0.0} °C");
             var (hs, mj) = NvApiPrivate.Interpret(_devices[gpuIndex].Name, slots);
             sb.AppendLine($"  -> interpreted hotspot={hs:0.0}  memory={mj:0.0}");
+        });
+
+        // The README says this prints all eight of the v3 struct's channels, so it had better: the
+        // point of printing them is that a card populating more than this one's two will show it.
+        Section("Private thermal channels (v3 struct, all eight)", () =>
+        {
+            var chans = NvApiPrivate.ReadThermalChannels(g.Handle);
+            if (chans.Count == 0) { sb.AppendLine("  (v3 struct not accepted by this driver)"); return; }
+            foreach (var c in chans)
+                sb.AppendLine($"  slot {c.Slot}  type={c.Type,-4} {(c.Present ? $"{c.Celsius:0.0} °C" : "absent (255 °C marker)")}");
         });
 
         Section("Private thermal shapes (version x mask -> live slots)", () =>
