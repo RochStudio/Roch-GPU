@@ -85,6 +85,12 @@ showing everything greyed out.
 Fan control is its own window too — a duty per fan, or a curve — and applying there saves the fan
 settings into the active profile slot, so what you set is what comes back at logon.
 
+The monitor also carries **12 V input current**, derived from board draw. That is what the card
+pulls through the connector and the slot; it is not the per-rail current the OCP limits guard, which
+sits after the VRM at about a volt and runs to hundreds of amps. The private family that reports the
+per-rail figures answers, but which of its fields is current is not established — see Known
+Limitations.
+
 Plus a hardware monitor in its own window — a table of every sensor the card reports, with
 its current, minimum, maximum and running average, grouped and foldable — five profile slots,
 apply-at-logon, tray operation and the CLI.
@@ -379,6 +385,14 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   than clamps, so HYDRA's 150 % cannot be landing through this call either; whatever its driver
   restart is for, it is not this. `RochGPU.exe diag` prints the read-only probe under *Policy
   shapes*.
+- **Per-rail current is not decoded.** The monitor's 12 V input current is board draw divided by
+  12, which is honest but is not the current an OCP limit guards. The family that reports the real
+  per-rail figures — `0xF40238EF`, the one HYDRA uses for its rail snapshots — answers on both the
+  shapes HYDRA calls it with (0x59C and 0x24D8, version 1), and a 5070 Ti fills five entries at 0x28
+  on a 0x2C stride. Which field is amps is not established: the large word at +0x08 climbs steadily
+  between back-to-back calls, so that one is a timestamp rather than a reading, and the rest need
+  samples taken under load and matched against known board power before any of them goes on screen
+  next to real numbers.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card

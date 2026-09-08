@@ -545,10 +545,10 @@ internal static class NvApiPrivate
     {
         var fn = Resolve(id);
         if (fn == null) return null;
-        var buf = Marshal.AllocHGlobal(size);
+        var buf = Marshal.AllocHGlobal(size + CallSlack);
         try
         {
-            for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+            for (int i = 0; i < size + CallSlack; i += 4) Marshal.WriteInt32(buf, i, 0);
             Marshal.WriteInt32(buf, 0, size | (VoltRailsVersion << 16));
             if (mask != 0) Marshal.WriteInt32(buf, RailMaskOffset, unchecked((int)mask));
             int status;
@@ -639,10 +639,10 @@ internal static class NvApiPrivate
         var fn = Resolve(FnOcpSetControl);
         if (fn == null) return "the driver does not export the OCP control entry point";
 
-        var buf = Marshal.AllocHGlobal(OcpSize);
+        var buf = Marshal.AllocHGlobal(OcpSize + CallSlack);
         try
         {
-            for (int i = 0; i < OcpSize; i += 4) Marshal.WriteInt32(buf, i, 0);
+            for (int i = 0; i < OcpSize + CallSlack; i += 4) Marshal.WriteInt32(buf, i, 0);
             Marshal.WriteInt32(buf, 0, OcpSize | (OcpVersion << 16));
             Marshal.WriteInt32(buf, OcpMaskOffset, OcpMaskAll);
 
@@ -691,6 +691,63 @@ internal static class NvApiPrivate
             }
             if (words.Count == 0) continue;
             outp.Add(new OcpChannel(slot, w[b / 4], w[(b + OcpEntryValue) / 4], string.Join(" ", words)));
+        }
+        return outp;
+    }
+
+    // ---- power monitor: per-channel readings ---------------------------------------------------
+    //
+    // The family HYDRA calls for its rail snapshots. Two shapes, tried in the order it tries them:
+    // the short one first, the long one when the driver refuses it. Both sizes and both versions
+    // come from HYDRA's own call sites rather than from a sweep — sweeping sizes at this family is
+    // what corrupted the heap twice while the OCP limits were being found.
+    // What a 5070 Ti returns, probed at both shapes: the short one fills five entries at 0x28 on a
+    // 0x2C stride, each with a small number at +0x00, a near-constant ~11.9M at +0x04, a large
+    // varying word at +0x08 and another small one at +0x20. The long shape fills more of the same.
+    //
+    // Which of those is current is NOT established, and guessing would put a made-up number on
+    // screen next to real ones. The +0x08 word climbs steadily between back-to-back calls
+    // (408322961, 408322967, 408322973, 408322980, 408323022), so it is a timestamp rather than a
+    // reading — that much is measured. Pinning the rest needs samples taken under load and matched
+    // against known board power, which is an experiment rather than a read.
+    private const uint FnPowerMonitorStatus = 0xF40238EF;
+
+    /// <summary>One reading: the channel it came from, its two type words, and the value.</summary>
+    public readonly record struct PowerChannel(int Slot, int TypeA, int TypeB, long Value, string Words);
+
+    /// <summary>
+    /// Read the power monitor's channels. Empty when the family is unavailable.
+    ///
+    /// Layout per shape, as HYDRA parses it: entries start at 0x28 on a 0x2C stride in the short
+    /// struct, and at 0x5C on a 0xD8 stride in the long one. Within an entry, two type words then a
+    /// 64-bit reading; a channel whose words are 0xFF/0x108 is the driver's "nothing here".
+    /// </summary>
+    public static List<PowerChannel> ReadPowerChannels(PhysicalGPUHandle handle)
+    {
+        var outp = new List<PowerChannel>();
+        foreach (var (size, entry0, stride) in new[] { (0x059C, 0x28, 0x2C), (0x24D8, 0x5C, 0xD8) })
+        {
+            var w = CallRaw(handle, FnPowerMonitorStatus, size, 1, 0x04, 0x7FFF, out int st);
+            if (st != 0 || w.Length == 0) continue;
+
+            for (int slot = 0; slot < 32; slot++)
+            {
+                int b = entry0 + slot * stride;
+                if ((b + stride) / 4 >= w.Length) break;
+                int a = w[b / 4], bb = w[(b + 4) / 4];
+                if (a < 0 || bb < 0) continue;
+                if (a == 0xFF && bb == 0x108) continue;          // the driver's empty marker
+                long val = (uint)w[(b + 8) / 4] | ((long)w[(b + 12) / 4] << 32);
+                var words = new List<string>();
+                for (int off = 0; off < Math.Min(stride, 0x20); off += 4)
+                {
+                    int v = w[(b + off) / 4];
+                    if (v != 0) words.Add($"+0x{off:X2}={v}");
+                }
+                if (a == 0 && bb == 0 && val == 0) continue;
+                outp.Add(new PowerChannel(slot, a, bb, val, string.Join(" ", words)));
+            }
+            if (outp.Count > 0) return outp;
         }
         return outp;
     }
@@ -881,6 +938,20 @@ internal static class NvApiPrivate
         finally { Marshal.FreeHGlobal(buf); }
     }
 
+    /// <summary>
+    /// Slack allocated past the end of every private-call buffer.
+    ///
+    /// These structures are described by a size we worked out, not by a header anyone published. Get
+    /// that size too small and the driver writes past the end of the allocation, which corrupts the
+    /// heap and kills the process later, somewhere else entirely, with an access violation that says
+    /// nothing about where it came from. That happened twice while the OCP family was being found.
+    ///
+    /// The version word still carries the size we mean, so the driver's behaviour is unchanged; this
+    /// only decides how much room a wrong guess has to be wrong in. Cheap insurance against the one
+    /// bug in this file that cannot be debugged from its symptom.
+    /// </summary>
+    private const int CallSlack = 8192;
+
     /// <summary>One call with an explicit shape and mask; returns the buffer as words.</summary>
     public static int[] CallRaw(PhysicalGPUHandle handle, uint id, int size, int version,
                                 int maskOffset, uint mask, out int status)
@@ -889,10 +960,10 @@ internal static class NvApiPrivate
         var ptr = QueryInterface64(id);
         if (ptr == IntPtr.Zero) return Array.Empty<int>();
         var fn = Marshal.GetDelegateForFunctionPointer<RawDelegate>(ptr);
-        var buf = Marshal.AllocHGlobal(size);
+        var buf = Marshal.AllocHGlobal(size + CallSlack);
         try
         {
-            for (int i = 0; i < size; i += 4) Marshal.WriteInt32(buf, i, 0);
+            for (int i = 0; i < size + CallSlack; i += 4) Marshal.WriteInt32(buf, i, 0);
             Marshal.WriteInt32(buf, 0, size | (version << 16));
             if (maskOffset >= 0 && maskOffset + 4 <= size) Marshal.WriteInt32(buf, maskOffset, unchecked((int)mask));
             try { status = fn(handle.MemoryAddress, buf); }

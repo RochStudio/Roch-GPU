@@ -140,6 +140,11 @@ public sealed class TelemetryTable
 
         Group("Power");
         if (first.PowerWatts > 0) Sensor("watts", "Board draw", "W", 1);
+        // Input current on the 12 V side, from the board draw. Derived rather than measured, which
+        // is why it says "12 V input" and not just "current": it is what the card pulls through the
+        // connector and the slot, and it is NOT the per-rail current the OCP limits guard — those
+        // sit after the VRM, at about a volt, and run to hundreds of amps.
+        if (first.PowerWatts > 0) Sensor("amps12v", "12 V input current", "A", 1);
         Sensor("tdp", "Total, % of TDP", "%", 1);
 
         Group("Fans");
@@ -184,6 +189,7 @@ public sealed class TelemetryTable
         Put("load", t.GpuLoadPercent);
         Put("memload", t.MemoryLoadPercent);
         Put("watts", t.PowerWatts);
+        Put("amps12v", t.PowerWatts / 12.0);
         Put("tdp", t.PowerPercent);
         Put("memused", t.MemoryUsedMb);
 
