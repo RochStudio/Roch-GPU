@@ -217,7 +217,7 @@
                             <Button Content="XOC" Click="Xoc_Click" Padding="10,4" Margin="0,0,0,7"
                                     HorizontalAlignment="Stretch" FontWeight="SemiBold"
                                     Visibility="{Binding HasXoc, Converter={StaticResource BoolToVis}}"
-                                    ToolTip="Extreme OC: rail ranges, the crossbar, SYS and video clocks, and the clock range"/>
+                                    ToolTip="XOC: rail ranges, the OCP current limits, the crossbar, SYS and video clocks, and the clock range"/>
                             <Button Content="Fan" Click="Fan_Click" Padding="10,4" Margin="0,0,0,7"
                                     HorizontalAlignment="Stretch" FontWeight="SemiBold"
                                     IsEnabled="{Binding Caps.CanSetFanSpeed}"

@@ -15,7 +15,7 @@ Two things make it different from the usual:
 - **It asks the card what it can do instead of assuming.** Every range on screen is one the driver
   reported, and a control for something your card does not have is hidden rather than greyed out. A
   5070 Ti and an RX 9070 XT open to visibly different windows from the same binary.
-- **It goes further than the public API allows.** Behind an *Extreme OC* gate sit the NVVDD and
+- **It goes further than the public API allows.** Behind an *XOC* gate sit the NVVDD and
   MSVDD rail ranges, their over-current limits in amps, and the crossbar, SYS and video clock
   domains — private driver families that no public NVAPI call exposes. Each is armed on its own and
   off by default.
@@ -26,7 +26,7 @@ program** — run it with nothing for the window, with a command for the CLI. No
 .NET runtime, no DLLs beside it.
 
 > **Read this first.** Writing clocks and voltages to a GPU can crash the machine, corrupt work in
-> progress, and in the extreme damage hardware. The Extreme OC levers can brown a card out rather
+> progress, and in the extreme damage hardware. The XOC levers can brown a card out rather
 > than merely fail. See [the warning](#a-word-of-warning) before using it.
 
 ---
@@ -60,9 +60,9 @@ values. That is the first thing to try, and it is always safe.
 
 **NVIDIA** — the full set, with the rails and crossbar behind XOC and the V/F curve editor.
 
-| Main window | Extreme OC (XOC) | Telemetry |
+| Main window | XOC | Telemetry |
 |---|---|---|
-| <img src="assets/screenshots/main.png" alt="Main window on an NVIDIA card" width="230"> | <img src="assets/screenshots/xoc.png" alt="Extreme OC window" width="250"> | <img src="assets/screenshots/monitor.png" alt="Telemetry" width="290"> |
+| <img src="assets/screenshots/main.png" alt="Main window on an NVIDIA card" width="230"> | <img src="assets/screenshots/xoc.png" alt="XOC window" width="250"> | <img src="assets/screenshots/monitor.png" alt="Telemetry" width="290"> |
 
 <img src="assets/screenshots/fan.png" alt="Fan control" width="480">
 
@@ -194,7 +194,7 @@ naming the mode you are not in. It switches everything already on screen, includ
 Windows draws rather than WPF, and the choice is remembered. The palette and the font (Consolas) are
 [Roch Viewer](https://github.com/RochStudio/Roch-Viewer)'s, value for value.
 
-### Extreme OC (XOC)
+### XOC
 
 The **XOC** button holds the levers that can brown a card out rather than merely fail: the NVVDD and
 MSVDD rail ranges, the two OCP current limits, the crossbar, SYS and video clocks, and the clock
