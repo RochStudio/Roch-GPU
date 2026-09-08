@@ -39,9 +39,15 @@
             </StackPanel>
         </Border>
 
+        <!-- One warning for the window rather than a paragraph per lever. The old note explained the
+             rails and the clock domains and had nothing to say about the OCP limits added since,
+             which are the ones that need saying most: everything else here is performance, and those
+             two are protection. -->
         <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="10,7" Margin="0,8,0,0">
-            <TextBlock Style="{StaticResource Muted}" TextWrapping="Wrap"
-                       Text="Rail ceilings raise the voltage the whole card runs at, and the crossbar, SYS and video clocks are undocumented domains with no driver-side sanity check. Arm one at a time, in small steps, and test between each. Nothing here survives a reboot."/>
+            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource WarnBrush}" FontSize="11.5">
+                <Run FontWeight="Bold" Text="These can damage hardware, not just crash it."/>
+                <Run Text="Nothing here is sanity-checked by the driver, and raising an OCP limit takes away the card's own protection. Arm one at a time and test between each. Nothing here survives a reboot."/>
+            </TextBlock>
         </Border>
 
         <Border Style="{StaticResource Panel}" Padding="12,10">
