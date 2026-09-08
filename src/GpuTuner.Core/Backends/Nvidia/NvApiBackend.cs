@@ -1653,6 +1653,44 @@ public sealed class NvApiBackend : IGpuBackend
                 sb.AppendLine($"  status ctrl={p.Controller} pstate={p.PerformanceStateId} target={p.TargetTemperature}");
         });
 
+        // The thermal policy family comes back empty on Blackwell through the wrapper's v2 structs,
+        // which is the same shape the thermal *sensor* family had before its v3 was found. This asks
+        // each policy entry point three things, all read-only: which sizes and versions it accepts,
+        // what it says when handed a version it does not (the driver names the ones it does), and
+        // whether an empty answer is the mask trap - a count or controller that has to be filled in
+        // before the driver fills anything out.
+        Section("Policy shapes (thermal + power, read-only)", () =>
+        {
+            var points = new (string Name, uint Id)[]
+            {
+                ("ClientThermalPoliciesGetInfo",  0x0D258BB5),
+                ("ClientThermalPoliciesGetLimit", 0xE9C425A1),
+                ("ClientPowerPoliciesGetInfo",    0x34206D86),
+                ("ClientPowerPoliciesGetStatus",  0x70916171),
+            };
+            foreach (var (name, id) in points)
+            {
+                sb.AppendLine($"  {name} (0x{id:X8}) exported={NvApiPrivate.Exposes(id)}");
+                // The driver's own list of accepted versions, from a version it cannot accept.
+                NvApiPrivate.CallRaw(g.Handle, id, 0x400, 9, -1, 0, out int bad);
+                string msg = bad == -1 ? "(not called)" : GeneralApi.GetErrorMessage((NvAPIWrapper.Native.General.Status)bad) ?? "";
+                sb.AppendLine($"      version 9 -> status={bad}  \"{msg}\"");
+                foreach (var (size, version, words) in NvApiPrivate.SweepShapes(g.Handle, id, 0x08, 0x400, new[] { 1, 2, 3, 4 }))
+                    sb.AppendLine($"      accepted size=0x{size:X3} ver={version}  {words}");
+                // Mask trap: pre-fill the count word (and, for status, the first entry's pstate) and
+                // see whether the driver now returns entries it withheld from an all-zero struct.
+                foreach (int ver in new[] { 1, 2, 3 })
+                    foreach (int size in new[] { 0x38, 0x58, 0x88, 0xB8, 0x100 })
+                        foreach (uint pre in new uint[] { 1, 4, 0xFF })
+                        {
+                            var w = NvApiPrivate.CallRaw(g.Handle, id, size, ver, 4, pre, out int st);
+                            if (st != 0 || w.Length == 0) continue;
+                            var nz = string.Join(" ", Enumerable.Range(2, w.Length - 2).Where(i => w[i] != 0).Take(12).Select(i => $"+0x{i * 4:X3}={w[i]}"));
+                            if (nz.Length > 0) sb.AppendLine($"      prefill count={pre} size=0x{size:X3} ver={ver}  {nz}");
+                        }
+            }
+        });
+
         Section("Domain control blocks (looking for a per-point crossbar table)", () =>
         {
             foreach (int slot in new[] { NvApiPrivate.SlotCore, NvApiPrivate.SlotXbar,

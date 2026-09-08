@@ -349,6 +349,20 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   HYDRA's own saved profile has that array all-zero, so it has never written one either.
   `RochGPU.exe diag` prints all four domain blocks and info entries, so a card that does carry a
   table will show it as a long run.
+- **No temperature limit on Blackwell, and the power limit's ceiling is the driver's own.** HYDRA
+  offers a 90 °C limit and power to 150 %; on a 5070 Ti neither is something the driver will
+  discuss. The thermal policy family answers both of its entry points (`ClientThermalPoliciesGetInfo`
+  and `GetLimit`) with zero policies, in both struct versions it accepts (v1 and v2 — it refuses
+  anything newer, with no list of alternatives), and pre-filling the count does not change that, so
+  it is not the mask trap. HYDRA's native helper embeds only the *Set* entry point for that family
+  and none of the reads: it writes a limit blind, with the same v2 struct, and never asks whether
+  there was a policy to write to. Power is the same shape one step over — the info struct reports
+  83.3 / 100 / 116.7 % and accepts only v1, so there is no newer version carrying a bigger number,
+  while HYDRA embeds only `SetStatus` and pairs it with `NvAPI_RestartDisplayDriver`. Whether a
+  write past the reported maximum lands, clamps, or is refused has not been tried here, because it
+  is a write. `RochGPU.exe diag` prints the probe under *Policy shapes*. The core and memory OCP
+  current limits HYDRA exposes are a private family whose entry points are not in any id list this
+  tool has.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card
