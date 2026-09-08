@@ -1583,7 +1583,7 @@ public sealed class NvApiBackend : IGpuBackend
     /// </summary>
     public static string PowerRailName(int index, int total)
     {
-        string[] known = { "Board total", "PCIe slot 12 V", "Rail 218", "Rail 214", "NVVDD input", "Rail 212" };
+        string[] known = { "Board total", "PCIe slot 12 V", "Rail 218", "Rail 214", "NVVDD input", "Rail 212", "Misc0 input" };
         return total == known.Length && index >= 0 && index < known.Length ? known[index] : $"Rail {index}";
     }
 

@@ -710,18 +710,23 @@ internal static class NvApiPrivate
     // (408322961, 408322967, 408322973, 408322980, 408323022), so it is a timestamp rather than a
     // reading — that much is measured. Pinning the rest needs samples taken under load and matched
     // against known board power, which is an experiment rather than a read.
-    // A 5070 Ti answers with six channels, all on the 12 V side. Checked against mVolt+ reading the
-    // same card under the same load, they line up one for one: board total 25.75 A against its
-    // 26.375, then PCIe 12V 0.58/0.585, and its rails 218, 214, NVVDD-input and 212 at 25.17/25.790,
+    // Seven channels on a 5070 Ti, all on the 12 V side. Checked against mVolt+ reading the same card
+    // under the same load across six paired samples, they line up one for one: board total 25.75 A
+    // against its 26.375, PCIe 0.58/0.585, and rails 218, 214, NVVDD-input and 212 at 25.17/25.790,
     // 15.97/16.356, 9.90/10.142 and 6.07/6.214.
     //
-    // The word at +0x04 is a bitmask, not a count: 0x18 returns five channels and 0x20 six, while
-    // anything from 0xFF up is refused outright. Six is all this driver will give.
+    // The word at +0x04 is a bitmask, not a count, and bit 6 is invalid: every mask containing it is
+    // refused (0x40, 0x7F, 0xFF, 0xFE all fail; 0x3F and 0x80 both work), which is what made the
+    // family look six wide for a while. 0xBF - every valid bit - is the whole of it, and bits from 8
+    // up are refused too, so seven channels is all there is.
     //
     // The sub-volt channels mVolt+ also lists - NVVDD output and MSVDD, the ones an OCP limit
-    // guards, the ones that reach 286 A under load - are in neither this family nor the ADC family,
-    // whose entries carry a voltage and no current. They are reachable somehow, because mVolt+ shows
-    // them; not from here, and not by guessing.
+    // guards, the ones reaching 286 A under load - are not among them, and not in the ADC family
+    // either, whose entries carry a voltage and no current. Nor is HYDRA a way in: its exported
+    // NvApi_GetPowerRailSnapshot compiles to this same implementation, calling these same two ids,
+    // so it sees the same seven. mVolt+ shows twelve and keeps no plaintext entry points, so
+    // whatever it reads them through is not recoverable from its binary the way HYDRA's was.
+    private const uint PowerChannelMask = 0xBF;
     private const uint FnPowerMonitorStatus = 0xF40238EF;
 
     /// <summary>
@@ -738,7 +743,7 @@ internal static class NvApiPrivate
     {
         foreach (var (size, entry0, stride) in new[] { (0x059C, 0x28, 0x2C), (0x24D8, 0x5C, 0xD8) })
         {
-            var w = CallRaw(handle, FnPowerMonitorStatus, size, 1, 0x04, 0x20, out int st);
+            var w = CallRaw(handle, FnPowerMonitorStatus, size, 1, 0x04, PowerChannelMask, out int st);
             if (st != 0 || w.Length == 0) continue;
             var outp = new List<(int, int, int)>();
             for (int slot = 0; slot < 32; slot++)
