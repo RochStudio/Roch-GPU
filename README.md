@@ -364,9 +364,20 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   116 667, while 116 667 itself is accepted (status 0) as the control. The driver refuses rather
   than clamps, so HYDRA's 150 % cannot be landing through this call either; whatever its driver
   restart is for, it is not this. `RochGPU.exe diag` prints the read-only probe under *Policy
-  shapes*. The core and memory OCP
-  current limits HYDRA exposes are a private family whose entry points are not in any id list this
-  tool has.
+  shapes*.
+- **The OCP current limits are readable, and writing them is not wired up yet.** mVolt+ and HYDRA
+  both expose a per-rail over-current limit in amps; this tool can now read it. It is not the
+  voltage-rail family, which was the obvious guess and carries no such field — established by
+  scanning all three of that family's buffers for the two figures in every plausible unit and
+  finding neither. It is its own family, `0x8B3E7343`, struct 0xA4C version 1, with the mask trap at
+  +0x04 and entries at +0x1C on a 0x28 stride. A 5070 Ti reports 15 channels, two of which carry
+  **300000 and 120000 milliamps** — 300 A and 120 A, exactly what mVolt+ shows for NVVDD and MSVDD.
+  The layout was read out of HYDRA's own `NVAPI.dll`, whose exported `NvApi_SetCoreOcpLimit` and
+  `NvApi_SetMemOcpLimit` are thunks differing only in a selector (1 for core, 0x10 for memory) into
+  one implementation; that implementation bounds a write to **half the default at the bottom and
+  150 % of it at the top**, and writes through `0xEDCF624E` with the same struct. The read is in
+  `RochGPU.exe diag` under *OCP current limits*. The write is identified but has not been tried, so
+  there is no control for it yet.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card
