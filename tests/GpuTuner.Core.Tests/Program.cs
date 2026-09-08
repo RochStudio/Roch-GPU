@@ -873,6 +873,22 @@ Check("OCP max is 150% of stock", OcpBounds.MaxA(300000) == 450);
 Check("OCP window on MSVDD", OcpBounds.MinA(120000) == 60 && OcpBounds.MaxA(120000) == 180);
 Check("OCP window of an absent rail is empty", OcpBounds.MinA(0) == 0 && OcpBounds.MaxA(0) == 0);
 
+// Picking the driver's window: a limit can appear in more than one entry, and the one that runs to
+// many times the limit is the driver declining to constrain it rather than a window worth offering.
+{
+    var ranges = new List<NvApiPrivate.OcpRange>
+    {
+        new(250000, 300000, 350000),     // the real window
+        new(1, 300000, 5001000),         // the same limit, unconstrained
+        new(1, 120000, 5001000),         // a limit with only the unconstrained entry
+    };
+    var core = NvApiPrivate.RangeFor(ranges, 300000);
+    Check("the tight window wins over the unconstrained one",
+          core is { MinMa: 250000, MaxMa: 350000 });
+    Check("a limit with no real window gets none", NvApiPrivate.RangeFor(ranges, 120000) is null);
+    Check("a limit that is not there gets none", NvApiPrivate.RangeFor(ranges, 999000) is null);
+}
+
 // ---- NVML: which failures are worth retrying on a new session
 // The card cannot be reset on demand to test the recovery itself, so what is tested is the decision
 // that drives it: a stale session is retried, a wrong request is not. 999 is in the first group

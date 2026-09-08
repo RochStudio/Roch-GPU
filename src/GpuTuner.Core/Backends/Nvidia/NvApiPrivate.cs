@@ -624,6 +624,8 @@ internal static class NvApiPrivate
     // OCP limit is actually guarding is not there either, and this was the last family that could
     // plausibly have carried it.
     private const uint FnOcpGetControl = 0x8B3E7343, FnOcpSetControl = 0xAFFC2279;
+    private const uint FnOcpGetRanges = 0x67F31384;
+    private const int OcpRangeSize = 0x0A70, OcpRangeVersion = 4;
     private const int OcpSize = 0x0A4C, OcpVersion = 1, OcpMaskOffset = 0x04, OcpMaskAll = 0x7FFF;
     private const int OcpEntries = 0x1C, OcpStride = 0x28, OcpEntryValue = 0x04;
 
@@ -764,6 +766,60 @@ internal static class NvApiPrivate
             if (outp.Count > 0) return outp;
         }
         return new List<(int, int, int)>();
+    }
+
+    /// <summary>One OCP channel's range, in milliamps.</summary>
+    public readonly record struct OcpRange(int MinMa, int ValueMa, int MaxMa);
+
+    /// <summary>
+    /// The per-channel OCP ranges the driver reports, from the family's range call.
+    ///
+    /// Found by shape rather than by an assumed stride, because the entries in this struct are not
+    /// laid out on one: a channel is a minimum, a value and a maximum in consecutive words, followed
+    /// by a live-current word the driver fills with -1. That last word is what makes the match safe —
+    /// three ascending numbers are common in a buffer this size, three ascending numbers followed by
+    /// a sentinel are not.
+    ///
+    /// Every card reports its own, which is the whole reason for reading them: the window is a
+    /// property of the board's power stage, not of the model.
+    /// </summary>
+    public static List<OcpRange> ReadOcpRanges(PhysicalGPUHandle handle)
+    {
+        var outp = new List<OcpRange>();
+        var w = CallRaw(handle, FnOcpGetRanges, OcpRangeSize, OcpRangeVersion, OcpMaskOffset, OcpMaskAll, out int st);
+        if (st != 0 || w.Length == 0) return outp;
+
+        for (int i = 0; i + 3 < w.Length; i++)
+        {
+            int min = w[i], val = w[i + 1], max = w[i + 2], live = w[i + 3];
+            if (live != -1) continue;                       // the sentinel that anchors the match
+            if (min < 1 || val <= min || max <= val) continue;
+            if (max > 10_000_000) continue;                 // amps, not a counter that happens to rise
+            outp.Add(new OcpRange(min, val, max));
+        }
+        return outp;
+    }
+
+    /// <summary>
+    /// The tightest range the driver offers for a channel currently sitting at <paramref name="limitMa"/>.
+    ///
+    /// A limit can appear in more than one entry — on a 5070 Ti the core one shows up both as
+    /// 250000..350000 and as 1..5001000, the second of which is the driver declining to constrain it
+    /// rather than a window worth putting on a slider. The narrowest wins for that reason.
+    /// </summary>
+    public static OcpRange? RangeFor(IEnumerable<OcpRange> ranges, int limitMa)
+    {
+        OcpRange? best = null;
+        foreach (var r in ranges)
+        {
+            if (r.ValueMa != limitMa) continue;
+            // A range that runs to sixteen times the limit is not a window, it is the driver saying
+            // it has no opinion - a 5070 Ti reports 1 to 5001 A beside the real 250 to 350. Putting
+            // the first on a slider would offer travel that means nothing.
+            if (r.MaxMa > limitMa * 3) continue;
+            if (best is null || r.MaxMa - r.MinMa < best.Value.MaxMa - best.Value.MinMa) best = r;
+        }
+        return best;
     }
 
     /// <summary>One reading: the channel it came from, its two type words, and the value.</summary>

@@ -241,14 +241,21 @@ public sealed class MainViewModel : ObservableObject
     /// is tunable to a milliamp — the card reports 300 A and 120 A flat — so the control offers the
     /// unit the numbers are actually quoted in.
     /// </summary>
-    public int NvvddOcpAmps { get => _nvOcpA; set { if (SetTuned(ref _nvOcpA, value, OcpBounds.MinA(Caps.NvvddOcpStockMilliamps), OcpBounds.MaxA(Caps.NvvddOcpStockMilliamps), nameof(NvvddOcpAmps))) OnPropertyChanged(nameof(XocStatusText)); } }
-    public int MsvddOcpAmps { get => _msOcpA; set { if (SetTuned(ref _msOcpA, value, OcpBounds.MinA(Caps.MsvddOcpStockMilliamps), OcpBounds.MaxA(Caps.MsvddOcpStockMilliamps), nameof(MsvddOcpAmps))) OnPropertyChanged(nameof(XocStatusText)); } }
+    public int NvvddOcpAmps { get => _nvOcpA; set { if (SetTuned(ref _nvOcpA, value, NvvddOcpMinA, NvvddOcpMaxA, nameof(NvvddOcpAmps))) OnPropertyChanged(nameof(XocStatusText)); } }
+    public int MsvddOcpAmps { get => _msOcpA; set { if (SetTuned(ref _msOcpA, value, MsvddOcpMinA, MsvddOcpMaxA, nameof(MsvddOcpAmps))) OnPropertyChanged(nameof(XocStatusText)); } }
     private int _nvOcpA, _msOcpA;
 
-    public int NvvddOcpMinA => OcpBounds.MinA(Caps.NvvddOcpStockMilliamps);
-    public int NvvddOcpMaxA => OcpBounds.MaxA(Caps.NvvddOcpStockMilliamps);
-    public int MsvddOcpMinA => OcpBounds.MinA(Caps.MsvddOcpStockMilliamps);
-    public int MsvddOcpMaxA => OcpBounds.MaxA(Caps.MsvddOcpStockMilliamps);
+    // The driver's own window where it offers one, and a window derived from the limit where it
+    // does not. Not the same on every card, and not something to hard-code: the range belongs to the
+    // board's power stage rather than to the model.
+    public int NvvddOcpMinA => Caps.NvvddOcpMinMilliamps > 0
+        ? Caps.NvvddOcpMinMilliamps / 1000 : OcpBounds.MinA(Caps.NvvddOcpStockMilliamps);
+    public int NvvddOcpMaxA => Caps.NvvddOcpMaxMilliamps > 0
+        ? Caps.NvvddOcpMaxMilliamps / 1000 : OcpBounds.MaxA(Caps.NvvddOcpStockMilliamps);
+    public int MsvddOcpMinA => Caps.MsvddOcpMinMilliamps > 0
+        ? Caps.MsvddOcpMinMilliamps / 1000 : OcpBounds.MinA(Caps.MsvddOcpStockMilliamps);
+    public int MsvddOcpMaxA => Caps.MsvddOcpMaxMilliamps > 0
+        ? Caps.MsvddOcpMaxMilliamps / 1000 : OcpBounds.MaxA(Caps.MsvddOcpStockMilliamps);
     public bool HasOcp => Caps.CanSetOcp;
 
     /// <summary>Floor of the core rail: the lowest voltage it may drop to.</summary>
@@ -613,10 +620,12 @@ public sealed class MainViewModel : ObservableObject
     public string VideoOffsetRangeText =>
         $"{Caps.VideoOffsetMinMhz:+#;-#;0} \u2026 {Caps.VideoOffsetMaxMhz:+#;-#;0} MHz. Drives the video encode/decode clock.";
     public string NvvddOcpRangeText =>
-        $"{NvvddOcpMinA} … {NvvddOcpMaxA} A, against a stock {Caps.NvvddOcpStockMilliamps / 1000} A. "
+        $"{NvvddOcpMinA} … {NvvddOcpMaxA} A, against a stock {Caps.NvvddOcpStockMilliamps / 1000} A"
+        + (Caps.NvvddOcpMinMilliamps > 0 ? " — the window this card's driver reports. " : ". ")
         + "Over-current protection for the core rail: the current at which the card cuts in to save itself.";
     public string MsvddOcpRangeText =>
-        $"{MsvddOcpMinA} … {MsvddOcpMaxA} A, against a stock {Caps.MsvddOcpStockMilliamps / 1000} A. "
+        $"{MsvddOcpMinA} … {MsvddOcpMaxA} A, against a stock {Caps.MsvddOcpStockMilliamps / 1000} A"
+        + (Caps.MsvddOcpMinMilliamps > 0 ? " — the window this card's driver reports. " : ". ")
         + "Over-current protection for the rail behind the crossbar, SYS and video domains.";
     public string XbarOffsetRangeText =>
         $"{Caps.XbarOffsetMinMhz:+#;-#;0} … {Caps.XbarOffsetMaxMhz:+#;-#;0} MHz. Offsets the crossbar, which no public "

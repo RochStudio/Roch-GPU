@@ -4,18 +4,55 @@
 
 [![CI](https://github.com/RochStudio/Roch-GPU/actions/workflows/ci.yml/badge.svg)](https://github.com/RochStudio/Roch-GPU/actions/workflows/ci.yml)
 
-An Afterburner-style GPU tuning tool for Windows that drives **both NVIDIA and AMD** cards from
-**one executable**. Clocks, voltage, power limit, fan control, live monitoring, a V/F curve editor,
-and five profile slots.
+## About
 
-No kernel driver — everything goes through the vendors' own user-mode libraries (`nvapi64.dll`,
-`atiadlxx.dll`), the same route Afterburner and Adrenalin take.
+Roch GPU is an Afterburner-style tuning tool for Windows that drives **both NVIDIA and AMD** cards
+from **one executable** — clocks, voltage, power and temperature limits, per-fan control and curves,
+live telemetry, a V/F curve editor, and five profile slots.
 
-**`RochGPU.exe` is the whole program.** Run it with nothing and you get the window; run it with a
-command and you get the CLI. Nothing to install — no .NET runtime, no DLLs beside it.
+Two things make it different from the usual:
 
-> Writing clocks and voltages to a GPU can crash, corrupt work in progress, and in the extreme
-> damage hardware. Read the [warning](#a-word-of-warning) before using it.
+- **It asks the card what it can do instead of assuming.** Every range on screen is one the driver
+  reported, and a control for something your card does not have is hidden rather than greyed out. A
+  5070 Ti and an RX 9070 XT open to visibly different windows from the same binary.
+- **It goes further than the public API allows.** Behind an *Extreme OC* gate sit the NVVDD and
+  MSVDD rail ranges, their over-current limits in amps, and the crossbar, SYS and video clock
+  domains — private driver families that no public NVAPI call exposes. Each is armed on its own and
+  off by default.
+
+No kernel driver: everything goes through the vendors' own user-mode libraries (`nvapi64.dll`,
+`atiadlxx.dll`), the same route Afterburner and Adrenalin take. **`RochGPU.exe` is the whole
+program** — run it with nothing for the window, with a command for the CLI. Nothing to install, no
+.NET runtime, no DLLs beside it.
+
+> **Read this first.** Writing clocks and voltages to a GPU can crash the machine, corrupt work in
+> progress, and in the extreme damage hardware. The Extreme OC levers can brown a card out rather
+> than merely fail. See [the warning](#a-word-of-warning) before using it.
+
+---
+
+## Getting started
+
+1. **Download it.** Grab `RochGPU.exe` from the [latest release](../../releases/latest). One file,
+   about 67 MB. Put it anywhere — a folder you own, not `Program Files`.
+2. **Run it.** Windows SmartScreen will warn on first run, because the binary is unsigned: click
+   **More info → Run anyway**. If you would rather not take that on trust, [build it
+   yourself](#building-from-source) — one command, and the source is this repository.
+3. **Approve the admin prompt.** Writing clocks needs administrator rights, so the window asks for
+   them as it opens. Read-only CLI commands (`info`, `monitor`) do not, and work from any terminal.
+4. **Check your card was detected.** The window's header should name your GPU, its driver and its
+   vBIOS. If it says no supported GPU, run `.\RochGPU.exe info` in a terminal — it prints what it
+   found and why.
+5. **Change one thing.** Move the core clock up a little, press **Apply**, and watch the status
+   line: it reports what actually reached the card, read back rather than echoed.
+6. **Test it.** Run something demanding for a few minutes — a benchmark or a game. Watch the
+   **Telemetry** window, particularly the limiter column, which tells you what is holding the card
+   back.
+7. **Keep it.** Pick a profile slot (1–5) and press **Save**. Tick **Startup** to have that profile
+   applied at logon, with the app left in the tray so a software fan curve keeps running.
+
+If anything misbehaves, **Reset to Defaults** puts the card and the sliders back to the driver's own
+values. That is the first thing to try, and it is always safe.
 
 ---
 
@@ -194,11 +231,7 @@ restored from there.
 
 ## Running it
 
-Grab `RochGPU.exe` from the [latest release](../../releases/latest) and run it. That's the whole
-install — it is self-contained, so no .NET runtime is needed.
-
-It asks for administrator rights when the window opens, because writing clocks needs them. The CLI
-half does not ask, so read-only commands work from any terminal:
+Getting started above covers the download and the first run. Two commands worth knowing beyond it:
 
 ```powershell
 .\RochGPU.exe info          # what was detected, and every limit the driver reports
@@ -407,11 +440,16 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   and a maximum per channel and no reading. mVolt+ shows twelve channels and keeps no plaintext
   entry points, so unlike HYDRA there is no binary to read the answer out of. Until that changes, the
   OCP sliders set a limit with no live current to compare against.
-- **The OCP sliders offer more travel than the driver accepts.** That range call reports the core
-  limit as min 250 A, default 300 A, max **350 A**, where the sliders offer half the stock figure to
-  half again above it — 150 to 450 A. Values outside the driver's own window are refused cleanly and
-  the failure is reported, so nothing is written that should not be, but most of the travel at each
-  end cannot land. Reading the real bounds per channel would fix it.
+- **Only one of the two OCP limits gets its window from the driver.** That range call reports the
+  core limit as min 250 A, default 300 A, max 350 A, and the sliders now use it. For MSVDD the only
+  entry it returns is 1 A to 5001 A — the driver declining to constrain it rather than a window
+  worth offering — so that slider falls back to half the stock figure to half again above it, 60 to
+  180 A. Values the driver refuses are reported rather than silently dropped, so the fallback is
+  safe; it is just not the card's own number.
+- **There is no per-rail power limit, only a board one.** `ClientPowerPoliciesGetInfo` returns
+  exactly one entry on a 5070 Ti (P0, min 83.3 %, default 100 %, max 116.7 %) and `GetStatus`
+  returns a count of one. So MSVDD has an over-current limit in amps and no power limit of its own,
+  and neither does NVVDD — the percentage on the main window governs the whole board.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card

@@ -283,6 +283,7 @@ public sealed class NvApiBackend : IGpuBackend
 
         // OCP. Its own family; a card without it simply reports no channels and the control hides.
         bool canOcp = false; int ocpNvvdd = 0, ocpMsvdd = 0;
+        int ocpNvvddMin = 0, ocpNvvddMax = 0, ocpMsvddMin = 0, ocpMsvddMax = 0;
         try
         {
             var ocp = NvApiPrivate.ReadOcpChannels(g.Handle);
@@ -290,6 +291,12 @@ public sealed class NvApiBackend : IGpuBackend
             ocpNvvdd = Slot(NvApiPrivate.OcpSlotNvvdd);
             ocpMsvdd = Slot(NvApiPrivate.OcpSlotMsvdd);
             canOcp = ocpNvvdd > 0 && ocpMsvdd > 0;
+
+            // The driver's own window for each, where it offers one. A card that reports nothing
+            // leaves these zero and the caller falls back to a window derived from the limit.
+            var ranges = NvApiPrivate.ReadOcpRanges(g.Handle);
+            if (NvApiPrivate.RangeFor(ranges, ocpNvvdd) is { } nr) { ocpNvvddMin = nr.MinMa; ocpNvvddMax = nr.MaxMa; }
+            if (NvApiPrivate.RangeFor(ranges, ocpMsvdd) is { } mr) { ocpMsvddMin = mr.MinMa; ocpMsvddMax = mr.MaxMa; }
         }
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
@@ -328,6 +335,8 @@ public sealed class NvApiBackend : IGpuBackend
             VoltageRailFloorMinMv = nvvdd.FloorMinMv, VoltageRailFloorMaxMv = nvvdd.FloorMaxMv, VoltageRailStockFloorMv = nvvdd.FloorStockMv,
             CanSetMsvddRail = msvdd.Supported,
             CanSetOcp = canOcp, NvvddOcpStockMilliamps = ocpNvvdd, MsvddOcpStockMilliamps = ocpMsvdd,
+            NvvddOcpMinMilliamps = ocpNvvddMin, NvvddOcpMaxMilliamps = ocpNvvddMax,
+            MsvddOcpMinMilliamps = ocpMsvddMin, MsvddOcpMaxMilliamps = ocpMsvddMax,
             MsvddRailMinMv = msvdd.MinMv, MsvddRailMaxMv = msvdd.MaxMv, MsvddRailStockMaxMv = msvdd.StockMv,
             MsvddRailFloorMinMv = msvdd.FloorMinMv, MsvddRailFloorMaxMv = msvdd.FloorMaxMv, MsvddRailStockFloorMv = msvdd.FloorStockMv,
             CanLockClocks = maxLockMhz > 0, ClockLockMinMhz = MinLockableMhz, ClockLockMaxMhz = maxLockMhz,
@@ -1736,6 +1745,12 @@ public sealed class NvApiBackend : IGpuBackend
         {
             foreach (var (slot, ma, uv) in NvApiPrivate.ReadPowerRails(g.Handle))
                 sb.AppendLine($"    slot {slot,2}  {ma / 1000.0,8:0.000} A  {uv / 1000000.0,8:0.000} V  = {ma / 1000.0 * uv / 1000000.0,8:0.00} W");
+        });
+
+        Section("OCP ranges the driver reports (read-only)", () =>
+        {
+            foreach (var r in NvApiPrivate.ReadOcpRanges(g.Handle))
+                sb.AppendLine($"    {r.MinMa / 1000.0,8:0.##} .. {r.MaxMa / 1000.0,8:0.##} A, at {r.ValueMa / 1000.0:0.##} A");
         });
 
         Section("OCP current limits (read-only)", () =>

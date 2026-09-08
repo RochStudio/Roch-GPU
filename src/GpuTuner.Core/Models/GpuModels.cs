@@ -117,6 +117,16 @@ public sealed record GpuCapabilities
     public int MsvddOcpStockMilliamps { get; init; }
 
     /// <summary>
+    /// The window the driver itself offers for each OCP limit, in milliamps; 0 when it reports none.
+    /// Read per card rather than derived, because this is a property of the board's power stage: a
+    /// 5070 Ti allows 250–350 A on the core rail, and another card will say something else.
+    /// </summary>
+    public int NvvddOcpMinMilliamps { get; init; }
+    public int NvvddOcpMaxMilliamps { get; init; }
+    public int MsvddOcpMinMilliamps { get; init; }
+    public int MsvddOcpMaxMilliamps { get; init; }
+
+    /// <summary>
     /// SYS and video clocks. Same private family as the crossbar and the same kind of lever, so they
     /// live behind the same gate; separate flags because a card can expose one and not the others.
     /// </summary>
