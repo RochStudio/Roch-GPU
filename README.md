@@ -86,8 +86,10 @@ Fan control is its own window too — a duty per fan, or a curve — and applyin
 settings into the active profile slot, so what you set is what comes back at logon.
 
 The telemetry window also carries **measured rail current** — six 12 V channels straight from the
-card's own power monitor, the first being the board total. Measured, not divided out of the board
-watts. These are not the current an OCP limit guards: those rails sit after the VRM at about a volt,
+card's own power monitor: board total, PCIe slot, NVVDD input and three the driver names only by
+number. Measured, not divided out of the board watts. The names are positional, worked out by
+running mVolt+ against the same card under the same load and matching all six currents at once; a
+card reporting a different set is numbered plainly rather than given names from other hardware. These are not the current an OCP limit guards: those rails sit after the VRM at about a volt,
 and this family does not report them — see Known Limitations.
 
 Plus a telemetry window — a table of every sensor the card reports, with

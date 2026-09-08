@@ -1567,6 +1567,26 @@ public sealed class NvApiBackend : IGpuBackend
         }
     }
 
+    /// <summary>
+    /// What each power-monitor channel is, by position.
+    ///
+    /// The driver hands back no names, and the call that carries a channel id returns nothing usable
+    /// on this driver. These come from running mVolt+ against the same card under the same load and
+    /// matching all six currents at once — board total 25.75 A to its 26.375, PCIe 0.58 to 0.585,
+    /// and so on down the list. Six simultaneous matches is a mapping rather than a resemblance.
+    ///
+    /// The three "Rail NNN" names are mVolt+'s own labels for channels it has no name for either;
+    /// the number in them is the driver's identifier, so it is more useful than a position would be.
+    ///
+    /// Positional, so it only applies to a card reporting exactly these six. Anything else is
+    /// numbered plainly rather than given names worked out on different hardware.
+    /// </summary>
+    public static string PowerRailName(int index, int total)
+    {
+        string[] known = { "Board total", "PCIe slot 12 V", "Rail 218", "Rail 214", "NVVDD input", "Rail 212" };
+        return total == known.Length && index >= 0 && index < known.Length ? known[index] : $"Rail {index}";
+    }
+
     /// <summary>One OCP channel's limit as the card reports it now; 0 when unreadable.</summary>
     private static int OcpNow(PhysicalGPU g, int slot)
     {

@@ -150,7 +150,7 @@ public sealed class TelemetryTable
         {
             Group("Rail current");
             for (int i = 0; i < first.RailAmps.Length; i++)
-                Sensor($"railA{i}", i == 0 ? "Board total" : $"Rail {i}", "A", 2);
+                Sensor($"railA{i}", NvApiBackend.PowerRailName(i, first.RailAmps.Length), "A", 2);
         }
 
         Group("Fans");
