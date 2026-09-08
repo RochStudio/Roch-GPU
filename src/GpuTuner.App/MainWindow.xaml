@@ -372,12 +372,11 @@
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
-                                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="8"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Button Content="Apply" Style="{StaticResource PrimaryButton}" Command="{Binding ApplyCommand}" Height="30" FontSize="12.5"/>
-                                <Button Grid.Column="2" Content="Revert" Command="{Binding RevertCommand}" ToolTip="Sliders back to the applied values"/>
-                                <Button Grid.Column="4" Content="Reset" Style="{StaticResource DangerButton}" Command="{Binding ResetCommand}" ToolTip="Driver defaults (also clears the voltage curve)"/>
+                                <Button Grid.Column="2" Content="Reset to Defaults" Style="{StaticResource DangerButton}" Command="{Binding ResetCommand}"
+                                        ToolTip="Write the driver's own defaults to the card and load them into the sliders (also clears the voltage curve)"/>
                             </Grid>
                             <TextBlock Style="{StaticResource Muted}" Margin="0,6,0,0" Text="Unapplied changes" Foreground="{DynamicResource WarnBrush}"
                                        Visibility="{Binding PendingChanges, Converter={StaticResource BoolToVis}}"/>

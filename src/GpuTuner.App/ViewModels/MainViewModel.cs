@@ -92,7 +92,6 @@ public sealed class MainViewModel : ObservableObject
         SaveProfileCommand = new RelayCommand(SaveProfile, () => !string.IsNullOrWhiteSpace(ProfileNameInput));
         LoadProfileCommand = new RelayCommand(LoadSelectedProfile, () => SelectedProfile != null);
         DeleteProfileCommand = new RelayCommand(DeleteSelectedProfile, () => SelectedProfile != null);
-        RevertCommand = new RelayCommand(Revert);
         // One button per lever now, so it has to work out which way it is going.
         ToggleLeverCommand = new RelayCommand(o =>
             SetLever(o, !(o is string n && Enum.TryParse<XocLever>(n, true, out var l) && _xocArmed.Has(l))));
@@ -867,7 +866,6 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand SaveProfileCommand { get; }
     public RelayCommand LoadProfileCommand { get; }
     public RelayCommand DeleteProfileCommand { get; }
-    public RelayCommand RevertCommand { get; }
     public RelayCommand ToggleLeverCommand { get; }
 
     // ------------------------------------------------------------------ actions
@@ -1044,14 +1042,6 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception e) { Status = e.Message; StatusIsError = true; }
         RefreshAppliedSummary();
-    }
-
-    private void Revert()
-    {
-        var p = _svc.AppliedProfile ?? _svc.ReadCurrentAsProfile();
-        LoadIntoEditor(p);
-        PendingChanges = false;
-        Status = "Sliders reverted to applied values"; StatusIsError = false;
     }
 
     private void SaveProfile()

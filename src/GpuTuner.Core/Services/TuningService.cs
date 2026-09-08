@@ -659,8 +659,8 @@ public sealed class TuningService : IDisposable
 
             WriteXoc(p, Try, lever);
 
-            // Keep the applied profile describing the card, so the summary line and a later Revert
-            // both agree with what is actually on it.
+            // Keep the applied profile describing the card, so the summary line agrees with what is
+            // actually on it.
             if (AppliedProfile != null)
             {
                 AppliedProfile.XocArmed = AppliedProfile.XocArmed.With(lever, on);
@@ -960,8 +960,8 @@ public sealed class TuningService : IDisposable
 
             WriteFans(mode, percent, perFan, curve, Try);
 
-            // Keep the applied profile describing the card, so the summary line and a later Revert
-            // both agree with what the fans are actually doing.
+            // Keep the applied profile describing the card, so the summary line agrees with what the
+            // fans are actually doing.
             if (AppliedProfile != null)
             {
                 AppliedProfile.FanMode = mode;
