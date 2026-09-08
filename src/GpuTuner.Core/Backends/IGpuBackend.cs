@@ -128,6 +128,14 @@ public interface IGpuBackend : IDisposable
     void SetClockRange(int gpuIndex, int minMhz, int maxMhz) { }
 
     /// <summary>
+    /// Over-current protection limit for a rail, in milliamps. Backends without the family ignore
+    /// this. Amps rather than a percentage because that is the unit the driver keeps it in, and
+    /// rounding a protection limit through a percentage is not worth the tidier number.
+    /// </summary>
+    void SetNvvddOcpMilliamps(int gpuIndex, int milliamps) { }
+    void SetMsvddOcpMilliamps(int gpuIndex, int milliamps) { }
+
+    /// <summary>
     /// Clock domains beyond the core and memory ones every card reports, keyed for display. Empty
     /// by default: these come from a vendor-private counter and most backends have none.
     /// </summary>

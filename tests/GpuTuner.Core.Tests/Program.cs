@@ -838,6 +838,41 @@ using (var svc = new TuningService(counting))
     }
 }
 
+// ---- OCP current limits are gated like every other XOC lever
+// The one that matters is the disarmed case: an OCP limit survives a reboot, so a lever that goes
+// quiet rather than restoring stock leaves a card with its over-current protection wound off and
+// nothing on screen saying so.
+using (var svc = new TuningService(new MockBackend()))
+{
+    svc.Initialize();
+    svc.SeedOcpDefaults(300000, 120000);
+    Check("mock exposes OCP", svc.Capabilities.CanSetOcp);
+
+    svc.Apply(new TuningProfile { NvvddOcpMilliamps = 250000, MsvddOcpMilliamps = 100000 });
+    var st = svc.Backend.ReadTuningState(0);
+    Check("disarmed OCP stays stock", st.NvvddOcpMilliamps == 300000 && st.MsvddOcpMilliamps == 120000);
+
+    svc.Apply(new TuningProfile { XocArmed = XocLever.NvvddOcp, NvvddOcpMilliamps = 250000, MsvddOcpMilliamps = 100000 });
+    st = svc.Backend.ReadTuningState(0);
+    Check("armed NVVDD OCP applies", st.NvvddOcpMilliamps == 250000);
+    Check("MSVDD OCP left alone while its own lever is disarmed", st.MsvddOcpMilliamps == 120000);
+
+    svc.Apply(new TuningProfile { XocArmed = XocLever.MsvddOcp, MsvddOcpMilliamps = 100000 });
+    st = svc.Backend.ReadTuningState(0);
+    Check("disarming NVVDD OCP restores stock", st.NvvddOcpMilliamps == 300000);
+    Check("armed MSVDD OCP applies", st.MsvddOcpMilliamps == 100000);
+
+    svc.ResetToDefaults();
+    st = svc.Backend.ReadTuningState(0);
+    Check("reset restores both OCP limits", st.NvvddOcpMilliamps == 300000 && st.MsvddOcpMilliamps == 120000);
+}
+
+// The slider window is half the stock figure to half again above it — HYDRA's own bound, not ours.
+Check("OCP min is half stock", OcpBounds.MinA(300000) == 150);
+Check("OCP max is 150% of stock", OcpBounds.MaxA(300000) == 450);
+Check("OCP window on MSVDD", OcpBounds.MinA(120000) == 60 && OcpBounds.MaxA(120000) == 180);
+Check("OCP window of an absent rail is empty", OcpBounds.MinA(0) == 0 && OcpBounds.MaxA(0) == 0);
+
 // ---- NVML: which failures are worth retrying on a new session
 // The card cannot be reset on demand to test the recovery itself, so what is tested is the decision
 // that drives it: a stale session is retried, a wrong request is not. 999 is in the first group

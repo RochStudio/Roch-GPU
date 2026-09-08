@@ -41,6 +41,16 @@ public sealed class MainViewModel : ObservableObject
         if (Caps.CanSetMsvddRail && Caps.MsvddRailStockMaxMv > 0 &&
             !settings.MsvddDefaultMaxByGpu.ContainsKey(svc.Device.Name))
         { settings.MsvddDefaultMaxByGpu[svc.Device.Name] = Caps.MsvddRailStockMaxMv; railsRecorded = true; }
+        if (Caps.CanSetOcp && Caps.NvvddOcpStockMilliamps > 0 &&
+            !settings.NvvddOcpDefaultByGpu.ContainsKey(svc.Device.Name))
+        { settings.NvvddOcpDefaultByGpu[svc.Device.Name] = Caps.NvvddOcpStockMilliamps; railsRecorded = true; }
+        if (Caps.CanSetOcp && Caps.MsvddOcpStockMilliamps > 0 &&
+            !settings.MsvddOcpDefaultByGpu.ContainsKey(svc.Device.Name))
+        { settings.MsvddOcpDefaultByGpu[svc.Device.Name] = Caps.MsvddOcpStockMilliamps; railsRecorded = true; }
+        settings.NvvddOcpDefaultByGpu.TryGetValue(svc.Device.Name, out int nvOcpDefault);
+        settings.MsvddOcpDefaultByGpu.TryGetValue(svc.Device.Name, out int msOcpDefault);
+        svc.SeedOcpDefaults(nvOcpDefault, msOcpDefault);
+
         settings.NvvddDefaultMaxByGpu.TryGetValue(svc.Device.Name, out int nvDefault);
         settings.MsvddDefaultMaxByGpu.TryGetValue(svc.Device.Name, out int msDefault);
         svc.SeedRailDefaults(nvDefault, msDefault);
@@ -227,6 +237,21 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public int VoltageRailMax { get => _rail; set { if (SetTuned(ref _rail, value, Caps.VoltageRailMinMv, Math.Max(Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv), nameof(VoltageRailMax))) { OnPropertyChanged(nameof(BoostCeilingMv)); OnPropertyChanged(nameof(XocStatusText)); } } }
 
+    /// <summary>
+    /// OCP limits, in whole amps. Milliamps is the driver's unit and the profile's, but nothing here
+    /// is tunable to a milliamp — the card reports 300 A and 120 A flat — so the control offers the
+    /// unit the numbers are actually quoted in.
+    /// </summary>
+    public int NvvddOcpAmps { get => _nvOcpA; set { if (SetTuned(ref _nvOcpA, value, OcpBounds.MinA(Caps.NvvddOcpStockMilliamps), OcpBounds.MaxA(Caps.NvvddOcpStockMilliamps), nameof(NvvddOcpAmps))) OnPropertyChanged(nameof(XocStatusText)); } }
+    public int MsvddOcpAmps { get => _msOcpA; set { if (SetTuned(ref _msOcpA, value, OcpBounds.MinA(Caps.MsvddOcpStockMilliamps), OcpBounds.MaxA(Caps.MsvddOcpStockMilliamps), nameof(MsvddOcpAmps))) OnPropertyChanged(nameof(XocStatusText)); } }
+    private int _nvOcpA, _msOcpA;
+
+    public int NvvddOcpMinA => OcpBounds.MinA(Caps.NvvddOcpStockMilliamps);
+    public int NvvddOcpMaxA => OcpBounds.MaxA(Caps.NvvddOcpStockMilliamps);
+    public int MsvddOcpMinA => OcpBounds.MinA(Caps.MsvddOcpStockMilliamps);
+    public int MsvddOcpMaxA => OcpBounds.MaxA(Caps.MsvddOcpStockMilliamps);
+    public bool HasOcp => Caps.CanSetOcp;
+
     /// <summary>Floor of the core rail: the lowest voltage it may drop to.</summary>
     public int VoltageRailFloor { get => _railFloor; set => SetTuned(ref _railFloor, value, Caps.VoltageRailFloorMinMv, Math.Max(Caps.VoltageRailFloorMinMv, Caps.VoltageRailFloorMaxMv), nameof(VoltageRailFloor)); }
 
@@ -276,6 +301,8 @@ public sealed class MainViewModel : ObservableObject
         switch (name)
         {
             case "volt": TargetVoltage += 5 * dir; break;
+            case "nvocp": NvvddOcpAmps += 5 * dir; break;
+            case "msocp": MsvddOcpAmps += 5 * dir; break;
             case "voltboost": VoltageBoost += VoltageBoostStepPercent * dir; break;
             case "voltoffset": VoltageOffset += 5 * dir; break;
             case "core": CoreOffset += CoreStepMhz * dir; break;
@@ -322,6 +349,8 @@ public sealed class MainViewModel : ObservableObject
     public string SysOffsetInput { get => Signed(_sys); set => ParseInto(value, v => SysOffset = v, nameof(SysOffset)); }
     public string VideoOffsetInput { get => Signed(_video); set => ParseInto(value, v => VideoOffset = v, nameof(VideoOffset)); }
     public string XbarOffsetInput { get => Signed(_xbar); set => ParseInto(value, v => XbarOffset = v, nameof(XbarOffset)); }
+    public string NvvddOcpAmpsInput { get => _nvOcpA.ToString(); set => ParseInto(value, v => NvvddOcpAmps = v, nameof(NvvddOcpAmps)); }
+    public string MsvddOcpAmpsInput { get => _msOcpA.ToString(); set => ParseInto(value, v => MsvddOcpAmps = v, nameof(MsvddOcpAmps)); }
     public string VoltageRailMaxInput { get => _rail.ToString(); set => ParseInto(value, v => VoltageRailMax = v, nameof(VoltageRailMax)); }
 
     /// <summary>Parse a user-typed offset: leading +/- allowed, whitespace trimmed, trailing units ignored.</summary>
@@ -584,6 +613,12 @@ public sealed class MainViewModel : ObservableObject
         $"{Caps.SysOffsetMinMhz:+#;-#;0} \u2026 {Caps.SysOffsetMaxMhz:+#;-#;0} MHz. The SYS domain, from the same private family as the crossbar.";
     public string VideoOffsetRangeText =>
         $"{Caps.VideoOffsetMinMhz:+#;-#;0} \u2026 {Caps.VideoOffsetMaxMhz:+#;-#;0} MHz. Drives the video encode/decode clock.";
+    public string NvvddOcpRangeText =>
+        $"{NvvddOcpMinA} … {NvvddOcpMaxA} A, against a stock {Caps.NvvddOcpStockMilliamps / 1000} A. "
+        + "Over-current protection for the core rail: the current at which the card cuts in to save itself.";
+    public string MsvddOcpRangeText =>
+        $"{MsvddOcpMinA} … {MsvddOcpMaxA} A, against a stock {Caps.MsvddOcpStockMilliamps / 1000} A. "
+        + "Over-current protection for the rail behind the crossbar, SYS and video domains.";
     public string XbarOffsetRangeText =>
         $"{Caps.XbarOffsetMinMhz:+#;-#;0} … {Caps.XbarOffsetMaxMhz:+#;-#;0} MHz. Offsets the crossbar, which no public "
         + "NVAPI surface exposes; the GPU's own frequency counter is used to verify the write landed.";
@@ -851,6 +886,8 @@ public sealed class MainViewModel : ObservableObject
         VoltageRailFloorMv = HasVoltageRail ? VoltageRailFloor : 0,
         MsvddRailFloorMv = HasMsvddRail ? MsvddRailFloor : 0,
         XbarOffsetMhz = HasXbar ? XbarOffset : 0,
+        NvvddOcpMilliamps = HasOcp ? NvvddOcpAmps * 1000 : 0,
+        MsvddOcpMilliamps = HasOcp ? MsvddOcpAmps * 1000 : 0,
         SysOffsetMhz = HasSys ? SysOffset : 0,
         ClockLockMinMhz = HasClockLock && !ClockLockIsOff ? ClockLockMin : 0,
         ClockLockMaxMhz = HasClockLock && !ClockLockIsOff ? ClockLockMax : 0,
@@ -888,6 +925,8 @@ public sealed class MainViewModel : ObservableObject
         VoltageRailFloor = p.VoltageRailFloorMv > 0 ? p.VoltageRailFloorMv : Caps.VoltageRailStockFloorMv;
         MsvddRailFloor = p.MsvddRailFloorMv > 0 ? p.MsvddRailFloorMv : Caps.MsvddRailStockFloorMv;
         XbarOffset = p.XbarOffsetMhz;
+        NvvddOcpAmps = p.NvvddOcpMilliamps > 0 ? p.NvvddOcpMilliamps / 1000 : Caps.NvvddOcpStockMilliamps / 1000;
+        MsvddOcpAmps = p.MsvddOcpMilliamps > 0 ? p.MsvddOcpMilliamps / 1000 : Caps.MsvddOcpStockMilliamps / 1000;
         SysOffset = p.SysOffsetMhz;
         // 0/0 in a profile is "unpinned", which the slider shows as the full range.
         ClockLockMin = p.ClockLockMinMhz > 0 ? p.ClockLockMinMhz : Caps.ClockLockMinMhz;
@@ -1099,7 +1138,7 @@ public sealed class MainViewModel : ObservableObject
     private void RaiseTexts()
     {
         foreach (var p in new[] { nameof(CoreOffset), nameof(MemoryOffset), nameof(PowerLimit),
-                                  nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(VoltageRailMax), nameof(VoltageRailFloor), nameof(MsvddRailMax), nameof(MsvddRailFloor), nameof(XbarOffset), nameof(SysOffset), nameof(VideoOffset), nameof(ClockLockMin), nameof(ClockLockMax), nameof(FixedFan) })
+                                  nameof(TempLimit), nameof(VoltageBoost), nameof(VoltageOffset), nameof(TargetVoltage), nameof(VoltageRailMax), nameof(VoltageRailFloor), nameof(MsvddRailMax), nameof(MsvddRailFloor), nameof(XbarOffset), nameof(SysOffset), nameof(VideoOffset), nameof(ClockLockMin), nameof(ClockLockMax), nameof(FixedFan), nameof(NvvddOcpAmps), nameof(MsvddOcpAmps) })
             RaiseVal(p);
         OnPropertyChanged(nameof(VoltageCapText));
        

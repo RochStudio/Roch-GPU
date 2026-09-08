@@ -97,6 +97,58 @@
                             ToolTip="Write this rail range to the card now, or put it back"/>
                 </StackPanel>
 
+                <!-- OCP current limits. Its own private family, not part of the rail controls above:
+                     this is the current at which the card protects itself, not a voltage. -->
+                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasOcp, Converter={StaticResource BoolToVis}}">
+                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=NvvddOcp}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="NVVDD OCP Limit (A)" Style="{StaticResource RowLabel}"/>
+                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                     ToolTip="{Binding NvvddOcpRangeText}"
+                                     Text="{Binding NvvddOcpAmpsInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="nvocp:-1"/>
+                            <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding NvvddOcpMinA}" Maximum="{Binding NvvddOcpMaxA}"
+                                    Value="{Binding NvvddOcpAmps, Mode=TwoWay}" TickFrequency="5"/>
+                            <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="nvocp:1"/>
+                        </Grid>
+                    </StackPanel>
+                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
+                            Command="{Binding ToggleLeverCommand}" CommandParameter="NvvddOcp"
+                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=NvvddOcp}"
+                            ToolTip="Write this current limit to the card now, or put it back"/>
+                </StackPanel>
+
+                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasOcp, Converter={StaticResource BoolToVis}}">
+                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=MsvddOcp}">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <TextBlock Text="MSVDD OCP Limit (A)" Style="{StaticResource RowLabel}"/>
+                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
+                                     ToolTip="{Binding MsvddOcpRangeText}"
+                                     Text="{Binding MsvddOcpAmpsInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
+                        </Grid>
+                        <Grid Margin="0,1,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="msocp:-1"/>
+                            <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding MsvddOcpMinA}" Maximum="{Binding MsvddOcpMaxA}"
+                                    Value="{Binding MsvddOcpAmps, Mode=TwoWay}" TickFrequency="5"/>
+                            <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                          Command="{Binding NudgeCommand}" CommandParameter="msocp:1"/>
+                        </Grid>
+                    </StackPanel>
+                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
+                            Command="{Binding ToggleLeverCommand}" CommandParameter="MsvddOcp"
+                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=MsvddOcp}"
+                            ToolTip="Write this current limit to the card now, or put it back"/>
+                </StackPanel>
+
                 <!-- Crossbar clock offset - private domain, not in PStates20 -->
                 <StackPanel Margin="0,2,0,6" Visibility="{Binding HasXbar, Converter={StaticResource BoolToVis}}">
                     <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Xbar}">

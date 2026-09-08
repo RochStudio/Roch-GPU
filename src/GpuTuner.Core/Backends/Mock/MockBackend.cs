@@ -16,6 +16,7 @@ public sealed class MockBackend : IGpuBackend
 
     private int _core, _mem, _power = 100, _temp = 83, _fan = 30, _voltBoost, _voltOffset;
     private int _railMax = 1035, _msvddMax = 985, _railFloor, _msvddFloor, _xbar, _sys, _video, _lockLo, _lockHi;
+    private int _nvvddOcp = 300000, _msvddOcp = 120000;
     private bool _fanManual;
     private double _load = 5, _simTemp = 40;
 
@@ -38,6 +39,7 @@ public sealed class MockBackend : IGpuBackend
         // The gated levers, with a stock MSVDD ceiling below its NVVDD twin the way a real Blackwell
         // card ships, so the disarm path is tested against two different defaults rather than one.
         CanSetVoltageRail = true, CanSetMsvddRail = true, CanSetXbarOffset = true,
+        CanSetOcp = true, NvvddOcpStockMilliamps = 300000, MsvddOcpStockMilliamps = 120000,
         CanLockClocks = true, ClockLockMinMhz = 210, ClockLockMaxMhz = 3090,
         CanSetSysOffset = true, SysOffsetMinMhz = -150, SysOffsetMaxMhz = 495,
         CanSetVideoOffset = true, VideoOffsetMinMhz = -150, VideoOffsetMaxMhz = 495,
@@ -87,6 +89,7 @@ public sealed class MockBackend : IGpuBackend
         VoltageRailMaxMv = _railMax, MsvddRailMaxMv = _msvddMax,
         VoltageRailFloorMv = _railFloor, MsvddRailFloorMv = _msvddFloor,
         XbarOffsetMhz = _xbar, SysOffsetMhz = _sys, VideoOffsetMhz = _video,
+        NvvddOcpMilliamps = _nvvddOcp, MsvddOcpMilliamps = _msvddOcp,
         LockedClockMinMhz = _lockLo, LockedClockMaxMhz = _lockHi
     };
 
@@ -95,6 +98,8 @@ public sealed class MockBackend : IGpuBackend
     public void SetVoltageRailFloor(int gpuIndex, int millivolts) { _railFloor = millivolts; }
     public void SetMsvddRailFloor(int gpuIndex, int millivolts) { _msvddFloor = millivolts; }
     public void SetXbarOffset(int gpuIndex, int offsetMhz) { Calls.Add(nameof(SetXbarOffset)); _xbar = offsetMhz; }
+    public void SetNvvddOcpMilliamps(int gpuIndex, int ma) { Calls.Add(nameof(SetNvvddOcpMilliamps)); _nvvddOcp = ma; }
+    public void SetMsvddOcpMilliamps(int gpuIndex, int ma) { Calls.Add(nameof(SetMsvddOcpMilliamps)); _msvddOcp = ma; }
     public void SetSysOffset(int gpuIndex, int offsetMhz) { _sys = offsetMhz; }
     public void SetVideoOffset(int gpuIndex, int offsetMhz) { _video = offsetMhz; }
     public void SetClockRange(int gpuIndex, int minMhz, int maxMhz) { _lockLo = minMhz; _lockHi = maxMhz; }
@@ -162,6 +167,7 @@ public sealed class MockBackend : IGpuBackend
         // The private domains too. Leaving them set here is what let the real backend's identical
         // gap through the tests: a mock that forgets the same thing agrees with the bug.
         _xbar = 0; _sys = 0; _video = 0; _lockLo = 0; _lockHi = 0;
+        _nvvddOcp = 300000; _msvddOcp = 120000;
     }
     public string GetDiagnostics(int gpuIndex)
     {

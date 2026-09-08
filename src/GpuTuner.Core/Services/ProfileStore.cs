@@ -146,4 +146,8 @@ public sealed class AppSettings
     public Dictionary<string, int> NvvddDefaultMaxByGpu { get; set; } = new();
     public Dictionary<string, int> MsvddDefaultMaxByGpu { get; set; } = new();
 
+    /// <summary>Stock OCP limits per GPU, in milliamps, recorded the first time the card is seen.</summary>
+    public Dictionary<string, int> NvvddOcpDefaultByGpu { get; set; } = new();
+    public Dictionary<string, int> MsvddOcpDefaultByGpu { get; set; } = new();
+
 }

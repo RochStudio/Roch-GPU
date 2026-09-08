@@ -155,6 +155,16 @@ public sealed class TuningService : IDisposable
         if (msvddMv > 0) MsvddDefaultMaxMv = msvddMv;
     }
 
+    /// <summary>Stock OCP limits to restore when a lever is disarmed, in milliamps; 0 when unknown.</summary>
+    public int NvvddOcpDefaultMa { get; private set; }
+    public int MsvddOcpDefaultMa { get; private set; }
+
+    public void SeedOcpDefaults(int nvvddMa, int msvddMa)
+    {
+        if (nvvddMa > 0) NvvddOcpDefaultMa = nvvddMa;
+        if (msvddMa > 0) MsvddOcpDefaultMa = msvddMa;
+    }
+
     /// <summary>Boost level an observation must be taken at to measure the full headroom.</summary>
     private const int FullBoostPercent = 100;
 
@@ -591,6 +601,23 @@ public sealed class TuningService : IDisposable
         {
             int mhz = on.Has(XocLever.Video) ? p.VideoOffsetMhz : 0;
             Try("Video clock offset", () => Backend.SetVideoOffset(GpuIndex, mhz));
+        }
+
+        // Disarmed restores the stock limit rather than leaving whatever was last written: an OCP
+        // limit survives a reboot, and a card left with its over-current protection wound off is
+        // exactly the state nobody chose and nobody can see.
+        if (which.Has(XocLever.NvvddOcp) && Capabilities.CanSetOcp)
+        {
+            int ma = on.Has(XocLever.NvvddOcp) && p.NvvddOcpMilliamps > 0
+                ? p.NvvddOcpMilliamps : NvvddOcpDefaultMa;
+            if (ma > 0) Try("NVVDD OCP limit", () => Backend.SetNvvddOcpMilliamps(GpuIndex, ma));
+        }
+
+        if (which.Has(XocLever.MsvddOcp) && Capabilities.CanSetOcp)
+        {
+            int ma = on.Has(XocLever.MsvddOcp) && p.MsvddOcpMilliamps > 0
+                ? p.MsvddOcpMilliamps : MsvddOcpDefaultMa;
+            if (ma > 0) Try("MSVDD OCP limit", () => Backend.SetMsvddOcpMilliamps(GpuIndex, ma));
         }
 
         if (which.Has(XocLever.ClockRange) && Capabilities.CanLockClocks)

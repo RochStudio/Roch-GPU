@@ -106,6 +106,17 @@ public sealed record GpuCapabilities
     public int MsvddRailStockFloorMv { get; init; }
 
     /// <summary>
+    /// Over-current protection limits, in milliamps. Its own private family, not part of the rail
+    /// controls above — a 5070 Ti reports 300 A on NVVDD and 120 A on MSVDD. The stock figures are
+    /// what a disarmed lever restores, so they are recorded the first time the GPU is seen for the
+    /// same reason the rail ceilings are: the driver keeps a written limit across a reboot, so
+    /// reading one back later cannot tell stock from something an earlier session left behind.
+    /// </summary>
+    public bool CanSetOcp { get; init; }
+    public int NvvddOcpStockMilliamps { get; init; }
+    public int MsvddOcpStockMilliamps { get; init; }
+
+    /// <summary>
     /// SYS and video clocks. Same private family as the crossbar and the same kind of lever, so they
     /// live behind the same gate; separate flags because a card can expose one and not the others.
     /// </summary>
@@ -219,6 +230,10 @@ public sealed record GpuTuningState
     public int MsvddRailFloorMv { get; init; }
     /// <summary>Crossbar clock offset currently applied, in MHz.</summary>
     public int XbarOffsetMhz { get; init; }
+
+    /// <summary>OCP current limits actually on the card, in milliamps; 0 when unreadable.</summary>
+    public int NvvddOcpMilliamps { get; init; }
+    public int MsvddOcpMilliamps { get; init; }
     /// <summary>SYS and video clock offsets currently applied, in MHz.</summary>
     public int SysOffsetMhz { get; init; }
     public int VideoOffsetMhz { get; init; }

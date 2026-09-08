@@ -34,6 +34,10 @@ public sealed class TuningProfile
     /// <summary>Crossbar clock offset in MHz.</summary>
     public int XbarOffsetMhz { get; set; }
 
+    /// <summary>OCP current limits in milliamps; 0 means "leave the card's own alone".</summary>
+    public int NvvddOcpMilliamps { get; set; }
+    public int MsvddOcpMilliamps { get; set; }
+
     /// <summary>Graphics clock window in MHz, 0/0 for unpinned. Armed by XocLever.ClockRange.</summary>
     public int ClockLockMinMhz { get; set; }
     public int ClockLockMaxMhz { get; set; }
@@ -114,6 +118,8 @@ public sealed class TuningProfile
         VoltageRailFloorMv = VoltageRailFloorMv,
         MsvddRailFloorMv = MsvddRailFloorMv,
         XbarOffsetMhz = XbarOffsetMhz,
+        NvvddOcpMilliamps = NvvddOcpMilliamps,
+        MsvddOcpMilliamps = MsvddOcpMilliamps,
         SysOffsetMhz = SysOffsetMhz,
         VideoOffsetMhz = VideoOffsetMhz,
         ClockLockMinMhz = ClockLockMinMhz,

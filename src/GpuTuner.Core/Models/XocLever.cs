@@ -1,4 +1,4 @@
-namespace GpuTuner.Core.Models;
+﻿namespace GpuTuner.Core.Models;
 
 /// <summary>
 /// The levers behind their own Enable/Disable button in the XOC window. Each one is armed
@@ -16,7 +16,9 @@ public enum XocLever
     Sys = 8,
     Video = 16,
     ClockRange = 32,
-    All = Nvvdd | Msvdd | Xbar | Sys | Video | ClockRange
+    NvvddOcp = 64,
+    MsvddOcp = 128,
+    All = Nvvdd | Msvdd | Xbar | Sys | Video | ClockRange | NvvddOcp | MsvddOcp
 }
 
 public static class XocLeverExtensions

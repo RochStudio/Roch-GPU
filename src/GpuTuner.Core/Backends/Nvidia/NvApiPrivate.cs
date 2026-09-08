@@ -695,25 +695,6 @@ internal static class NvApiPrivate
         return outp;
     }
 
-    /// <summary>Every shape of the OCP family this driver accepts, for the diag dump.</summary>
-    public static List<string> ProbeOcpShapes(PhysicalGPUHandle handle)
-    {
-        var outp = new List<string>();
-        outp.Add($"entry point 0x{FnOcpGetControl:X8} exported={Exposes(FnOcpGetControl)}");
-        foreach (var (size, ver) in new[] { (0x0A4C, 1), (0x0ACB0, 4), (0x0B0B0, 5) })
-            foreach (int mo in new[] { -1, 0x04, 0x88 })
-                foreach (uint mask in new uint[] { 0x7FFF, 1, 0x10 })
-                {
-                    if (mo < 0 && mask != 0x7FFF) continue;
-                    var w = CallRaw(handle, FnOcpGetControl, size, ver, mo, mask, out int st);
-                    if (st != 0 || w.Length == 0) continue;
-                    int nz = w.Count(x => x != 0);
-                    outp.Add($"  size=0x{size:X4} ver={ver} maskOff={(mo < 0 ? "none" : "0x" + mo.ToString("X2"))} " +
-                             $"mask=0x{mask:X4} -> status=0 nonZero={nz}");
-                }
-        return outp;
-    }
-
     /// <summary>
     /// Hunt the rail family's three buffers for the OCP current limit.
     ///

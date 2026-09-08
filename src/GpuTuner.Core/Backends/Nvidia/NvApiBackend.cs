@@ -281,6 +281,19 @@ public sealed class NvApiBackend : IGpuBackend
         catch (NVIDIAApiException) { }
         catch (NVIDIANotSupportedException) { }
 
+        // OCP. Its own family; a card without it simply reports no channels and the control hides.
+        bool canOcp = false; int ocpNvvdd = 0, ocpMsvdd = 0;
+        try
+        {
+            var ocp = NvApiPrivate.ReadOcpChannels(g.Handle);
+            int Slot(int s) => ocp.FirstOrDefault(c => c.Slot == s).Value;
+            ocpNvvdd = Slot(NvApiPrivate.OcpSlotNvvdd);
+            ocpMsvdd = Slot(NvApiPrivate.OcpSlotMsvdd);
+            canOcp = ocpNvvdd > 0 && ocpMsvdd > 0;
+        }
+        catch (NVIDIAApiException) { }
+        catch (NVIDIANotSupportedException) { }
+
         // Clock lock. NVML owns this one; its reported maximum is the top of the range, and the floor
         // is the 210 MHz the driver already insists on when a zero floor is refused.
         int maxLockMhz = Nvml.MaxGraphicsClockMhz(NvmlIndexFor(gpuIndex));
@@ -314,6 +327,7 @@ public sealed class NvApiBackend : IGpuBackend
             VoltageRailMinMv = nvvdd.MinMv, VoltageRailMaxMv = nvvdd.MaxMv, VoltageRailStockMaxMv = nvvdd.StockMv,
             VoltageRailFloorMinMv = nvvdd.FloorMinMv, VoltageRailFloorMaxMv = nvvdd.FloorMaxMv, VoltageRailStockFloorMv = nvvdd.FloorStockMv,
             CanSetMsvddRail = msvdd.Supported,
+            CanSetOcp = canOcp, NvvddOcpStockMilliamps = ocpNvvdd, MsvddOcpStockMilliamps = ocpMsvdd,
             MsvddRailMinMv = msvdd.MinMv, MsvddRailMaxMv = msvdd.MaxMv, MsvddRailStockMaxMv = msvdd.StockMv,
             MsvddRailFloorMinMv = msvdd.FloorMinMv, MsvddRailFloorMaxMv = msvdd.FloorMaxMv, MsvddRailStockFloorMv = msvdd.FloorStockMv,
             CanLockClocks = maxLockMhz > 0, ClockLockMinMhz = MinLockableMhz, ClockLockMaxMhz = maxLockMhz,
@@ -597,6 +611,8 @@ public sealed class NvApiBackend : IGpuBackend
             VoltageRailMaxMv = railMaxMv, MsvddRailMaxMv = msvddMaxMv,
             VoltageRailFloorMv = railFloorMv, MsvddRailFloorMv = msvddFloorMv,
             XbarOffsetMhz = xbarMhz, SysOffsetMhz = sysMhz, VideoOffsetMhz = videoMhz,
+            NvvddOcpMilliamps = OcpNow(g, NvApiPrivate.OcpSlotNvvdd),
+            MsvddOcpMilliamps = OcpNow(g, NvApiPrivate.OcpSlotMsvdd),
             LockedClockMinMhz = _lockedMinMhz, LockedClockMaxMhz = _lockedMaxMhz,
             PowerLimitPercent = power, TempLimitC = temp,
             VoltageBoostPercent = voltBoost, VoltageOffsetMv = voltOffset,
@@ -1535,6 +1551,27 @@ public sealed class NvApiBackend : IGpuBackend
         }
     }
 
+    /// <summary>One OCP channel's limit as the card reports it now; 0 when unreadable.</summary>
+    private static int OcpNow(PhysicalGPU g, int slot)
+    {
+        try { return NvApiPrivate.ReadOcpChannels(g.Handle).FirstOrDefault(c => c.Slot == slot).Value; }
+        catch (NVIDIAApiException) { return 0; }
+        catch (NVIDIANotSupportedException) { return 0; }
+    }
+
+    public void SetNvvddOcpMilliamps(int gpuIndex, int milliamps) =>
+        WriteOcp(gpuIndex, NvApiPrivate.OcpSlotNvvdd, milliamps, "NVVDD");
+
+    public void SetMsvddOcpMilliamps(int gpuIndex, int milliamps) =>
+        WriteOcp(gpuIndex, NvApiPrivate.OcpSlotMsvdd, milliamps, "MSVDD");
+
+    private void WriteOcp(int gpuIndex, int slot, int milliamps, string rail)
+    {
+        var err = NvApiPrivate.WriteOcpLimit(Gpu(gpuIndex).Handle, slot, milliamps);
+        if (err != null)
+            throw new GpuBackendException($"Failed to set the {rail} OCP limit to {milliamps / 1000.0:0.##} A: {err}.");
+    }
+
     public void SetFanSpeed(int gpuIndex, int fanIndex, int percent)
     {
         var g = Gpu(gpuIndex);
@@ -1661,7 +1698,11 @@ public sealed class NvApiBackend : IGpuBackend
         // before the driver fills anything out.
         Section("OCP current limits (read-only)", () =>
         {
-            foreach (var line in NvApiPrivate.ProbeOcpShapes(g.Handle)) sb.AppendLine("  " + line);
+            // Only the one shape that is known good. An earlier version of this section swept sizes
+            // to find the family, and a size smaller than the driver expects makes it write past the
+            // end of the buffer: the heap is corrupted and the process dies later with an access
+            // violation, somewhere else entirely. Finding a struct by sweeping is a thing to do once,
+            // deliberately, not something to leave in a diagnostic that users run.
             var ch = NvApiPrivate.ReadOcpChannels(g.Handle);
             sb.AppendLine($"  channels: {ch.Count}");
             foreach (var c in ch)

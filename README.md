@@ -72,6 +72,7 @@ showing everything greyed out.
 | Measured rail voltages | NVVDD and MSVDD, mV | — |
 | XBAR clock | offset, MHz — writable on Blackwell only | — |
 | Clock range | pin the graphics clock to a min/max window | — |
+| NVVDD / MSVDD OCP | over-current limit, A — Blackwell | — |
 | SYS clock | offset, MHz | — |
 | Video clock | offset, MHz | — |
 | HUBCLK, DISPCLK, L2CLK, reference | read-only, in the monitor | — |
@@ -151,7 +152,8 @@ Windows draws rather than WPF, and the choice is remembered. The palette and the
 ### Extreme OC (XOC)
 
 The **XOC** button holds the levers that can brown a card out rather than merely fail: the NVVDD and
-MSVDD rail ranges, the crossbar, SYS and video clocks, and the clock range. Each has **its own
+MSVDD rail ranges, the two OCP current limits, the crossbar, SYS and video clocks, and the clock
+range. Each has **its own
 Enable/Disable button**, showing the action rather than the state, and is off by default. On the
 40-series cards tested only NVVDD is usable — the other two are Blackwell-only, and controls the
 card doesn't support are hidden rather than shown greyed out.
@@ -159,6 +161,13 @@ card doesn't support are hidden rather than shown greyed out.
 They are armed separately because they fail in unrelated ways: a rail ceiling that browns the card
 out says nothing about whether a crossbar offset is stable, and having to arm both to test either is
 how a session ends up unable to say which of two changes hung it.
+
+**The OCP limits** are the current at which the card cuts in to protect itself — 300 A on NVVDD and
+120 A on MSVDD as a 5070 Ti ships. They are their own private family, not part of the rail controls,
+and the sliders offer half the stock figure to half again above it: that is the bound the driver
+itself enforces, not one invented here. Disarming restores the stock figure rather than leaving the
+last value written, because an OCP limit survives a reboot and a card left with its protection wound
+off is a state nobody chose and nothing on screen would show.
 
 The rails go to **1200 mV** on a 5070 Ti — 145 mV over the card's own base, and deliberately more
 than air cooling can use. Nothing on air is thermally able to sit up there; the travel is offered
@@ -248,7 +257,7 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1
 That builds, tests and publishes `dist\RochGPU.exe`. If you don't have the SDK, `SETUP.bat` does the
 lot in one double-click.
 
-**Tests:** `dotnet run --project tests/GpuTuner.Core.Tests -c Release` → `272 passed, 0 failed`. The
+**Tests:** `dotnet run --project tests/GpuTuner.Core.Tests -c Release` → `283 passed, 0 failed`. The
 runner is dependency-free — the whole project has no NuGet packages at all — so most of the engine
 can be changed without a GPU in front of you.
 
@@ -365,25 +374,6 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   than clamps, so HYDRA's 150 % cannot be landing through this call either; whatever its driver
   restart is for, it is not this. `RochGPU.exe diag` prints the read-only probe under *Policy
   shapes*.
-- **The OCP current limits are readable, and writing them is not wired up yet.** mVolt+ and HYDRA
-  both expose a per-rail over-current limit in amps; this tool can now read it. It is not the
-  voltage-rail family, which was the obvious guess and carries no such field — established by
-  scanning all three of that family's buffers for the two figures in every plausible unit and
-  finding neither. It is its own family, `0x8B3E7343`, struct 0xA4C version 1, with the mask trap at
-  +0x04 and entries at +0x1C on a 0x28 stride. A 5070 Ti reports 15 channels, two of which carry
-  **300000 and 120000 milliamps** — 300 A and 120 A, exactly what mVolt+ shows for NVVDD and MSVDD.
-  The layout was read out of HYDRA's own `NVAPI.dll`, whose exported `NvApi_SetCoreOcpLimit` and
-  `NvApi_SetMemOcpLimit` are thunks differing only in a selector (1 for core, 0x10 for memory) into
-  one implementation; that implementation bounds a write to **half the default at the bottom and
-  150 % of it at the top**. The write goes through `0xAFFC2279` with the same struct, read-modify-
-  write so the other rail is untouched, and it works: measured on a 5070 Ti, NVVDD 300 A -> 290 A
-  read back as 290, then restored to 300, status 0 both ways. The read is in `RochGPU.exe diag`
-  under *OCP current limits*. There is no control for it in the window yet.
-
-  `0xAFFC2279` took two goes to find, and the wrong answer is worth recording: HYDRA's initialiser
-  resolves each id and stores the result to a global, and the compiler schedules the next id's load
-  before the previous result's store — so pairing a store with the nearest preceding id is off by
-  one. That gave `0xEDCF624E`, which the driver rejects for this struct.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card
@@ -417,7 +407,7 @@ setup.ps1                  as above, plus SDK install and launch (driven by SETU
 src/GpuTuner.Core          engine: backend abstraction, NVIDIA + AMD backends, mock, profiles, fan curve
 src/GpuTuner.App           the executable — WPF window, and the entry point that picks a half
 src/GpuTuner.Cli           the command-line half, compiled into the same executable
-tests/GpuTuner.Core.Tests  dependency-free test runner (272 checks, no hardware needed)
+tests/GpuTuner.Core.Tests  dependency-free test runner (283 checks, no hardware needed)
 tools/amd                  read-only PowerShell probes used to map the AMD driver surface
 .github/workflows/ci.yml   build + test on Linux, publish + smoke-test on Windows
 third_party/NvAPIWrapper   vendored NvAPIWrapper (LGPL-3.0) — see THIRD-PARTY-NOTICES.md
