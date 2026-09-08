@@ -85,16 +85,17 @@ showing everything greyed out.
 Fan control is its own window too — a duty per fan, or a curve — and applying there saves the fan
 settings into the active profile slot, so what you set is what comes back at logon.
 
-The telemetry window also carries **measured rail current** — seven 12 V channels straight from the
-card's own power monitor: board total, PCIe slot, NVVDD input, Misc0 input and three the driver
-names only by number. Measured, not divided out of the board watts. The names are positional, worked out by
-running mVolt+ against the same card under the same load and matching all six currents at once; a
-card reporting a different set is numbered plainly rather than given names from other hardware. These are not the current an OCP limit guards: those rails sit after the VRM at about a volt,
-and this family does not report them — see Known Limitations.
+Plus a telemetry window — a table of every sensor the card reports, with its current, minimum,
+maximum and running average, grouped and foldable — five profile slots, apply-at-logon, tray
+operation and the CLI.
 
-Plus a telemetry window — a table of every sensor the card reports, with
-its current, minimum, maximum and running average, grouped and foldable — five profile slots,
-apply-at-logon, tray operation and the CLI.
+It also carries **measured rail current**: seven 12 V channels straight from the card's own power
+monitor — board total, PCIe slot, NVVDD input, Misc0 input, and three the driver names only by
+number. Measured, not divided out of the board watts. The names are positional, worked out by
+running mVolt+ against the same card under the same load and matching every channel at once, so a
+card reporting a different set is numbered plainly rather than given names from other hardware.
+These are not the current an OCP limit guards — those rails sit after the VRM at about a volt, and
+this family does not report them. See Known Limitations.
 
 Nothing polls the driver unless a window is showing live readings — telemetry, or the fan window
 with its per-fan RPM. Close both and there is no driver call at all, so the main window can sit on a
