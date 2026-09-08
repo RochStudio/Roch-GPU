@@ -450,6 +450,13 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   exactly one entry on a 5070 Ti (P0, min 83.3 %, default 100 %, max 116.7 %) and `GetStatus`
   returns a count of one. So MSVDD has an over-current limit in amps and no power limit of its own,
   and neither does NVVDD — the percentage on the main window governs the whole board.
+- **A clock range cannot be read back, only remembered.** NVML will not report one: `nvmlDeviceGetClock`
+  answers NOT_SUPPORTED for every application-clock id, and the clocks-event reasons read zero
+  whether a lock is set or not — both measured on a 5070 Ti with a lock deliberately applied. So
+  that row shows what was asked for rather than what the card holds. The one thing that can make it
+  a lie is a display driver reset, which clears the lock; the window notices that (the NVML session
+  has to be reopened, which happens for no other reason) and forgets the range rather than reporting
+  one nothing is holding.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
   voltage it actually runs at is not, making it the one control here without read-back verification.
 - **A display driver reset drops the tune, and nothing puts it back.** When a game hangs the card

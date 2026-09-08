@@ -40,6 +40,7 @@ internal static class Nvml
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetName")] private static extern int GetNameRaw(IntPtr device, [Out] byte[] name, uint length);
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetPowerUsage")] private static extern int GetPowerUsage(IntPtr device, out uint milliwatts);
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetMaxClockInfo")] private static extern int GetMaxClock(IntPtr device, int type, out uint mhz);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetMinMaxClockOfPState")] private static extern int GetMinMaxOfPState(IntPtr device, int type, int pstate, out uint min, out uint max);
 
     private static bool _initTried, _initOk;
     private static readonly object Gate = new();
@@ -102,6 +103,41 @@ internal static class Nvml
         uint mhz = 0;
         return Read(gpuIndex, dev => GetMaxClock(dev, ClockGraphics, out mhz)) ? (int)mhz : 0;
     }
+
+    /// <summary>
+    /// Lowest graphics clock the driver will discuss, in MHz; 0 when it will not say.
+    ///
+    /// Asked per p-state and reduced to the smallest answer, because no single call reports it: a
+    /// 5070 Ti says 495 MHz for P0 and 180 for P8, and refuses several p-states outright. 180 is the
+    /// real floor, and the driver accepts it as one — tested, along with the 210 that used to be
+    /// compiled in here as a guess.
+    /// </summary>
+    public static int MinGraphicsClockMhz(int gpuIndex)
+    {
+        if (!IsAvailable) return 0;
+        lock (Gate)
+        {
+            try
+            {
+                if (GetHandle((uint)gpuIndex, out var dev) != Success) return 0;
+                int best = 0;
+                for (int pstate = 0; pstate <= 15; pstate++)
+                {
+                    if (GetMinMaxOfPState(dev, ClockGraphics, pstate, out uint lo, out _) != Success) continue;
+                    if (lo > 0 && (best == 0 || lo < best)) best = (int)lo;
+                }
+                return best;
+            }
+            catch (Exception) { return 0; }
+        }
+    }
+
+    /// <summary>
+    /// Bumped every time the session is thrown away and reopened, which only happens when the
+    /// display driver has been reset under us. Anything remembered about driver state from before
+    /// that point — a clock lock, say — describes a card that no longer exists.
+    /// </summary>
+    public static int SessionEpoch { get; private set; }
 
     /// <summary>Device name as NVML sees it — used to confirm the index lines up with the NVAPI one.</summary>
     public static string? DeviceName(int gpuIndex)
@@ -191,7 +227,9 @@ internal static class Nvml
     private static bool Reestablish()
     {
         TryShutdown();
-        return IsAvailable;
+        if (!IsAvailable) return false;
+        SessionEpoch++;
+        return true;
     }
 
     private static string Describe(int result)

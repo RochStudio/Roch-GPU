@@ -304,6 +304,7 @@ public sealed class NvApiBackend : IGpuBackend
         // Clock lock. NVML owns this one; its reported maximum is the top of the range, and the floor
         // is the 210 MHz the driver already insists on when a zero floor is refused.
         int maxLockMhz = Nvml.MaxGraphicsClockMhz(NvmlIndexFor(gpuIndex));
+        int minLockMhz = Nvml.MinGraphicsClockMhz(NvmlIndexFor(gpuIndex));
 
         var coreRange = ClockStep.Narrow(coreMin, coreMax,
             ClockStep.CoreOffsetPracticalMinMhz, ClockStep.CoreOffsetPracticalMaxMhz);
@@ -339,7 +340,7 @@ public sealed class NvApiBackend : IGpuBackend
             MsvddOcpMinMilliamps = ocpMsvddMin, MsvddOcpMaxMilliamps = ocpMsvddMax,
             MsvddRailMinMv = msvdd.MinMv, MsvddRailMaxMv = msvdd.MaxMv, MsvddRailStockMaxMv = msvdd.StockMv,
             MsvddRailFloorMinMv = msvdd.FloorMinMv, MsvddRailFloorMaxMv = msvdd.FloorMaxMv, MsvddRailStockFloorMv = msvdd.FloorStockMv,
-            CanLockClocks = maxLockMhz > 0, ClockLockMinMhz = MinLockableMhz, ClockLockMaxMhz = maxLockMhz,
+            CanLockClocks = maxLockMhz > 0, ClockLockMinMhz = minLockMhz > 0 ? minLockMhz : MinLockableMhz, ClockLockMaxMhz = maxLockMhz,
             CanSetXbarOffset = canXbar, XbarOffsetMinMhz = xbarMin, XbarOffsetMaxMhz = xbarMax,
             CanSetSysOffset = canSys, SysOffsetMinMhz = sysMin, SysOffsetMaxMhz = sysMax,
             CanSetVideoOffset = canVideo, VideoOffsetMinMhz = vidMin, VideoOffsetMaxMhz = vidMax
@@ -373,6 +374,8 @@ public sealed class NvApiBackend : IGpuBackend
     {
         // Measured rail currents. Costs one private call, and only while something is on screen to
         // show them — the same rule the rest of this method already follows.
+        ForgetLockAcrossDriverReset();
+
         double[] railAmps = Array.Empty<double>(), railVolts = Array.Empty<double>();
         try
         {
@@ -802,10 +805,40 @@ public sealed class NvApiBackend : IGpuBackend
         _ => "Domain type " + type
     };
 
-    /// <summary>The clock window the user asked for, so the voltage cap knows not to fight it.</summary>
+    /// <summary>
+    /// The clock window the user asked for, so the voltage cap knows not to fight it.
+    ///
+    /// Remembered rather than read back, because NVML will not report a lock: GetClock answers
+    /// NOT_SUPPORTED for every application-clock id, and the event reasons read zero whether a lock
+    /// is set or not — both measured rather than assumed. So this is what we asked for, and the one
+    /// thing that can make it a lie is a display driver reset, which clears the lock underneath us.
+    /// <see cref="ForgetLockAcrossDriverReset"/> is what keeps it honest about that.
+    /// </summary>
     private int _lockedMinMhz, _lockedMaxMhz;
 
-    /// <summary>Lowest clock the driver will accept as a floor; a zero floor is refused on some branches.</summary>
+    /// <summary>NVML session this window was written in; a change means the driver was reset.</summary>
+    private int _lockEpoch;
+
+    /// <summary>
+    /// Drop the remembered window when the NVML session has been reopened, which only happens after
+    /// a driver reset — and a driver reset clears the lock. Without this the window keeps reporting
+    /// a range that nothing is holding, which is the one case where remembering it is worse than
+    /// admitting we cannot read it.
+    /// </summary>
+    private void ForgetLockAcrossDriverReset()
+    {
+        if (Nvml.SessionEpoch == _lockEpoch) return;
+        _lockEpoch = Nvml.SessionEpoch;
+        _lockedMinMhz = _lockedMaxMhz = 0;
+    }
+
+    /// <summary>
+    /// Fallback floor for the clock range, used only when the driver will not report its own.
+    ///
+    /// It reports one on every card tested — a 5070 Ti says 180 MHz, and accepts it — so this is
+    /// what a card that answers nothing gets rather than the figure anyone should see. It was the
+    /// compiled-in answer until the driver turned out to have a better one.
+    /// </summary>
     private const int MinLockableMhz = 210;
 
     public void SetClockRange(int gpuIndex, int minMhz, int maxMhz)
@@ -822,6 +855,7 @@ public sealed class NvApiBackend : IGpuBackend
             string? clr = Nvml.ResetGraphicsClocks(nvmlIndex);
             if (clr != null) throw new GpuBackendException("Failed to release the clock range: " + clr);
             _lockedMinMhz = _lockedMaxMhz = 0;
+            _lockEpoch = Nvml.SessionEpoch;
             return;
         }
 
@@ -835,6 +869,7 @@ public sealed class NvApiBackend : IGpuBackend
 
         _lockedMinMhz = lo;
         _lockedMaxMhz = hi;
+        _lockEpoch = Nvml.SessionEpoch;
         // The voltage cap's NVML fallback writes the same lock. This one is explicit, so it wins;
         // the cap has the NVAPI boost lock to fall back on and will say so if it cannot use it.
         _nvmlClockCapMhz = 0;
