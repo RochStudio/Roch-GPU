@@ -358,9 +358,13 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   and none of the reads: it writes a limit blind, with the same v2 struct, and never asks whether
   there was a policy to write to. Power is the same shape one step over — the info struct reports
   83.3 / 100 / 116.7 % and accepts only v1, so there is no newer version carrying a bigger number,
-  while HYDRA embeds only `SetStatus` and pairs it with `NvAPI_RestartDisplayDriver`. Whether a
-  write past the reported maximum lands, clamps, or is refused has not been tried here, because it
-  is a write. `RochGPU.exe diag` prints the probe under *Policy shapes*. The core and memory OCP
+  while HYDRA embeds only `SetStatus` and pairs it with `NvAPI_RestartDisplayDriver`. A write past
+  the reported maximum was tried, elevated, at idle, with the same v1 struct that works at the
+  maximum: 120 % and 150 % both come back `NVAPI_INVALID_ARGUMENT` (-5) and the read-back stays at
+  116 667, while 116 667 itself is accepted (status 0) as the control. The driver refuses rather
+  than clamps, so HYDRA's 150 % cannot be landing through this call either; whatever its driver
+  restart is for, it is not this. `RochGPU.exe diag` prints the read-only probe under *Policy
+  shapes*. The core and memory OCP
   current limits HYDRA exposes are a private family whose entry points are not in any id list this
   tool has.
 - **Live MSVDD voltage is not readable.** Its ceiling and floor are set and read back, but the
