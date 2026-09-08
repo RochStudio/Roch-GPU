@@ -976,14 +976,22 @@ public sealed class NvApiBackend : IGpuBackend
     private const int VoltageBoostHeadroomMv = 60;
 
     /// <summary>
-    /// How far above its stock ceiling a voltage rail may be driven from here, in mV.
+    /// How far above its hardware base a voltage rail may be driven from here, in mV.
     ///
-    /// The driver accepts far more: this card took the ceiling to 1280 mV against a 1035 mV stock,
-    /// +245 mV, before clamping. That is not a number anyone should arrive at by dragging a slider.
-    /// The reasoning is the same as the practical clock ranges in ClockStep — offer the part of the
-    /// travel worth using, and leave the rest to someone who edits the source deliberately.
+    /// 145 puts a 5070 Ti's rails at 1200 mV against a 1055 mV base, which is the figure the rail
+    /// status struct itself carries: a field that reads a flat 1200000 µV on both rails and does not
+    /// move when the configured ceiling does. That is inference from an unlabelled offset rather
+    /// than a documented maximum, and the driver has been seen taking more — this card accepted a
+    /// ceiling of 1280 mV before clamping — so 1200 is a plausible boundary, not a proven one.
+    ///
+    /// It is deliberately more travel than air cooling can use. Nothing on air is thermally able to
+    /// sit up there; the reason to offer it is water and LN2, where the voltage a card will hold is
+    /// a different question and the tool should not be the thing standing in the way.
+    ///
+    /// This is headroom over each card's own base rather than an absolute ceiling, so a card with a
+    /// different base gets a proportionate window rather than this one's number.
     /// </summary>
-    private const int VoltageRailHeadroomMv = 115;
+    private const int VoltageRailHeadroomMv = 145;
 
     private (int entries, int version)? _curveLayout;
 

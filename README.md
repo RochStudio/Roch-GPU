@@ -160,6 +160,12 @@ They are armed separately because they fail in unrelated ways: a rail ceiling th
 out says nothing about whether a crossbar offset is stable, and having to arm both to test either is
 how a session ends up unable to say which of two changes hung it.
 
+The rails go to **1200 mV** on a 5070 Ti — 145 mV over the card's own base, and deliberately more
+than air cooling can use. Nothing on air is thermally able to sit up there; the travel is offered
+for water and LN2, where what a card will hold is a different question. 1200 is the figure the rail
+status struct itself carries, though the driver has been seen taking a ceiling of 1280 mV before
+clamping, so treat it as a plausible boundary rather than a proven one.
+
 Enable and Disable write that one lever immediately and touch nothing else — not the other levers,
 and not the clocks, power or fan. What is armed travels with the profile, so a normal **Apply**
 respects it: an armed lever writes your value, a disarmed one goes back to the driver's own. A rail
