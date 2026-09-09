@@ -38,7 +38,7 @@ Verified native readings include GPU/hotspot/memory temperatures, core voltage, 
 
 <img src="assets/screenshots/curve.png" alt="NVIDIA voltage-frequency curve editor" width="840">
 
-Screenshots show earlier builds. Version 1.0.4 updates the main layout and telemetry styling and moves Zero RPM into Fan Control. Features shown depend on the GPU.
+The AMD tuning and telemetry screenshots show Roch GPU 1.0.4 on an RX 9070 XT. NVIDIA, fan and V/F editor screenshots are from earlier builds. Features depend on the GPU; displayed settings are examples, not tuning recommendations.
 
 ## Build the latest source
 
