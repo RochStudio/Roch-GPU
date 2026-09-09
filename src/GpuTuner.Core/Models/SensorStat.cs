@@ -28,7 +28,7 @@ public sealed class SensorStat
 
     public void Add(double value)
     {
-        if (double.IsNaN(value) || double.IsInfinity(value)) return;
+        if (double.IsNaN(value) || double.IsInfinity(value)) { Current = double.NaN; return; }
         Current = value;
         if (double.IsNaN(Minimum) || value < Minimum) Minimum = value;
         if (double.IsNaN(Maximum) || value > Maximum) Maximum = value;

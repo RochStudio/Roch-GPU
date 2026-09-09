@@ -141,6 +141,7 @@ public sealed class TuningProfile
         GpuName = gpuName,
         CoreOffsetMhz = 0,
         PowerLimitPercent = caps.PowerLimitDefaultPercent,
+        MemoryTimingLevel = caps.MemoryTimingDefaultLevel,
         TempLimitC = caps.TempLimitDefaultC,
         // "Stock" for an absolute memory slider is the card's rated clock, not zero.
         MemoryOffsetMhz = caps.MemoryClockIsAbsolute ? caps.MemoryClockDefaultMhz : 0,

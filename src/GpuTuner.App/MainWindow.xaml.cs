@@ -50,7 +50,7 @@ public partial class MainWindow : Window
         Theme.Register(this);   // paints the chrome now, and follows every later light/dark switch
         // A second launch cannot open a window of its own, so it asks this one to come forward.
         Native.SingleInstance.ListenForShowRequests(() => Dispatcher.BeginInvoke(RestoreFromTray));
-        ThemeButton.Content = Theme.IsDark ? "Dark" : "Light";
+        ThemeButton.Content = Theme.IsDark ? "Light" : "Dark";
         SetupTray();
         UpdatePollDetail();              // monitor starts closed, so the poll starts paused
         Closing += MainWindow_Closing;
@@ -146,7 +146,7 @@ public partial class MainWindow : Window
     private void Theme_Click(object sender, RoutedEventArgs e)
     {
         bool dark = Theme.Toggle();
-        ThemeButton.Content = dark ? "Dark" : "Light";
+        ThemeButton.Content = dark ? "Light" : "Dark";
         App.Settings.DarkMode = dark;
         App.Store.SaveSettings(App.Settings);
     }

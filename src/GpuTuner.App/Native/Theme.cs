@@ -28,6 +28,7 @@ public static class Theme
         ("PanelBrush",       "#FFFFFFFF", "#FF161616"),
         ("PanelAltBrush",    "#FFF8FAFC", "#FF1A1A1A"),
         ("BorderBrush",      "#FFCBD5E1", "#FF0A0A0A"),
+        ("SectionBorderBrush", "#FFCBD5E1", "#FF2A2A2A"),
         ("TextBrush",        "#FF0F172A", "#FFFFFFFF"),
         ("MutedBrush",       "#FF475569", "#FFB0B0B0"),
         ("HeaderBrush",      "#FFE2E8F0", "#FF1C1C1C"),

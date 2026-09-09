@@ -172,6 +172,7 @@ public sealed record GpuCapabilities
     /// <summary>Memory timing presets are selectable (AMD's "fast timing").</summary>
     public bool CanSetMemoryTiming { get; init; }
     public IReadOnlyList<string> MemoryTimingOptions { get; init; } = Array.Empty<string>();
+    public int MemoryTimingDefaultLevel { get; init; }
 
     /// <summary>
     /// True when the fan curve is executed by the driver rather than by this app's polling loop.
@@ -201,6 +202,9 @@ public sealed record GpuTelemetry
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
     public double CoreClockMhz { get; init; }
     public double MemoryClockMhz { get; init; }
+    public double FabricClockMhz { get; init; } = double.NaN;
+    public double SocClockMhz { get; init; } = double.NaN;
+    public IReadOnlyList<SupplementalSensor> SupplementalSensors { get; init; } = Array.Empty<SupplementalSensor>();
     public double TemperatureC { get; init; }
     public double HotSpotC { get; init; }          // NaN when unavailable
     public double MemoryTemperatureC { get; init; } // NaN when unavailable
@@ -228,6 +232,9 @@ public sealed record GpuTelemetry
     public string PerfState { get; init; } = "";
     public string LimitReason { get; init; } = "";  // Power / Thermal / Voltage / None
 }
+
+/// <summary>A supported native sensor reading; missing readings are omitted from each sample.</summary>
+public sealed record SupplementalSensor(string Key, string Name, string Unit, double Value);
 
 /// <summary>Current applied tuning as read back from the driver.</summary>
 public sealed record GpuTuningState

@@ -105,6 +105,10 @@ public sealed class MainViewModel : ObservableObject
         // must show what will actually happen at logon.
         _applyOnStartup = StartupTaskService.Exists();
         _startupProfile = settings.StartupProfile;
+        _acceptedStartupProfile = _startupProfile;
+        if (App.RecoveryNotice != null) Status = App.RecoveryNotice;
+        else if (_applyOnStartup && _startupProfile != null && App.Recovery?.StartupProfile(_startupProfile) == null)
+            Status = "Refresh startup settings by toggling Startup off/on.";
 
         // Light up the slot that was applied last session, so the bar reflects what the card is running.
         if (settings.LastProfileByGpu.TryGetValue(Device.Name, out var lastName))
@@ -130,10 +134,16 @@ public sealed class MainViewModel : ObservableObject
     public GpuDevice Device { get; }
     public string BackendName { get; }
     public string VramText => Device.VramMegabytes > 0 ? $"{Device.VramMegabytes / 1024.0:0.#} GB" : "";
+    public string DeviceDisplayName => Device.VramMegabytes > 0
+        ? $"{Device.Name} ({Device.VramMegabytes / 1024.0:0.#}GB)"
+        : Device.Name;
+    public string DriverLine => !string.IsNullOrWhiteSpace(Device.DriverVersion)
+        ? $"Driver {Device.DriverVersion}" : BackendName;
+    public string BiosLine => !string.IsNullOrWhiteSpace(Device.BiosVersion)
+        ? $"vBIOS {Device.BiosVersion}" : "";
 
     /// <summary>
-    /// Driver, vBIOS and VRAM on one line. Fields the vendor library declines to report are left
-    /// out entirely rather than shown as an empty label or "0 GB".
+    /// Legacy combined identity line kept for consumers outside the main window.
     /// </summary>
     public string DeviceLine
     {
@@ -142,7 +152,6 @@ public sealed class MainViewModel : ObservableObject
             var parts = new List<string>(3);
             if (!string.IsNullOrWhiteSpace(Device.DriverVersion)) parts.Add($"Driver {Device.DriverVersion}");
             if (!string.IsNullOrWhiteSpace(Device.BiosVersion)) parts.Add($"vBIOS {Device.BiosVersion}");
-            if (VramText.Length > 0) parts.Add(VramText);
             if (parts.Count == 0) parts.Add(BackendName);
             return string.Join("   ·   ", parts);
         }
@@ -182,7 +191,8 @@ public sealed class MainViewModel : ObservableObject
     public bool HasMemoryTiming => Caps.CanSetMemoryTiming && Caps.MemoryTimingOptions.Count > 0;
 
     public string MemoryLabel => Caps.MemoryClockIsAbsolute ? "Memory Clock (MHz)" : "Memory Clock (MHz offset)";
-    public string CoreLabel => "Core Clock (MHz)";
+    public string CoreLabel => "Core Offset (MHz)";
+    public string AmdClockSupportText => $"Offset range: {CoreRangeText}. Absolute core limits and FCLK adjustment are unavailable in this backend. FCLK appears in Telemetry when reported.";
     public string VoltageLabel => IsVoltageOffset ? "Voltage Offset (mV)" : "Core Voltage (mV)";
     public string PowerLabel => Caps.PowerLimitIsOffset ? "Power Limit (% offset)" : "Power Limit (%)";
 
@@ -451,9 +461,10 @@ public sealed class MainViewModel : ObservableObject
         p.FixedFanPercent = percent;
         p.FixedFanPercents = (int[])perFan.Clone();
         p.FanCurve = curve.Clone();
+        p.ZeroRpm = ZeroRpm;
         _store.Save(p);
         RefreshSlots();
-        return $"saved to {name}";
+        return $"saved to {name}" + StartupSaveNotice(name);
     }
 
     public bool IsFixedFan => _fanModeIndex == 1;
@@ -664,9 +675,10 @@ public sealed class MainViewModel : ObservableObject
     // reporting "no limiter", which is a claim we haven't measured.
     public string LimitReasonText => _t == null
         ? "Limiter — open the monitor to sample"
+        : _t.LimitReason == "Unavailable" ? "Limiter status not reported"
         : string.IsNullOrEmpty(_t.LimitReason) || _t.LimitReason == "None"
             ? "No active limiter" : $"Limited by {_t.LimitReason.ToLowerInvariant()}";
-    public bool LimitIsActive => _t != null && !string.IsNullOrEmpty(_t.LimitReason) && _t.LimitReason != "None";
+    public bool LimitIsActive => _t != null && !string.IsNullOrEmpty(_t.LimitReason) && _t.LimitReason is not ("None" or "Unavailable");
 
     // ------------------------------------------------------------------ status
     private string _status = "Ready";
@@ -773,7 +785,7 @@ public sealed class MainViewModel : ObservableObject
             RefreshSlots();
             SetActiveSlot(number);
             SelectedProfile = slot.Name;
-            Status = $"Saved current settings to slot {number}"; StatusIsError = false;
+            Status = $"Saved current settings to slot {number}" + StartupSaveNotice(slot.Name); StatusIsError = false;
             return;
         }
 
@@ -958,7 +970,7 @@ public sealed class MainViewModel : ObservableObject
     private void Apply()
     {
         var p = BuildProfileFromEditor(SelectedProfile ?? "Session");
-        var errs = _svc.Apply(p);
+        var errs = App.TrialProfile(p);
         // Notes say what the apply did differently, not that it failed — showing them in the error
         // colour would make a clean apply look broken.
         if (errs.Count == 0 || TuningService.OnlyNotes(errs))
@@ -975,6 +987,11 @@ public sealed class MainViewModel : ObservableObject
         else
         {
             Status = string.Join("  |  ", errs); StatusIsError = true;
+            if (App.Recovery is { HasPending: false } && _svc.AppliedProfile != null)
+            {
+                LoadIntoEditor(_svc.AppliedProfile);
+                PendingChanges = false;
+            }
         }
         OnPropertyChanged(nameof(VoltageCapText));   // the mechanism is only known after the write
         OnPropertyChanged(nameof(BoostCeilingMv));  // a raised rail ceiling lifts the cap slider's top
@@ -1060,7 +1077,7 @@ public sealed class MainViewModel : ObservableObject
         _store.Save(BuildProfileFromEditor(name));
         RefreshProfiles();
         SelectedProfile = name;
-        Status = $"Saved profile '{name}'"; StatusIsError = false;
+        Status = $"Saved profile '{name}'" + StartupSaveNotice(name); StatusIsError = false;
     }
 
     private void LoadSelectedProfile()
@@ -1094,6 +1111,10 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(Profiles));
     }
 
+    private string? _acceptedStartupProfile;
+    private string StartupSaveNotice(string name) => _applyOnStartup && name == StartupProfile
+        ? "; startup copy unchanged — toggle Startup off/on to update it" : "";
+
     private void UpdateStartupTask()
     {
         try
@@ -1106,9 +1127,15 @@ public sealed class MainViewModel : ObservableObject
                 }
                 else
                 {
+                    var candidate = _store.Load(StartupProfile) ?? throw new InvalidOperationException("Profile not found");
+                    var errors = App.TrialProfile(candidate);
+                    if (errors.Count > 0 && !TuningService.OnlyNotes(errors))
+                        throw new InvalidOperationException(string.Join("; ", errors));
                     var exe = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot resolve exe path");
-                    // Applies and quits - nothing left resident. Same call the CLI makes.
+                    // Registration only points at a confirmed snapshot, never the editable slot.
+                    App.Recovery!.ApproveStartup(StartupProfile);
                     StartupTaskService.Register(exe, StartupProfile);
+                    _acceptedStartupProfile = StartupProfile;
                     Status = $"Startup task registered for '{StartupProfile}'"; StatusIsError = false;
                 }
             }
@@ -1118,7 +1145,15 @@ public sealed class MainViewModel : ObservableObject
                 Status = "Startup task removed"; StatusIsError = false;
             }
         }
-        catch (Exception e) { Status = "Startup task: " + e.Message; StatusIsError = true; }
+        catch (Exception e)
+        {
+            Status = "Startup task: " + e.Message; StatusIsError = true;
+            _startupProfile = _acceptedStartupProfile;
+            App.Settings.StartupProfile = _startupProfile;
+            OnPropertyChanged(nameof(StartupProfile));
+            if (App.Recovery is { HasPending: false } && _svc.AppliedProfile != null)
+                LoadIntoEditor(_svc.AppliedProfile);
+        }
 
         // Settle the tick on what is actually registered, not on what was asked for. schtasks can
         // fail or be refused, and a box that reads "off" while the task still runs at every logon is

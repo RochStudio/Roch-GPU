@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/GpuTuner.Core/GpuTuner.Core.csproj" />
+    <Compile Include="../../src/GpuTuner.App/ViewModels/TelemetryTable.cs" Link="TelemetryTable.cs" />
+    <Compile Include="../../src/GpuTuner.App/ViewModels/ObservableObject.cs" Link="ObservableObject.cs" />
+  </ItemGroup>
+</Project>

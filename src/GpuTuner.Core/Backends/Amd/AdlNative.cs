@@ -163,6 +163,8 @@ internal enum PmLog
 {
     CoreClockMhz = 1,
     MemoryClockMhz = 2,
+    SocClockMhz = 3,
+    FabricClockMhz = 44,
     TemperatureEdge = 8,
     TemperatureMemory = 9,
     FanRpm = 14,

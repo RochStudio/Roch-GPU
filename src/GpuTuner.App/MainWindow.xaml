@@ -2,19 +2,75 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU" SizeToContent="Height" MinHeight="640" Width="386"
+        Title="Roch GPU" SizeToContent="Height" MinHeight="640" Width="660"
         ResizeMode="CanMinimize" WindowStyle="None"
         WindowStartupLocation="CenterScreen"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
+        <Style x:Key="HeaderButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="64"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SectionBorderBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="frame" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="frame" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="frame" Property="Background" Value="{DynamicResource HeaderBrush}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="LayoutSlider" TargetType="Slider" BasedOn="{StaticResource Tight}">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid>
+                            <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}"
+                                   Value="{TemplateBinding Value}" IsDirectionReversed="{TemplateBinding IsDirectionReversed}">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="{DynamicResource AccentBrush}" Height="4" VerticalAlignment="Center"/></ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="12" Height="24">
+                                        <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="{DynamicResource MutedBrush}" BorderBrush="{DynamicResource TextBrush}" BorderThickness="1" CornerRadius="1"/></ControlTemplate></Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="{DynamicResource HeaderBrush}" Height="4" VerticalAlignment="Center"/></ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="LayoutPanel" TargetType="Border" BasedOn="{StaticResource Panel}">
+            <Setter Property="BorderBrush" Value="{DynamicResource SectionBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="2"/>
+        </Style>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <conv:BoolToBrushConverter x:Key="StatusBrush" TrueKey="DangerBrush" FalseKey="MutedBrush"/>
         <conv:BoolToBrushConverter x:Key="LimitBrush" TrueKey="WarnBrush" FalseKey="MutedBrush"/>
 
         <!-- Afterburner-style numbered profile slot. Dim when empty, white when stored, red when active. -->
         <Style x:Key="SlotButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Width" Value="30"/>
-            <Setter Property="Height" Value="26"/>
+            <Setter Property="Width" Value="48"/>
+            <Setter Property="Height" Value="34"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0,0,4,0"/>
             <Setter Property="FontSize" Value="12.5"/>
@@ -39,7 +95,7 @@
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,0"/>
-            <Setter Property="Height" Value="26"/>
+            <Setter Property="Height" Value="34"/>
             <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -177,25 +233,28 @@
                 </Grid.RowDefinitions>
 
                     <!-- GPU header -->
-                    <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="10,7">
+                    <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="6,0,6,7">
                         <StackPanel>
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,2,8,0">
+                                    <TextBlock Text="{Binding DeviceDisplayName}" FontSize="14.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding DriverLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                                     <Button x:Name="MonitorToggle" Content="Telemetry" Click="ToggleMonitor_Click"
-                                            Padding="7,2" FontSize="11" Margin="0,0,4,0" ToolTip="Open the hardware monitor in its own window"/>
+                                            Style="{StaticResource HeaderButton}" Width="80" ToolTip="Open the hardware monitor in its own window"/>
                                     <!-- No Tray button: the title bar's minimise already goes to the tray, via the
                                          StateChanged handler in MainWindow.xaml.cs. -->
-                                    <Button Content="Log" Click="OpenLog_Click" Padding="7,2" FontSize="11" Margin="0,0,4,0"/>
+                                    <Button Content="Log" Click="OpenLog_Click" Style="{StaticResource HeaderButton}"/>
                                     <!-- One button, showing the mode you are in, the way Roch Viewer
                                          does it: a Light/Dark pair spends half its width naming the
                                          mode you are not in. -->
                                     <Button x:Name="ThemeButton" Content="Dark" Click="Theme_Click"
-                                            Padding="7,2" FontSize="11" ToolTip="Switch between light and dark"/>
+                                            Style="{StaticResource HeaderButton}" ToolTip="Switch between light and dark"/>
                                 </StackPanel>
                             </Grid>
-                            <TextBlock Text="{Binding Device.Name}" FontSize="14.5" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                            <TextBlock Text="{Binding DeviceLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                            <TextBlock Text="{Binding BiosLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
                             <TextBlock Text="{Binding LimitReasonText}" Foreground="{Binding LimitIsActive, Converter={StaticResource LimitBrush}}"
                                        FontSize="11" Margin="0,2,0,0"/>
                         </StackPanel>
@@ -223,26 +282,26 @@
                                     IsEnabled="{Binding Caps.CanSetFanSpeed}"
                                     ToolTip="Fan control: a duty per fan, or a curve"/>
 
+                            <Border Style="{StaticResource LayoutPanel}" Padding="14,10" Margin="0,8,0,0"><StackPanel>
                             <!-- 1a. Over-voltage percentage (Afterburner's "Core Voltage (%)"). Raises the
                                  ceiling above the top of the V/F table; separate lever from the cap below. -->
                             <StackPanel Visibility="{Binding HasVoltageBoost, Converter={StaticResource BoolToVis}}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="Voltage Boost (%)" Style="{StaticResource RowLabel}"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                             ToolTip="{Binding VoltageBoostRangeText}"
-                                             Text="{Binding VoltageBoostInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <Grid Margin="0,1,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <Grid Margin="0,12,0,12" >
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="Voltage Boost (%)" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                                   Command="{Binding NudgeCommand}" CommandParameter="voltboost:-1"/>
-                                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageBoostMinPercent}" Maximum="{Binding Caps.VoltageBoostMaxPercent}"
+                                    <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.VoltageBoostMinPercent}" Maximum="{Binding Caps.VoltageBoostMaxPercent}"
                                             Value="{Binding VoltageBoost, Mode=TwoWay}" TickFrequency="5"
                                             SmallChange="5" LargeChange="5"/>
                                     <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                                   Command="{Binding NudgeCommand}" CommandParameter="voltboost:1"/>
                                 </Grid>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}"
+                                             ToolTip="{Binding VoltageBoostRangeText}"
+                                             Text="{Binding VoltageBoostInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
                             </StackPanel>
 
                             <!-- 1c. Core voltage as a signed offset (AMD: applied to the whole curve).
@@ -250,131 +309,120 @@
                                  lever on AMD, and XOC is hidden unless a rail or the crossbar is
                                  available - neither of which RDNA offers, so it was unreachable. -->
                             <StackPanel Visibility="{Binding IsVoltageOffset, Converter={StaticResource BoolToVis}}">
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="Voltage Offset (mV)" Style="{StaticResource RowLabel}"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                             ToolTip="{Binding VoltageOffsetRangeText}"
-                                             Text="{Binding VoltageOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <Grid Margin="0,1,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <Grid Margin="0,12,0,12" >
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="Voltage Offset (mV)" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                     <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                                   Command="{Binding NudgeCommand}" CommandParameter="voltoffset:-1"/>
-                                    <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VoltageOffsetMinMv}" Maximum="{Binding Caps.VoltageOffsetMaxMv}"
+                                    <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.VoltageOffsetMinMv}" Maximum="{Binding Caps.VoltageOffsetMaxMv}"
                                             Value="{Binding VoltageOffset, Mode=TwoWay}" TickFrequency="5"
                                             SmallChange="5" LargeChange="5"/>
                                     <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                                   Command="{Binding NudgeCommand}" CommandParameter="voltoffset:1"/>
                                 </Grid>
-                                <TextBlock Text="Undervolt: 0 is stock, more negative drops the whole curve."
-                                           Style="{StaticResource Muted}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}"
+                                             ToolTip="{Binding VoltageOffsetRangeText}"
+                                             Text="{Binding VoltageOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
                             </StackPanel>
 
                             <!-- 2. Core clock -->
-                            <Grid Margin="0,14,0,0" IsEnabled="{Binding Caps.CanSetCoreOffset}">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="Core Clock (MHz)" Style="{StaticResource RowLabel}"/>
-                                <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                         ToolTip="{Binding CoreRangeText}"
-                                         Text="{Binding CoreOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                            </Grid>
-                            <Grid Margin="0,1,0,0" IsEnabled="{Binding Caps.CanSetCoreOffset}">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <Grid Margin="0,12,0,12" IsEnabled="{Binding Caps.CanSetCoreOffset}">
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="{Binding CoreLabel}" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="core:-1"/>
-                                <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.CoreOffsetMinMhz}" Maximum="{Binding Caps.CoreOffsetMaxMhz}"
+                                <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.CoreOffsetMinMhz}" Maximum="{Binding Caps.CoreOffsetMaxMhz}"
                                     Value="{Binding CoreOffset, Mode=TwoWay}" TickFrequency="15"
                                     SmallChange="15" LargeChange="15" IsEnabled="{Binding Caps.CanSetCoreOffset}"/>
                                 <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="core:1"/>
                             </Grid>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}"
+                                         ToolTip="{Binding CoreRangeText}"
+                                         Text="{Binding CoreOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
 
                             <!-- 3. Memory clock -->
-                            <Grid Margin="0,14,0,0" IsEnabled="{Binding Caps.CanSetMemoryOffset}">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding MemoryLabel}" Style="{StaticResource RowLabel}"/>
-                                <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                         ToolTip="{Binding MemRangeText}"
-                                         Text="{Binding MemoryOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                            </Grid>
-                            <Grid Margin="0,1,0,0" IsEnabled="{Binding Caps.CanSetMemoryOffset}">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <Grid Margin="0,12,0,12" IsEnabled="{Binding Caps.CanSetMemoryOffset}">
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="{Binding MemoryLabel}" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="mem:-1"/>
-                                <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.MemoryOffsetMinMhz}" Maximum="{Binding Caps.MemoryOffsetMaxMhz}"
+                                <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.MemoryOffsetMinMhz}" Maximum="{Binding Caps.MemoryOffsetMaxMhz}"
                                     Value="{Binding MemoryOffset, Mode=TwoWay}" TickFrequency="{Binding MemoryStepMhz}"
                                     SmallChange="{Binding MemoryStepMhz}" LargeChange="{Binding MemoryStepMhz}"
                                     IsEnabled="{Binding Caps.CanSetMemoryOffset}"/>
                                 <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="mem:1"/>
                             </Grid>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}"
+                                         ToolTip="{Binding MemRangeText}"
+                                         Text="{Binding MemoryOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
 
                             <!-- 4. Power limit -->
-                            <Grid Margin="0,14,0,0" IsEnabled="{Binding Caps.CanSetPowerLimit}">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding PowerLabel}" Style="{StaticResource RowLabel}"/>
-                                <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                         ToolTip="{Binding PowerRangeText}"
-                                         Text="{Binding PowerLimitInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                            </Grid>
-                            <Grid Margin="0,1,0,0" IsEnabled="{Binding Caps.CanSetPowerLimit}">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <Grid Margin="0,12,0,12" IsEnabled="{Binding Caps.CanSetPowerLimit}">
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="{Binding PowerLabel}" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="power:-1"/>
-                                <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.PowerLimitMinPercent}" Maximum="{Binding Caps.PowerLimitMaxPercent}"
+                                <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.PowerLimitMinPercent}" Maximum="{Binding Caps.PowerLimitMaxPercent}"
                                     Value="{Binding PowerLimit, Mode=TwoWay}" IsEnabled="{Binding Caps.CanSetPowerLimit}"/>
                                 <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="power:1"/>
                             </Grid>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}"
+                                         ToolTip="{Binding PowerRangeText}"
+                                         Text="{Binding PowerLimitInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
 
                             <!-- 5. Temperature limit — hidden on cards where the driver owns it (RDNA 4) -->
                             <StackPanel Visibility="{Binding HasTempLimit, Converter={StaticResource BoolToVis}}">
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <TextBlock Text="Temperature Limit (°C)" Style="{StaticResource RowLabel}"/>
-                                    <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                             ToolTip="{Binding TempRangeText}"
-                                             Text="{Binding TempLimitInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                                </Grid>
-                                <Grid Margin="0,1,0,0">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <Grid Margin="0,12,0,12" >
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="Temperature Limit (°C)" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="temp:-1"/>
-                                <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.TempLimitMinC}" Maximum="{Binding Caps.TempLimitMaxC}"
+                                <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.TempLimitMinC}" Maximum="{Binding Caps.TempLimitMaxC}"
                                         Value="{Binding TempLimit, Mode=TwoWay}"/>
                                 <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
                                               Command="{Binding NudgeCommand}" CommandParameter="temp:1"/>
                             </Grid>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}"
+                                             ToolTip="{Binding TempRangeText}"
+                                             Text="{Binding TempLimitInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
                             </StackPanel>
 
                             <!-- 5b. AMD-only: memory timing preset and zero RPM -->
                             <Grid Margin="0,14,0,0" Visibility="{Binding HasMemoryTiming, Converter={StaticResource BoolToVis}}">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <TextBlock Text="Memory Timing" Style="{StaticResource RowLabel}"/>
-                                <ComboBox Grid.Column="1" Width="118" FontSize="12"
+                                <ComboBox Grid.Column="1" Width="230" FontSize="13"
                                           ItemsSource="{Binding MemoryTimingOptions}"
                                           SelectedIndex="{Binding MemoryTimingIndex, Mode=TwoWay}"
                                           ToolTip="Faster memory timings at the same clock. Can cause instability — test it."/>
                             </Grid>
-                            <CheckBox Margin="0,14,0,0" Content="Zero RPM (fans stop at idle)"
-                                      FontSize="12" FontWeight="SemiBold"
-                                      IsChecked="{Binding ZeroRpm, Mode=TwoWay}"
-                                      Visibility="{Binding HasZeroRpm, Converter={StaticResource BoolToVis}}"/>
 
-                            <!-- 6. Fan speed -->
+                            </StackPanel></Border>
                         </StackPanel>
                     </Border>
 
                     <!-- Apply / Reset -->
-                    <Border Grid.Row="2" Style="{StaticResource Panel}" Margin="0,6,0,0" Padding="10,6">
+                    <Border Grid.Row="4" Style="{StaticResource Panel}" Margin="0,12,0,0" Padding="10,6">
                         <StackPanel>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/>
-                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <Button Content="Apply" Style="{StaticResource PrimaryButton}" Command="{Binding ApplyCommand}" Height="30" FontSize="12.5"/>
+                                <Button Content="Apply" Style="{StaticResource PrimaryButton}" Command="{Binding ApplyCommand}" Height="42" FontSize="14"/>
                                 <Button Grid.Column="2" Content="Reset to Defaults" Style="{StaticResource DangerButton}" Command="{Binding ResetCommand}"
                                         ToolTip="Write the driver's own defaults to the card and load them into the sliders (also clears the voltage curve)"/>
                             </Grid>
@@ -385,7 +433,7 @@
 
                     <!-- Profile bar: label, five numbered slots, Save. Click a number to load + apply it;
                          press Save first to store the current settings into that number instead. -->
-                    <Border Grid.Row="4" Style="{StaticResource Panel}" Margin="0,6,0,0" Padding="10,7">
+                    <Border Grid.Row="2" Style="{StaticResource LayoutPanel}" Margin="10,12,10,0" Padding="14,14">
                         <StackPanel>
                             <Grid>
                                 <Grid.ColumnDefinitions>

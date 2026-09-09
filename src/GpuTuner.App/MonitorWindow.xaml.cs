@@ -65,6 +65,9 @@ public partial class MonitorWindow : Window
         _statsSince = DateTime.UtcNow;
     }
 
+    private static string Summary(double value, string unit, string format) =>
+        double.IsFinite(value) ? value.ToString(format) + " " + unit : "—";
+
     private void Render(GpuTelemetry t)
     {
         var extra = _svc.MeasureExtraClocks();
@@ -77,7 +80,11 @@ public partial class MonitorWindow : Window
         }
         // The table is the only view, so these are always on screen and always worth reading.
         _table.Add(t, extra);
-        Elapsed.Text = "Running: " + (DateTime.UtcNow - _statsSince).ToString(@"hh\:mm\:ss");
+        TemperatureSummary.Text = Summary(t.TemperatureC, "°C", "0.0");
+        ClockSummary.Text = Summary(t.CoreClockMhz, "MHz", "0");
+        PowerSummary.Text = Summary(t.PowerWatts, "W", "0.0");
+        int sensors = _table.Rows.Count(r => !r.IsHeader && !r.IsColumnHeader);
+        Elapsed.Text = $"{sensors} sensors  ·  " + (DateTime.UtcNow - _statsSince).ToString(@"hh\:mm\:ss");
 
     }
 

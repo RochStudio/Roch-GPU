@@ -25,9 +25,13 @@
                                  ToolTip="Hold a duty, whatever the temperature does"/>
                     <RadioButton x:Name="ModeCurve" Content="Curve" GroupName="FanMode"
                                  Checked="Mode_Changed" Foreground="{DynamicResource TextBrush}"
-                                 ToolTip="Follow temperature. This app steps the fans, so it has to stay running."/>
+                                 ToolTip="Follow the temperature-to-speed curve."/>
                 </StackPanel>
                 <TextBlock x:Name="ModeNote" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                <CheckBox Content="Zero RPM (fans stop at idle)" Margin="0,12,0,0"
+                          IsChecked="{Binding ZeroRpm, Mode=TwoWay}"
+                          Visibility="{Binding HasZeroRpm, Converter={StaticResource BoolToVis}}"
+                          ToolTip="Allow idle fan stop where supported by the driver and selected fan mode. Press Apply to save."/>
             </StackPanel>
         </Border>
 
@@ -91,7 +95,7 @@
                 </StackPanel>
 
                 <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"
-                           Text="Drag a point, or select one and type its temperature and duty. Double-click the plot to add a point, right-click one to remove it. A curve is stepped by this app, so it stops when the app does — closing hands the fans back to the driver, and one curve drives every fan."/>
+                           Text="Drag a point, or select one and type its temperature and duty. Double-click the plot to add a point, right-click one to remove it. One curve drives every fan."/>
                 <c:FanCurveEditor x:Name="CurveEditor" Height="240"/>
             </DockPanel>
         </Border>

@@ -294,10 +294,12 @@ public partial class FanWindow : Window
         FixedPanel.Visibility = fixedMode ? Visibility.Visible : Visibility.Collapsed;
         CurvePanel.Visibility = curve ? Visibility.Visible : Visibility.Collapsed;
         ModeNote.Text = curve
-            ? "The card has no curve of its own here, so this app steps the fans. It has to stay running for the curve to hold."
+            ? (_svc.Capabilities.FanCurveIsHardware
+                ? "The driver runs this curve after Apply, even when the window closes."
+                : "This app runs the curve and must stay open for it to hold.")
             : fixedMode
                 ? "Held whatever the temperature does. The card's own thermal protection still applies."
-                : "The driver decides. Nothing here is written until you pick Fixed or Curve.";
+                : "The driver controls fan speed. Press Apply to use Auto and the selected Zero RPM setting.";
     }
 
     private void OnTelemetry(GpuTelemetry t) => Dispatcher.BeginInvoke(() =>
@@ -346,13 +348,13 @@ public partial class FanWindow : Window
             : _sliders.Select(s => (int)Math.Round(s.Value)).ToArray();
 
         var errs = _svc.SetFans(mode, (int)Math.Round(_sliders.Count > 0 ? _sliders[0].Value : 50),
-                                duties, _vm.EditorCurve);
+                                duties, _vm.EditorCurve, _vm.HasZeroRpm ? _vm.ZeroRpm : null);
         bool ok = errs.Count == 0 || TuningService.OnlyNotes(errs);
         Status.Text = errs.Count > 0 ? string.Join("  |  ", errs) : Describe(mode, duties);
         Status.Foreground = (System.Windows.Media.Brush)FindResource(ok ? "MutedBrush" : "DangerBrush");
 
         // Keep the main window's own fan controls telling the same story.
-        _vm.SyncFansFromService(mode, duties);
+        if (ok) _vm.SyncFansFromService(mode, duties);
 
         // And keep the saved profile telling it too. Without this the fans are the one setting you
         // can apply, watch work, reboot, and find gone - which is exactly what happened.
@@ -367,7 +369,7 @@ public partial class FanWindow : Window
     private string Describe(FanMode mode, int[] duties) => mode switch
     {
         FanMode.Auto => "Fans handed back to the driver.",
-        FanMode.Curve => "Curve running. It stops if this app closes.",
+        FanMode.Curve => _svc.Capabilities.FanCurveIsHardware ? "Curve saved to the driver." : "Curve running. It stops if this app closes.",
         _ => duties.Length > 1
             ? "Set: " + string.Join(", ", duties.Select((d, i) => $"fan {i + 1} {d}%"))
             : $"All fans at {(_sliders.Count > 0 ? (int)Math.Round(_sliders[0].Value) : 0)}%."

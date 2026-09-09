@@ -23,6 +23,45 @@ public partial class App : Application
     public static TuningService? Service { get; private set; }
     public static ProfileStore Store { get; } = new ProfileStore();
     public static AppSettings Settings { get; private set; } = new();
+    public static ProfileRecovery? Recovery { get; private set; }
+    public static string? RecoveryNotice { get; private set; }
+
+    public static System.Collections.Generic.IReadOnlyList<string> TrialProfile(TuningProfile profile)
+    {
+        var recovery = Recovery;
+        if (recovery == null) return new[] { "Profile recovery is unavailable; no settings applied." };
+        var candidate = profile.Clone();
+        candidate.ClampTo(Service!.Capabilities);
+        try
+        {
+            var errors = recovery.Begin(candidate);
+            if (errors.Count == 0 || TuningService.OnlyNotes(errors))
+            {
+                recovery.Confirm();
+                return errors;
+            }
+            var rollback = recovery.Revert();
+            if (rollback.Count > 0 && !TuningService.OnlyNotes(rollback))
+                return new[] { "Recovery failed; retry by reopening Roch GPU: " + string.Join("; ", rollback) };
+            return new[] { errors.Count > 0 && !TuningService.OnlyNotes(errors)
+                ? "Trial failed and was reverted: " + string.Join("; ", errors)
+                : "Trial reverted; startup settings were not changed." };
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                if (recovery.HasPending)
+                {
+                    var rollback = recovery.Revert();
+                    if (rollback.Count > 0 && !TuningService.OnlyNotes(rollback))
+                        return new[] { ex.Message + " Recovery failed: " + string.Join("; ", rollback) };
+                }
+            }
+            catch (Exception rollback) { return new[] { ex.Message + " Recovery failed: " + rollback.Message }; }
+            return new[] { ex.Message };
+        }
+    }
 
     /// <summary>True for the --exit startup-task run: no window, no user, so no modal dialogs.</summary>
     private static bool _headless;
@@ -102,19 +141,63 @@ public partial class App : Application
             else { Shutdown(1); return; }
         }
 
+        // Recover BEFORE processing a logon profile so a crashed trial cannot be replayed at boot.
+        bool recoveredTrial = false;
+        try
+        {
+            var d = Service.Device;
+            Recovery = new ProfileRecovery(Store.RootDirectory, $"{d.Vendor}|{d.BusId}|{d.Name}",
+                TuningProfile.Stock(Service.Capabilities, d.Name), Service.Apply);
+            if (Recovery.HasPending)
+            {
+                recoveredTrial = true;
+                var errors = Recovery.Revert();
+                RecoveryNotice = errors.Count == 0 || TuningService.OnlyNotes(errors)
+                    ? "Recovered interrupted profile trial. Startup apply was skipped."
+                    : "Profile recovery failed: " + string.Join("; ", errors);
+                LogLine(RecoveryNotice);
+            }
+        }
+        catch (Exception ex)
+        {
+            RecoveryNotice = "Profile recovery unavailable: " + ex.Message;
+            LogLine(RecoveryNotice); recoveredTrial = true;
+        }
+        if (recoveredTrial) { applyProfile = null; minimized = false; }
+
         if (applyProfile != null)
         {
             TuningProfile? p = null;
-            try { p = Store.Load(applyProfile); }
+            try { p = Recovery?.StartupProfile(applyProfile); }
             catch (Exception ex) { LogLine($"Profile '{applyProfile}' could not be read: {ex.Message}"); }
             if (p == null)
             {
-                LogLine($"Startup profile '{applyProfile}' not found.");
+                RecoveryNotice = $"Confirm '{applyProfile}' using the Startup checkbox before it can run at logon.";
+                LogLine(RecoveryNotice); minimized = false;
             }
             else
             {
-                var errs = Service.Apply(p);
-                LogLine(errs.Count == 0 ? $"Startup profile '{applyProfile}' applied." : "Startup apply errors: " + string.Join("; ", errs));
+                try
+                {
+                    var errs = Recovery!.Begin(p);
+                    if (errs.Count == 0 || TuningService.OnlyNotes(errs))
+                    {
+                        Recovery.Confirm();
+                        LogLine($"Confirmed startup profile '{applyProfile}' applied.");
+                    }
+                    else
+                    {
+                        var rollback = Recovery.Revert();
+                        RecoveryNotice = "Startup apply failed: " + string.Join("; ", errs)
+                            + (Recovery.HasPending ? " Recovery failed: " + string.Join("; ", rollback) : " — restored fallback profile.");
+                        LogLine(RecoveryNotice); minimized = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    RecoveryNotice = "Startup recovery interrupted: " + ex.Message;
+                    LogLine(RecoveryNotice); minimized = false;
+                }
             }
             if (exitAfter)
             {
@@ -125,6 +208,7 @@ public partial class App : Application
             }
         }
 
+        if (exitAfter) { Service.Dispose(); Shutdown(0); return; }
         var win = new MainWindow(Service, minimized);
         MainWindow = win;
         win.Show();

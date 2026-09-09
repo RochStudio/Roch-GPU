@@ -3,10 +3,84 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
         xmlns:conv="clr-namespace:GpuTuner.App.Converters"
-        Title="Roch GPU — Telemetry" Height="900" Width="740" MinWidth="560" MinHeight="360"
-        WindowStartupLocation="Manual"
+        Title="Roch GPU — Telemetry" Height="900" Width="800" MinWidth="740" MinHeight="480"
+        WindowStartupLocation="Manual" FontFamily="Segoe UI"
         Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="17"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent" Margin="5,0,3,0">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True"
+                                   Orientation="{TemplateBinding Orientation}">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="grip" Background="{DynamicResource MutedBrush}" CornerRadius="4" Opacity="0.3"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="grip" Property="Opacity" Value="0.65"/></Trigger>
+                                                    <Trigger Property="IsDragging" Value="True"><Setter TargetName="grip" Property="Opacity" Value="0.8"/></Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="MetricCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="16,12"/>
+        </Style>
+        <Style x:Key="MetricLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style x:Key="MetricValue" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="Margin" Value="0,5,0,0"/>
+        </Style>
+        <Style x:Key="ColumnLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="Margin" Value="8,0"/>
+        </Style>
+        <Style x:Key="Reading" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="8,0"/>
+        </Style>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
 
         <!-- Roch Viewer's telemetry uses a switch here rather than a check box, 32 by 16 with the
@@ -40,90 +114,117 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <DockPanel Margin="8">
-    <Grid>
+    <Grid Margin="20,16,20,14">
         <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-
-        <Border Style="{StaticResource Panel}" Padding="12,10">
-            <DockPanel>
-                <Grid DockPanel.Dock="Top">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBlock Text="TELEMETRY" Style="{StaticResource SectionTitle}"/>
-                </Grid>
-
-                <!-- Every sensor with its running figures, the way a monitoring tool shows them:
-                     four columns, grouped, and each group folds away. -->
-                <Grid x:Name="TableFooter" DockPanel.Dock="Bottom" Margin="0,6,10,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBlock x:Name="Elapsed" Text="Running: 00:00:00" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <ToggleButton x:Name="AutoOpen" Content="Auto-open" Click="AutoOpen_Click" Style="{StaticResource Switch}"
-                                  Margin="0,0,12,0" Foreground="{DynamicResource MutedBrush}"
-                                  ToolTip="Open this window automatically at launch. It is the only thing that polls the driver, so leaving it off costs nothing until you open it."/>
-                        <Button Content="Reset Stats" Click="ResetStats_Click" Padding="10,3" MinWidth="90"/>
-                    </StackPanel>
-                </Grid>
-
-                <Grid>
-                <ScrollViewer x:Name="TableScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="0,0,10,0">
-                        <ItemsControl x:Name="TableRows" HorizontalContentAlignment="Stretch">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border x:Name="band" Padding="0,2"
-                                            Background="Transparent"
-                                           >
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="200"/><ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock x:Name="nm" Text="{Binding Name}" FontSize="16" Margin="4,0,0,0" Foreground="{DynamicResource TextBrush}"/>
-                                            <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" FontSize="16" Margin="6,0,6,0" Foreground="{DynamicResource BrandBrush}"/>
-                                            <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" FontSize="16" Margin="6,0,6,0" Foreground="{DynamicResource BrandBrush}"/>
-                                            <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" FontSize="16" Margin="6,0,6,0" Foreground="{DynamicResource BrandBrush}"/>
-                                            <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" FontSize="16" Margin="6,0,6,0" Foreground="{DynamicResource BrandBrush}"/>
-                                        </Grid>
-                                    </Border>
-                                    <DataTemplate.Triggers>
-                                        <DataTrigger Binding="{Binding IsBanded}" Value="True">
-                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource HighlightBrush}"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsColumnHeader}" Value="True">
-                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelBrush}"/>
-                                            <!-- Bold there too: the column strip is a heading, and it
-                                                 repeats under every section, so it has to read as one. -->
-                                            <Setter TargetName="nm" Property="FontWeight" Value="Bold"/>
-                                            <Setter TargetName="cur" Property="FontWeight" Value="Bold"/>
-                                            <Setter TargetName="mn" Property="FontWeight" Value="Bold"/>
-                                            <Setter TargetName="mx" Property="FontWeight" Value="Bold"/>
-                                            <Setter TargetName="av" Property="FontWeight" Value="Bold"/>
-                                            <Setter TargetName="nm" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
-                                            <Setter TargetName="cur" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
-                                            <Setter TargetName="mn" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
-                                            <Setter TargetName="mx" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
-                                            <Setter TargetName="av" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsHeader}" Value="True">
-                                            <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelBrush}"/>
-                                            <Setter TargetName="nm" Property="FontWeight" Value="Bold"/>
-                                            <Setter TargetName="nm" Property="Foreground" Value="{DynamicResource TextBrush}"/>
-                                            <Setter TargetName="band" Property="Margin" Value="0,4,0,0"/>
-                                        </DataTrigger>
-                                    </DataTemplate.Triggers>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </ScrollViewer>
-
-                </Grid>
-            </DockPanel>
+        <Grid Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="Telemetry" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
+                <TextBlock Text="{Binding DeviceDisplayName}" FontSize="12" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}"/>
+            </StackPanel>
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="5" Background="{DynamicResource PanelBrush}" Padding="10,6">
+                <TextBlock Text="LIVE · READ ONLY" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>
+            </Border>
+        </Grid>
+        <Grid Grid.Row="1" Margin="0,0,0,18">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/><ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource MetricCard}">
+                <StackPanel>
+                    <TextBlock Text="GPU TEMPERATURE" Style="{StaticResource MetricLabel}"/>
+                    <TextBlock x:Name="TemperatureSummary" Text="—" Style="{StaticResource MetricValue}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource MetricCard}">
+                <StackPanel>
+                    <TextBlock Text="CORE CLOCK" Style="{StaticResource MetricLabel}"/>
+                    <TextBlock x:Name="ClockSummary" Text="—" Style="{StaticResource MetricValue}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="4" Style="{StaticResource MetricCard}">
+                <StackPanel>
+                    <TextBlock Text="BOARD POWER" Style="{StaticResource MetricLabel}"/>
+                    <TextBlock x:Name="PowerSummary" Text="—" Style="{StaticResource MetricValue}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+        <!-- Fixed heading; gutter matches the always-reserved scrollbar in the body. -->
+        <Border Grid.Row="2" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,10">
+            <Grid Margin="0,0,17,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="230"/><ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Sensor" TextAlignment="Left" Style="{StaticResource ColumnLabel}"/>
+                <TextBlock Grid.Column="1" Text="Current" Foreground="{DynamicResource TextBrush}" Style="{StaticResource ColumnLabel}"/>
+                <TextBlock Grid.Column="2" Text="Minimum" Style="{StaticResource ColumnLabel}"/>
+                <TextBlock Grid.Column="3" Text="Maximum" Style="{StaticResource ColumnLabel}"/>
+                <TextBlock Grid.Column="4" Text="Average" Style="{StaticResource ColumnLabel}"/>
+            </Grid>
         </Border>
-
+        <ScrollViewer Grid.Row="3" x:Name="TableScroll" VerticalScrollBarVisibility="Visible"
+                      HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+            <ItemsControl x:Name="TableRows" HorizontalContentAlignment="Stretch">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border x:Name="band" Padding="0,6" Background="Transparent" CornerRadius="3">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="230"/><ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="nm" Text="{Binding Name}" ToolTip="{Binding Name}"
+                                           FontSize="13" Margin="8,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <TextBlock x:Name="cur" Grid.Column="1" Text="{Binding Current}" Style="{StaticResource Reading}"
+                                           Foreground="{DynamicResource BrandBrush}" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="mn" Grid.Column="2" Text="{Binding Minimum}" Style="{StaticResource Reading}"/>
+                                <TextBlock x:Name="mx" Grid.Column="3" Text="{Binding Maximum}" Style="{StaticResource Reading}"/>
+                                <TextBlock x:Name="av" Grid.Column="4" Text="{Binding Average}" Style="{StaticResource Reading}"/>
+                            </Grid>
+                        </Border>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsBanded}" Value="True">
+                                <Setter TargetName="band" Property="Background" Value="{DynamicResource HighlightBrush}"/>
+                            </DataTrigger>
+                            <Trigger SourceName="band" Property="IsMouseOver" Value="True">
+                                <Setter TargetName="band" Property="Background" Value="{DynamicResource PanelBrush}"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                                <Setter TargetName="band" Property="Margin" Value="0,14,0,5"/>
+                                <Setter TargetName="band" Property="Padding" Value="0,2"/>
+                                <Setter TargetName="band" Property="BorderBrush" Value="{DynamicResource BrandBrush}"/>
+                                <Setter TargetName="band" Property="BorderThickness" Value="2,0,0,0"/>
+                                <Setter TargetName="nm" Property="FontWeight" Value="SemiBold"/>
+                                <Setter TargetName="nm" Property="FontSize" Value="11"/>
+                                <Setter TargetName="nm" Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                <Setter TargetName="nm" Property="Grid.ColumnSpan" Value="5"/>
+                                <Setter TargetName="cur" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="mn" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="mx" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="av" Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+        <Border Grid.Row="4" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="Elapsed" Text="Waiting for sensors…" FontSize="11" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <ToggleButton x:Name="AutoOpen" Content="Open at launch" Click="AutoOpen_Click" Style="{StaticResource Switch}"
+                                  Margin="0,0,16,0" FontSize="11" Foreground="{DynamicResource MutedBrush}"
+                                  ToolTip="Open telemetry automatically when Roch GPU starts."/>
+                    <Button Content="Reset statistics" Click="ResetStats_Click" Padding="12,6" FontSize="11"
+                            ToolTip="Clear minimum, maximum and average values. GPU settings are not changed."/>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
-    </DockPanel>
 </Window>

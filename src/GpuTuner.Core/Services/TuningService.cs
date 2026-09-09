@@ -941,7 +941,7 @@ public sealed class TuningService : IDisposable
     ///
     /// <paramref name="perFan"/> empty means one duty for every fan.
     /// </summary>
-    public IReadOnlyList<string> SetFans(FanMode mode, int percent, int[] perFan, FanCurve curve)
+    public IReadOnlyList<string> SetFans(FanMode mode, int percent, int[] perFan, FanCurve curve, bool? zeroRpm = null)
     {
         var errors = new List<string>();
         if (!Capabilities.CanSetFanSpeed)
@@ -959,14 +959,18 @@ public sealed class TuningService : IDisposable
             }
 
             WriteFans(mode, percent, perFan, curve, Try);
+            if (zeroRpm.HasValue && Capabilities.CanSetZeroRpm)
+                Try("Zero RPM", () => Backend.SetZeroRpm(GpuIndex, zeroRpm.Value));
 
             // Keep the applied profile describing the card, so the summary line agrees with what the
             // fans are actually doing.
-            if (AppliedProfile != null)
+            if (AppliedProfile != null && errors.Count == 0)
             {
                 AppliedProfile.FanMode = mode;
                 AppliedProfile.FixedFanPercent = percent;
                 AppliedProfile.FixedFanPercents = (int[])perFan.Clone();
+                AppliedProfile.FanCurve = curve.Clone();
+                if (zeroRpm.HasValue && Capabilities.CanSetZeroRpm) AppliedProfile.ZeroRpm = zeroRpm.Value;
             }
         }
         return errors;

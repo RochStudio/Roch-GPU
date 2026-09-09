@@ -4,6 +4,7 @@
              xmlns:c="clr-namespace:GpuTuner.App.Controls"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
+        <SolidColorBrush x:Key="SectionBorderBrush" Color="#FF2A2A2A"/>
         <!-- Palette: black · grey · red · white -->
         <!-- Surfaces are Roch Viewer's dark palette, value for value, so the two tools in the family
              sit on the same ground. Its borders are DARKER than the panels they edge (#0A0A0A under

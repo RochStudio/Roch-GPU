@@ -22,6 +22,7 @@ public sealed class AdlBackend : IGpuBackend
     private readonly Dictionary<int, int> _caps = new();
     private readonly Dictionary<int, Od8Range[]> _rangesByGpu = new();
     private readonly object _gate = new();
+    private readonly AdlxTelemetry _adlxTelemetry = new();
 
     /// <summary>min/max/default for one OD8 feature. Unsupported features report min == max.</summary>
     private readonly record struct Od8Range(int Min, int Max, int Default)
@@ -332,6 +333,9 @@ public sealed class AdlBackend : IGpuBackend
         var volt = Range(gpuIndex, Od8Id.OdVoltage);
         var fanT1 = Range(gpuIndex, Od8Id.FanCurveTemperature1);
         var fanS1 = Range(gpuIndex, Od8Id.FanCurveSpeed1);
+        var timing = Range(gpuIndex, Od8Id.AcTiming);
+        var timingOptions = Has(gpuIndex, Od8Feature.MemoryTimingTune)
+            ? BuildTimingOptions(timing.Min, timing.Max) : Array.Empty<string>();
 
         return new GpuCapabilities
         {
@@ -373,8 +377,9 @@ public sealed class AdlBackend : IGpuBackend
             CanSetZeroRpm = Has(gpuIndex, Od8Feature.FanZeroRpmControl) && Range(gpuIndex, Od8Id.FanZeroRpmControl).Supported,
             ZeroRpmDefault = Range(gpuIndex, Od8Id.FanZeroRpmControl).Default != 0,
 
-            CanSetMemoryTiming = Has(gpuIndex, Od8Feature.MemoryTimingTune) && Range(gpuIndex, Od8Id.AcTiming).Supported,
-            MemoryTimingOptions = new[] { "Default", "Fast timing" },
+            CanSetMemoryTiming = timingOptions.Count > 1,
+            MemoryTimingOptions = timingOptions,
+            MemoryTimingDefaultLevel = timingOptions.Count > 0 ? Math.Clamp(timing.Default - timing.Min, 0, timingOptions.Count - 1) : 0,
 
             // A hardware curve: exactly five points, and the driver runs it — no polling loop needed.
             CanSetFanSpeed = Has(gpuIndex, Od8Feature.FanCurve) && fanT1.Supported,
@@ -389,6 +394,19 @@ public sealed class AdlBackend : IGpuBackend
     }
 
     // ------------------------------------------------------------------ telemetry
+
+    // Keep UI/profile indices separate from driver preset IDs. Do not invent timing names
+    // for undocumented levels, or allocate an unbounded list from a malformed driver range.
+    internal static IReadOnlyList<string> BuildTimingOptions(int min, int max)
+    {
+        if (min < 0 || max <= min || max > 255) return Array.Empty<string>();
+        return Enumerable.Range(min, max - min + 1).Select(id => id switch
+        {
+            0 => "Default",
+            1 => "Fast timing",
+            _ => $"Driver preset {id}"
+        }).ToArray();
+    }
 
     /// <summary>Size of the PMLog payload: int size; { int supported; int value; }[256].</summary>
     private const int PmLogBytes = 4 + 256 * 8;
@@ -420,39 +438,32 @@ public sealed class AdlBackend : IGpuBackend
 
     public GpuTelemetry ReadTelemetry(int gpuIndex)
     {
-        IntPtr buf = Marshal.AllocHGlobal(PmLogBytes);
-        try
+        // Keep the caller-owned ADL context alive until ADLX has finished using it.
+        lock (_gate)
         {
-            for (int i = 0; i < PmLogBytes; i += 4) Marshal.WriteInt32(buf, i, 0);
-            if (AdlNative.ADL2_New_QueryPMLogData_Get(Live(), Adapter(gpuIndex), buf) != AdlNative.AdlOk)
-                return new GpuTelemetry();
-
-            double S(PmLog id) => PmValue(buf, id);
-            static double OrZero(double v) => double.IsNaN(v) ? 0 : v;
-
-            double fanPct = S(PmLog.FanPercent);
-            double watts = S(PmLog.BoardPowerW);
-            if (double.IsNaN(watts)) watts = S(PmLog.AsicPowerW);
-
-            return new GpuTelemetry
+            IntPtr context = Live();
+            int adapter = Adapter(gpuIndex);
+            IntPtr buf = Marshal.AllocHGlobal(PmLogBytes);
+            try
             {
-                CoreClockMhz = OrZero(S(PmLog.CoreClockMhz)),
-                MemoryClockMhz = OrZero(S(PmLog.MemoryClockMhz)),
-                TemperatureC = OrZero(S(PmLog.TemperatureEdge)),
-                HotSpotC = S(PmLog.TemperatureHotspot),
-                MemoryTemperatureC = S(PmLog.TemperatureMemory),
-                VoltageMv = S(PmLog.GfxVoltageMv),
-                PowerWatts = OrZero(watts),
-                GpuLoadPercent = OrZero(S(PmLog.ActivityGfx)),
-                MemoryLoadPercent = OrZero(S(PmLog.ActivityMem)),
-                FanPercent = OrZero(fanPct),
-                FanRpm = OrZero(S(PmLog.FanRpm)),
-                FanPercents = new[] { OrZero(fanPct) },
-                FanRpms = new[] { OrZero(S(PmLog.FanRpm)) },
-                LimitReason = ThrottleText(S(PmLog.ThrottlerStatus))
-            };
+                for (int i = 0; i < PmLogBytes; i += 4) Marshal.WriteInt32(buf, i, 0);
+                var pm = new Dictionary<int, double>();
+                if (AdlNative.ADL2_New_QueryPMLogData_Get(context, adapter, buf) == AdlNative.AdlOk)
+                    for (int id = 1; id < 256; id++)
+                    {
+                        double value = PmValue(buf, (PmLog)id);
+                        if (double.IsFinite(value)) pm[id] = value;
+                    }
+                // A failed PMLog query must not prevent the independent ADLX fallback.
+                var adlx = _adlxTelemetry.Read(context, adapter);
+                return AmdTelemetryMapper.Map(pm, adlx) with
+                {
+                    LimitReason = pm.TryGetValue((int)PmLog.ThrottlerStatus, out double flags)
+                        ? ThrottleText(flags) : "Unavailable"
+                };
+            }
+            finally { Marshal.FreeHGlobal(buf); }
         }
-        finally { Marshal.FreeHGlobal(buf); }
     }
 
     private static string ThrottleText(double status)
@@ -478,7 +489,7 @@ public sealed class AdlBackend : IGpuBackend
             TempLimitC = v[(int)Od8Id.OperatingTempMax],
             VoltageOffsetMv = v[(int)Od8Id.OdVoltage],
             ZeroRpm = v[(int)Od8Id.FanZeroRpmControl] != 0,
-            MemoryTimingLevel = v[(int)Od8Id.AcTiming],
+            MemoryTimingLevel = v[(int)Od8Id.AcTiming] - Range(gpuIndex, Od8Id.AcTiming).Min,
             DetectedFanMode = fan.Mode,
             // Reported as manual only for a fixed duty. A hardware curve is the driver's to run, and
             // callers that only see this flag treat manual as "a single percentage is in force".
@@ -603,8 +614,10 @@ public sealed class AdlBackend : IGpuBackend
     public void SetMemoryTiming(int gpuIndex, int level)
     {
         var r = Range(gpuIndex, Od8Id.AcTiming);
-        if (!r.Supported) throw new GpuBackendException("This card does not expose memory timing tuning.");
-        Write(gpuIndex, (Od8Id.AcTiming, Math.Clamp(level, r.Min, r.Max)));
+        var options = GetCapabilities(gpuIndex).MemoryTimingOptions;
+        if (options.Count == 0) throw new GpuBackendException("This card does not expose memory timing tuning.");
+        if (level < 0 || level >= options.Count) throw new GpuBackendException("Memory timing preset is outside the driver-supported range.");
+        Write(gpuIndex, (Od8Id.AcTiming, r.Min + level));
     }
 
     /// <summary>
@@ -720,12 +733,19 @@ public sealed class AdlBackend : IGpuBackend
         }
         sb.AppendLine();
 
-        sb.AppendLine("--- PMLog sensors ---");
+        sb.AppendLine("--- Native AMD telemetry (PMLog + ADLX; no external monitor) ---");
         var t = ReadTelemetry(gpuIndex);
         sb.AppendLine($"  core {t.CoreClockMhz:0} MHz · mem {t.MemoryClockMhz:0} MHz · {t.VoltageMv:0} mV");
+        sb.AppendLine($"  FCLK: {(double.IsNaN(t.FabricClockMhz) ? "not reported" : $"{t.FabricClockMhz:0} MHz")} · SoC: {(double.IsNaN(t.SocClockMhz) ? "not reported" : $"{t.SocClockMhz:0} MHz")}");
+        sb.AppendLine("  FCLK adjustment: unavailable through this ADL backend (sensor is read-only).");
+        sb.AppendLine($"  Core minimum: {(Range(gpuIndex, Od8Id.GfxClkFMin).Supported ? "driver range available; absolute-limit writes not implemented" : "locked by driver")}; absolute clock locking is not implemented by this backend.");
         sb.AppendLine($"  edge {t.TemperatureC:0}°C · hotspot {t.HotSpotC:0}°C · memory {t.MemoryTemperatureC:0}°C");
         sb.AppendLine($"  fan {t.FanPercent:0}% / {t.FanRpm:0} rpm · board {t.PowerWatts:0} W · load {t.GpuLoadPercent:0}%");
         sb.AppendLine($"  limit reason: {t.LimitReason}");
+        sb.AppendLine($"  dedicated VRAM used: {t.MemoryUsedMb:0} MB");
+        foreach (var sensor in t.SupplementalSensors)
+            sb.AppendLine($"  [{sensor.Key}] {sensor.Name}: {sensor.Value:0.###} {sensor.Unit}");
+        sb.AppendLine(_adlxTelemetry.Status);
         return sb.ToString();
     }
 
@@ -734,6 +754,7 @@ public sealed class AdlBackend : IGpuBackend
         lock (_gate)
         {
             if (_context == IntPtr.Zero) return;
+            _adlxTelemetry.Dispose();
             try { AdlNative.ADL2_Main_Control_Destroy(_context); } catch { }
             _context = IntPtr.Zero;
         }

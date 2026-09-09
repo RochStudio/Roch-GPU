@@ -8,7 +8,50 @@ int pass = 0, fail = 0;
 void Check(string name, bool cond) { if (cond) pass++; else { fail++; Console.WriteLine("FAIL: " + name); } }
 void Eq(string name, double expected, double actual, double tol = 1e-6) => Check($"{name} (expected {expected}, got {actual})", Math.Abs(expected - actual) <= tol);
 
+// ---- Native AMD telemetry (no installed driver or external monitor needed for these tests)
+var noPm = new Dictionary<int, double>();
+var noAdlx = new Dictionary<string, double>();
+var missingAmd = AmdTelemetryMapper.Map(noPm, noAdlx);
+Check("missing AMD values are not fake zeros", double.IsNaN(missingAmd.CoreClockMhz) && double.IsNaN(missingAmd.VoltageMv) && double.IsNaN(missingAmd.PowerWatts) && double.IsNaN(missingAmd.MemoryUsedMb));
+Check("unsupported AMD extras hidden", missingAmd.SupplementalSensors.Count == 0);
+var pmSample = new Dictionary<int, double> { [1] = 2500, [3] = 1371, [44] = 2401, [10] = 43, [16] = 940, [17] = 12, [23] = 70, [49] = 0, [73] = 100, [14] = 0, [15] = 0, [40] = 4, [41] = 16 };
+var adlxSample = new Dictionary<string, double> { ["core"] = 2400, ["temperature"] = 32, ["vram"] = 292, ["shared"] = 91, ["board"] = 99, ["power"] = 69, ["intake"] = 27 };
+var mappedAmd = AmdTelemetryMapper.Map(pmSample, adlxSample);
+Eq("PMLog sample preferred", 2500, mappedAmd.CoreClockMhz);
+Eq("ADLX temperature fallback", 32, mappedAmd.TemperatureC);
+Eq("native FCLK", 2401, mappedAmd.FabricClockMhz);
+Eq("native SoC clock", 1371, mappedAmd.SocClockMhz);
+Eq("ADLX VRAM allocation", 292, mappedAmd.MemoryUsedMb);
+Eq("native board watts", 100, mappedAmd.PowerWatts);
+Check("real fan stop remains zero", mappedAmd.FanRpm == 0 && mappedAmd.FanPercent == 0);
+Check("zero power limit placeholder hidden", !mappedAmd.SupplementalSensors.Any(s => s.Key == "adl:49"));
+Eq("SoC voltage units mV", 940, mappedAmd.SupplementalSensors.Single(s => s.Key == "adl:16").Value);
+Eq("native VRM temperature", 43, mappedAmd.SupplementalSensors.Single(s => s.Key == "adl:10").Value);
+Eq("ADLX shared memory", 91, mappedAmd.SupplementalSensors.Single(s => s.Key == "adlx:shared").Value);
+Check("ASIC sources deduplicated", mappedAmd.SupplementalSensors.Count(s => s.Key == "amd:asic") == 1);
+Check("base ADLX readings not duplicated as extras", !mappedAmd.SupplementalSensors.Any(s => s.Key is "adlx:core" or "adlx:board" or "adlx:vram"));
+var asicOnly = AmdTelemetryMapper.Map(new Dictionary<int, double> { [23] = 70 }, noAdlx);
+Check("ASIC watts never mislabeled board watts", double.IsNaN(asicOnly.PowerWatts) && asicOnly.SupplementalSensors.Single().Value == 70);
+var fallbackAmd = AmdTelemetryMapper.Map(noPm, adlxSample);
+Eq("ADLX works when PMLog fails", 2400, fallbackAmd.CoreClockMhz);
+Check("fallback does not fabricate FCLK", double.IsNaN(fallbackAmd.FabricClockMhz));
+Check("invalid sensor values rejected", double.IsNaN(AmdTelemetryMapper.Valid(double.PositiveInfinity, "W")) && double.IsNaN(AmdTelemetryMapper.Valid(-1, "MHz")) && double.IsNaN(AmdTelemetryMapper.Valid(54000, "°C")) && double.IsNaN(AmdTelemetryMapper.Valid(101, "%")));
+Check("sensor IDs and ADLX keys unique", AmdTelemetryMapper.Additional.Select(s => s.Id).Distinct().Count() == AmdTelemetryMapper.Additional.Length && AdlxTelemetry.Metrics.Select(s => s.Key).Distinct().Count() == AdlxTelemetry.Metrics.Length);
+
 // ---- FanCurve interpolation
+var disconnectStat = new SensorStat(); disconnectStat.Add(100); disconnectStat.Add(double.NaN);
+Check("disconnect clears current but preserves history", double.IsNaN(disconnectStat.Current) && disconnectStat.Minimum == 100 && disconnectStat.Average == 100);
+
+var rdnaTiming = AdlBackend.BuildTimingOptions(0, 1);
+Check("RDNA4 exposes only driver timing choices", rdnaTiming.SequenceEqual(new[] { "Default", "Fast timing" }));
+Check("extra timing IDs are not invented fast presets", AdlBackend.BuildTimingOptions(0, 2)[2] == "Driver preset 2");
+Check("nonzero timing range retains raw ID labels", AdlBackend.BuildTimingOptions(2, 3)[0] == "Driver preset 2");
+Check("locked timing range hidden", AdlBackend.BuildTimingOptions(0, 0).Count == 0);
+Check("reversed timing range rejected", AdlBackend.BuildTimingOptions(2, 1).Count == 0);
+Check("negative timing range rejected", AdlBackend.BuildTimingOptions(-1, 1).Count == 0);
+Check("oversized timing range rejected", AdlBackend.BuildTimingOptions(0, int.MaxValue).Count == 0);
+Check("unavailable fabric sensor is not zero MHz", double.IsNaN(new GpuTelemetry().FabricClockMhz));
+
 var curve = new FanCurve { Points = new() { new(30, 20), new(60, 50), new(80, 100) } };
 Eq("below first point", 20, curve.Evaluate(10));
 Eq("at first point", 20, curve.Evaluate(30));
@@ -903,6 +946,65 @@ Check("3 NOT_SUPPORTED does not retry", !Nvml.SessionMayBeStale(3));
 Check("4 NO_PERMISSION does not retry", !Nvml.SessionMayBeStale(4));
 Check("2 INVALID_ARGUMENT does not retry", !Nvml.SessionMayBeStale(2));
 
+// Recovery uses a durable journal and mock writes only: never exercise live tuning here.
+{
+    var recoveryDir = Path.Combine(Path.GetTempPath(), "roch-recovery-tests-" + Guid.NewGuid());
+    var stock = new TuningProfile { Name = "Stock", CoreOffsetMhz = 0 };
+    var tune = new TuningProfile { Name = "Slot 1", CoreOffsetMhz = 100 };
+    var writes = new List<int>();
+    bool reject = false;
+    IReadOnlyList<string> Write(TuningProfile p)
+    {
+        writes.Add(p.CoreOffsetMhz);
+        return reject ? new[] { "mock driver failure" } : Array.Empty<string>();
+    }
+    var recovery = new ProfileRecovery(recoveryDir, "mock", stock, Write);
+    Check("recovery starts empty", !recovery.HasPending && recovery.LastConfirmed == null);
+    recovery.Begin(tune);
+    tune.CoreOffsetMhz = 999;
+    Check("pending journal survives restart", new ProfileRecovery(recoveryDir, "mock", stock, Write).HasPending);
+    recovery.Confirm();
+    Check("confirmed snapshot is cloned", recovery.LastConfirmed!.CoreOffsetMhz == 100);
+    recovery.ApproveStartup("Slot 1");
+    recovery.Begin(tune);
+    var restarted = new ProfileRecovery(recoveryDir, "mock", stock, Write);
+    restarted.Revert();
+    Check("interrupted trial restores confirmed profile", writes.Last() == 100 && !restarted.HasPending);
+    restarted.Begin(tune);
+    reject = true;
+    Check("failed rollback reports error", restarted.Revert().Count > 0);
+    Check("failed rollback retains durable pending state", new ProfileRecovery(recoveryDir, "mock", stock, Write).HasPending);
+    bool refused = false;
+    try { restarted.Confirm(); } catch (InvalidOperationException) { refused = true; }
+    Check("failed rollback cannot be confirmed", refused);
+    reject = false; restarted.Revert();
+    reject = true; restarted.Begin(tune);
+    refused = false;
+    try { restarted.Confirm(); } catch (InvalidOperationException) { refused = true; }
+    Check("failed apply cannot be confirmed", refused);
+    reject = false; restarted.Revert();
+    restarted.Begin(tune); restarted.Confirm();
+    Check("normal confirmation does not overwrite frozen startup", restarted.StartupProfile("Slot 1")!.CoreOffsetMhz == 100);
+    var copy = restarted.StartupProfile("Slot 1")!; copy.CoreOffsetMhz = 7;
+    Check("startup snapshots returned by value", restarted.StartupProfile("Slot 1")!.CoreOffsetMhz == 100);
+    var first = new ProfileRecovery(recoveryDir, "different mock", stock, Write);
+    first.Begin(tune); first.Revert();
+    Check("first trial rollback uses defaults", writes.Last() == 0);
+    Check("GPU recovery journals are separate", first.LastConfirmed == null && restarted.LastConfirmed != null);
+    // This test-owned GUID directory contains only its generated journals.
+    Directory.Delete(recoveryDir, true);
+}
+{
+    var backend = new OffsetStyleBackend();
+    using var fanService = new TuningService(backend);
+    fanService.Initialize();
+    fanService.Apply(new TuningProfile());
+    backend.Calls.Clear();
+    var fanErrors = fanService.SetFans(FanMode.Auto, 50, Array.Empty<int>(), new FanCurve(), false);
+    Check("fan-only Zero RPM apply succeeds", fanErrors.Count == 0 && backend.Calls.Contains("SetZeroRpm") && !backend.ZeroRpm);
+    Check("fan-only apply never writes tuning", backend.Calls.All(c => c == "SetFanAuto" || c == "SetZeroRpm"));
+    Check("applied profile reflects Zero RPM", fanService.AppliedProfile!.ZeroRpm == false);
+}
 Console.WriteLine($"{pass} passed, {fail} failed");
 return fail == 0 ? 0 : 1;
 

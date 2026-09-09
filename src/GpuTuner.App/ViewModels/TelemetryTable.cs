@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Linq;
 using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
 
@@ -82,6 +83,7 @@ public sealed class TelemetryTable
 
     private readonly Dictionary<string, SensorStat> _stats = new();
     private readonly List<TelemetryRow> _all = new();
+    private readonly HashSet<string> _supplementalKeys = new();
 
     private SensorStat Stat(string key)
     {
@@ -92,7 +94,6 @@ public sealed class TelemetryTable
     private void Group(string name)
     {
         Add(TelemetryRow.Header(name.ToUpperInvariant()));
-        Add(TelemetryRow.Columns());
     }
 
     private void Sensor(string key, string label, string unit, int decimals = 0) =>
@@ -121,8 +122,10 @@ public sealed class TelemetryTable
 
         Group("Clocks");
         Sensor("core", "GPU core", "MHz");
-        Sensor("coremeasured", "GPU core (effective)", "MHz");
+        if (!caps.PowerLimitIsOffset) Sensor("coremeasured", "GPU core (effective)", "MHz");
         Sensor("mem", "Memory", "MHz");
+        if (!double.IsNaN(first.FabricClockMhz)) Sensor("fclk", "Fabric (FCLK)", "MHz");
+        if (!double.IsNaN(first.SocClockMhz)) Sensor("socclk", "SoC", "MHz");
         if (caps.CanSetXbarOffset) Sensor("xbar", "Crossbar", "MHz");
         if (caps.CanSetSysOffset) Sensor("sys", "SYS", "MHz");
         if (caps.CanSetVideoOffset) Sensor("video", "Video", "MHz");
@@ -140,7 +143,8 @@ public sealed class TelemetryTable
 
         Group("Power");
         if (first.PowerWatts > 0) Sensor("watts", "Board draw", "W", 1);
-        Sensor("tdp", "Total, % of TDP", "%", 1);
+        if (!caps.PowerLimitIsOffset || double.IsFinite(first.PowerPercent))
+            Sensor("tdp", "Total, % of TDP", "%", 1);
 
         // Measured 12 V rail currents, straight from the card's power monitor. Index 0 is the board
         // total; the rest are the supply rails behind it, named by their voltage since the driver
@@ -162,7 +166,7 @@ public sealed class TelemetryTable
         }
 
         Group("Memory");
-        Sensor("memused", "Allocated", "MB");
+        Sensor("memused", caps.PowerLimitIsOffset ? "Dedicated VRAM used" : "Allocated", "MB");
 
         Restripe();
     }
@@ -184,6 +188,18 @@ public sealed class TelemetryTable
     {
         void Put(string key, double v) { if (_stats.TryGetValue(key, out var s)) s.Add(v); }
 
+        // Some sensors become available after the first poll (driver warmup or waking from idle).
+        void Discover(string key, string name, string unit, double value)
+        {
+            if (double.IsFinite(value) && !_stats.ContainsKey(key)) InsertSensor(key, name, unit);
+        }
+        Discover("hotspot", "Hot spot", "°C", t.HotSpotC);
+        Discover("memtemp", "Memory junction", "°C", t.MemoryTemperatureC);
+        Discover("volt", "GPU core (VID)", "mV", t.VoltageMv);
+        Discover("watts", "Board draw", "W", t.PowerWatts);
+        Discover("fclk", "Fabric (FCLK)", "MHz", t.FabricClockMhz);
+        Discover("socclk", "SoC", "MHz", t.SocClockMhz);
+
         Put("temp", t.TemperatureC);
         Put("hotspot", t.HotSpotC);
         Put("memtemp", t.MemoryTemperatureC);
@@ -192,12 +208,28 @@ public sealed class TelemetryTable
         Put("msvdd", t.MsvddMv);
         Put("core", t.CoreClockMhz);
         Put("mem", t.MemoryClockMhz);
+        Put("fclk", t.FabricClockMhz);
+        Put("socclk", t.SocClockMhz);
         Put("load", t.GpuLoadPercent);
         Put("memload", t.MemoryLoadPercent);
         Put("watts", t.PowerWatts);
         for (int i = 0; i < t.RailAmps.Length; i++) Put($"railA{i}", t.RailAmps[i]);
         Put("tdp", t.PowerPercent);
         Put("memused", t.MemoryUsedMb);
+        bool newRows = false;
+        foreach (var sensor in t.SupplementalSensors)
+        {
+            if (_supplementalKeys.Add(sensor.Key))
+            {
+                InsertSensor(sensor.Key, sensor.Name, sensor.Unit);
+                newRows = true;
+            }
+        }
+        var present = t.SupplementalSensors.Select(s => s.Key).ToHashSet();
+        foreach (var key in _supplementalKeys)
+            if (!present.Contains(key)) Put(key, double.NaN);
+        foreach (var sensor in t.SupplementalSensors) Put(sensor.Key, sensor.Value);
+        if (newRows) Restripe();
 
         for (int i = 0; i < t.FanRpms.Length; i++) Put($"fanrpm{i}", t.FanRpms[i]);
         for (int i = 0; i < t.FanPercents.Length; i++) Put($"fanpct{i}", t.FanPercents[i]);
@@ -207,6 +239,25 @@ public sealed class TelemetryTable
             foreach (var (k, v) in extraClocks) Put(k, v);
 
         foreach (var r in _all) r.Refresh();
+    }
+
+    private void InsertSensor(string key, string name, string unit)
+    {
+        string group = unit switch
+        {
+            "°C" => "TEMPERATURES", "mV" or "V" => "VOLTAGES", "MHz" => "CLOCKS",
+            "W" => "POWER", "MB" => "MEMORY", "gen" or "lanes" => "PCIe LINK",
+            _ => "LIMITERS"
+        };
+        int heading = _all.FindIndex(r => r.IsHeader && r.Name == group.ToUpperInvariant());
+        if (heading < 0) { Group(group); heading = _all.Count - 1; }
+        int end = _all.FindIndex(heading + 1, r => r.IsHeader);
+        if (end < 0) end = _all.Count;
+        int decimals = unit is "°C" or "W" ? 1 : 0;
+        var row = TelemetryRow.Sensor(name, Stat(key), unit, decimals);
+        _all.Insert(end, row);
+        Rows.Insert(end, row);
+        Restripe();
     }
 
     public void ResetStats()
