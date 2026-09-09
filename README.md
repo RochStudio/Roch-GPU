@@ -61,4 +61,6 @@ Open `dist\RochGPU.exe`. The current source version is **1.0.4**; it has not bee
 
 Created by **Roch Studio / [@MateoPCTech](https://x.com/MateoPCTech)**. Licensed GPL-3.0-or-later; third-party components retain their own licenses. See [third-party notices](THIRD-PARTY-NOTICES.md).
 
+Join the [Roch Studio Discord](https://discord.com/invite/hPze8rTxqJ) for discussion and feedback.
+
 [Detailed reference](docs/reference.md) · [Native AMD telemetry](docs/native-amd-telemetry.md) · [Profile recovery](docs/profile-recovery.md) · [License](LICENSE)
