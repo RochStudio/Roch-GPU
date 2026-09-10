@@ -17,6 +17,7 @@ public sealed class AdlBackend : IGpuBackend
     private IntPtr _context;
     private readonly List<GpuDevice> _devices = new();
     private readonly List<int> _adapterIndex = new();     // device index -> ADL adapter index
+    private readonly List<string> _adapterFailures = new();
     // Per adapter: a second AMD card has its own limits, and clamping one card's writes to the
     // other's ranges would silently truncate them.
     private readonly Dictionary<int, int> _caps = new();
@@ -54,11 +55,18 @@ public sealed class AdlBackend : IGpuBackend
         if (rc != AdlNative.AdlOk || _context == IntPtr.Zero)
             throw new GpuBackendException($"ADL2_Main_Control_Create failed: {AdlNative.Describe(rc)}.");
 
-        EnumerateAdapters();
-        if (_devices.Count == 0)
-            throw new GpuBackendException("ADL initialised but reported no AMD adapters.");
-
-        LoadRanges(0);
+        try
+        {
+            EnumerateAdapters();
+            if (_devices.Count == 0)
+                throw new GpuBackendException("ADL found no adapter with usable Overdrive 8 controls. " +
+                    string.Join("; ", _adapterFailures));
+        }
+        catch
+        {
+            Dispose();
+            throw;
+        }
     }
 
     private void EnumerateAdapters()
@@ -79,7 +87,23 @@ public sealed class AdlBackend : IGpuBackend
                 var ai = Marshal.PtrToStructure<AdlNative.AdapterInfo>(IntPtr.Add(buf, i * sz));
                 if (ai.iVendorID != AdlNative.AmdVendorId || ai.iExist == 0) continue;
                 string key = $"{ai.iBusNumber}.{ai.iDeviceNumber}.{ai.iFunctionNumber}";
-                if (!seen.Add(key)) continue;
+                if (seen.Contains(key)) continue;
+
+                // Integrated graphics can enumerate before a supported discrete card. Probe
+                // every candidate, retaining the native ADL index only for usable adapters.
+                // Mark the PCI device seen only after success: another display entry may work.
+                int gpuIndex = _devices.Count;
+                _adapterIndex.Add(ai.iAdapterIndex);
+                try { LoadRanges(gpuIndex); }
+                catch (GpuBackendException e)
+                {
+                    _adapterIndex.RemoveAt(gpuIndex);
+                    _caps.Remove(gpuIndex);
+                    _rangesByGpu.Remove(gpuIndex);
+                    _adapterFailures.Add($"{ai.strAdapterName?.Trim()} (ADL {ai.iAdapterIndex}): {e.Message}");
+                    continue;
+                }
+                seen.Add(key);
 
                 _devices.Add(new GpuDevice(
                     Index: _devices.Count,
@@ -89,7 +113,6 @@ public sealed class AdlBackend : IGpuBackend
                     DriverVersion: ReadDriverVersion(ai.strDriverPath),
                     VramMegabytes: ReadVramMegabytes(ai.iAdapterIndex),
                     BiosVersion: ReadBiosVersion(ai.iAdapterIndex)));
-                _adapterIndex.Add(ai.iAdapterIndex);
             }
         }
         finally { Marshal.FreeHGlobal(buf); }
@@ -231,11 +254,10 @@ public sealed class AdlBackend : IGpuBackend
         int caps = 0, count = AdlNative.Od8FeatureCount;
         IntPtr list = IntPtr.Zero;
         int rc = AdlNative.ADL2_Overdrive8_Init_SettingX2_Get(_context, Adapter(gpuIndex), ref caps, ref count, ref list);
-        if (rc != AdlNative.AdlOk || list == IntPtr.Zero)
-            throw new GpuBackendException($"Could not read the Overdrive 8 feature table: {AdlNative.Describe(rc)}.");
-
         try
         {
+            if (rc != AdlNative.AdlOk || list == IntPtr.Zero)
+                throw new GpuBackendException($"Could not read the Overdrive 8 feature table: {AdlNative.Describe(rc)}.");
             int n = Math.Min(count <= 0 ? AdlNative.Od8FeatureCount : count, AdlNative.Od8Count);
             var ranges = new Od8Range[AdlNative.Od8Count];
             for (int i = 0; i < n; i++)
@@ -757,6 +779,11 @@ public sealed class AdlBackend : IGpuBackend
             _adlxTelemetry.Dispose();
             try { AdlNative.ADL2_Main_Control_Destroy(_context); } catch { }
             _context = IntPtr.Zero;
+            _devices.Clear();
+            _adapterIndex.Clear();
+            _caps.Clear();
+            _rangesByGpu.Clear();
+            _adapterFailures.Clear();
         }
     }
 
