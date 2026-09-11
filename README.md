@@ -22,11 +22,14 @@ Windows x64 and a compatible vendor graphics driver are required. The self-conta
 - **NVIDIA V/F curve editor and advanced XOC controls:** additional voltage/frequency and rail controls on supported cards. Advanced controls are gated and hardware-dependent.
 - **AMD memory timings:** select the modes your driver exposes, alongside voltage offset and memory-clock tuning. Unsupported timing modes are not invented.
 - **Light/dark interface and CLI:** grouped tuning controls, a separate telemetry window, diagnostics and command-line monitoring/tuning from the same executable.
+- **Social links:** YouTube | X | Discord in the bottom-left footer, matching Roch CPU and Viewer.
 - **Profile recovery:** full-profile applies keep a recovery journal and attempt rollback after errors or interrupted writes. There is no Keep/Revert countdown, and recovery is not a stability test.
 
 ### RX 9070 XT support
 
 Verified native readings include GPU/hotspot/memory temperatures, core voltage, core/memory clocks, board power, fans, utilization, dedicated/shared GPU memory and PCIe link information. FCLK and SoC rows require driver support; the tested RX 9070 XT does not expose them through the public interfaces. Effective core clock and effective FCLK are not implemented. See [native AMD telemetry](docs/native-amd-telemetry.md).
+
+AMD's memory-clock slider sets the maximum memory clock, with limits supplied by the installed driver. On the tested RX 9070 XT, the driver reports 2650–3000 MHz with a 2650 MHz default. This lower slider limit is not the minimum live memory clock; ranges can differ between cards and drivers.
 
 ## Screenshots
 
@@ -61,6 +64,6 @@ Open `dist\RochGPU.exe`. The current source version is **1.0.4**; it has not bee
 
 Created by **Roch Studio / [@MateoPCTech](https://x.com/MateoPCTech)**. Licensed GPL-3.0-or-later; third-party components retain their own licenses. See [third-party notices](THIRD-PARTY-NOTICES.md).
 
-Join the [Roch Studio Discord](https://discord.com/invite/hPze8rTxqJ) for discussion and feedback.
+[YouTube](https://www.youtube.com/@MateoPcTech) | [X](https://x.com/MateoPCTech) | [Discord](https://discord.gg/KfzExpKQHB)
 
 [Detailed reference](docs/reference.md) · [Native AMD telemetry](docs/native-amd-telemetry.md) · [Profile recovery](docs/profile-recovery.md) · [License](LICENSE)

@@ -160,7 +160,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void XLink_Click(object sender, MouseButtonEventArgs e)
     {
-        const string url = "https://x.com/MateoPCTech";
+        if (sender is not FrameworkElement { Tag: string url }) return;
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
         catch (Exception ex) { _vm.Status = $"Could not open {url}: {ex.Message}"; _vm.StatusIsError = true; }
     }

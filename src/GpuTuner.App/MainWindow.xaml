@@ -203,8 +203,12 @@
                 <!-- Same footer link Roch Viewer carries, and the same affordance: no button edge and
                      no underline, so the colour is the only thing saying it is clickable - which is
                      why it lifts a shade under the pointer rather than staying put. -->
-                <TextBlock x:Name="XLink" Grid.Row="2" Text="@MateoPCTech" FontSize="11.5" FontWeight="Bold"
-                           Foreground="{DynamicResource BrandBrush}" Cursor="Hand" Margin="0,5,0,0"
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,5,0,0">
+                <TextBlock Text="YouTube" Tag="https://www.youtube.com/@MateoPcTech" FontSize="11.5" FontWeight="Bold"
+                           Foreground="{DynamicResource BrandBrush}" Cursor="Hand" MouseLeftButtonUp="XLink_Click"/>
+                <TextBlock Text=" | " Margin="3,0"/>
+                <TextBlock x:Name="XLink" Text="X" Tag="https://x.com/MateoPCTech" FontSize="11.5" FontWeight="Bold"
+                           Foreground="{DynamicResource BrandBrush}" Cursor="Hand"
                            HorizontalAlignment="Left" MouseLeftButtonUp="XLink_Click"
                            ToolTip="https://x.com/MateoPCTech">
                     <TextBlock.Style>
@@ -217,6 +221,10 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
+                <TextBlock Text=" | " Margin="3,0"/>
+                <TextBlock Text="Discord" Tag="https://discord.gg/KfzExpKQHB" FontSize="11.5" FontWeight="Bold"
+                           Foreground="{DynamicResource BrandBrush}" Cursor="Hand" MouseLeftButtonUp="XLink_Click"/>
+                </StackPanel>
             </Grid>
         </Border>
 
