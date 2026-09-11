@@ -4,7 +4,7 @@ namespace GpuTuner.Core.Models;
 /// The window an OCP current limit may be moved within, in whole amps.
 ///
 /// Half the stock figure at the bottom, half again above it at the top. Not a number invented here:
-/// it is the bound HYDRA's own implementation applies before it writes, read out of its NVAPI.dll,
+/// it is the bound the reference tuning tool's own implementation applies before it writes, read out of its NVAPI.dll,
 /// and the driver refuses anything outside its own window regardless — so a slider offering more
 /// would only be offering values that come back as errors.
 ///

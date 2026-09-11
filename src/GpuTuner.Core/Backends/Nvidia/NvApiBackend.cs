@@ -1,4 +1,4 @@
-﻿using GpuTuner.Core.Models;
+using GpuTuner.Core.Models;
 using NvAPIWrapper;
 using NvAPIWrapper.GPU;
 using NvAPIWrapper.Native;
@@ -738,7 +738,7 @@ public sealed class NvApiBackend : IGpuBackend
             d["video"] = NvApiPrivate.MeasureClockKhz(g.Handle, 21) / 1000.0;
 
             // The rest of the domains this card lists. A 5070 Ti enumerates nine and only four of
-            // them have names anyone has confirmed - mVolt 0.38 added HUBCLK, DISPCLK, L2CLK and a
+            // them have names anyone has confirmed - the comparison monitor 0.38 added HUBCLK, DISPCLK, L2CLK and a
             // reference clock and marks them "experimental and unconfirmed", which is the honest
             // state of the art. So these are reported by the type the driver gives them rather than
             // by a guessed name: what they are is a question the min/max columns answer over a
@@ -790,10 +790,10 @@ public sealed class NvApiBackend : IGpuBackend
     private const int MaxDomainType = 31;
 
     /// <summary>
-    /// Names for the domains the driver only numbers. Taken from mVolt's telemetry tab and checked
+    /// Names for the domains the driver only numbers. Taken from the comparison monitor's telemetry tab and checked
     /// against this card rather than trusted: reading both at once, its figures and ours agree to
     /// within about 2 MHz on every one, and type 20 tracks the core clock under load exactly as an
-    /// L2 clock should. Type 31 reads a flat zero and mVolt does not name it either, so neither do
+    /// L2 clock should. Type 31 reads a flat zero and the comparison monitor does not name it either, so neither do
     /// we - a number with no name is more honest than a name with no evidence.
     /// </summary>
     public static string DomainName(int type) => type switch
@@ -1615,11 +1615,11 @@ public sealed class NvApiBackend : IGpuBackend
     /// What each power-monitor channel is, by position.
     ///
     /// The driver hands back no names, and the call that carries a channel id returns nothing usable
-    /// on this driver. These come from running mVolt+ against the same card under the same load and
+    /// on this driver. These come from running the comparison monitor against the same card under the same load and
     /// matching all six currents at once — board total 25.75 A to its 26.375, PCIe 0.58 to 0.585,
     /// and so on down the list. Six simultaneous matches is a mapping rather than a resemblance.
     ///
-    /// The three "Rail NNN" names are mVolt+'s own labels for channels it has no name for either;
+    /// The three "Rail NNN" names are the comparison monitor's own labels for channels it has no name for either;
     /// the number in them is the driver's identifier, so it is more useful than a position would be.
     ///
     /// Positional, so it only applies to a card reporting exactly these six. Anything else is

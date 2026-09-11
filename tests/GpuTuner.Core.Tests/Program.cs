@@ -1,4 +1,4 @@
-﻿using GpuTuner.Core.Backends.Amd;
+using GpuTuner.Core.Backends.Amd;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
@@ -910,7 +910,7 @@ using (var svc = new TuningService(new MockBackend()))
     Check("reset restores both OCP limits", st.NvvddOcpMilliamps == 300000 && st.MsvddOcpMilliamps == 120000);
 }
 
-// The slider window is half the stock figure to half again above it — HYDRA's own bound, not ours.
+// The slider window is half the stock figure to half again above it — the reference tuning tool's own bound, not ours.
 Check("OCP min is half stock", OcpBounds.MinA(300000) == 150);
 Check("OCP max is 150% of stock", OcpBounds.MaxA(300000) == 450);
 Check("OCP window on MSVDD", OcpBounds.MinA(120000) == 60 && OcpBounds.MaxA(120000) == 180);

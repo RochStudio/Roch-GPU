@@ -1,4 +1,4 @@
-﻿<Window x:Class="GpuTuner.App.XocWindow"
+<Window x:Class="GpuTuner.App.XocWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:GpuTuner.App.Controls"
@@ -30,7 +30,7 @@
 
         <!-- Each lever is armed on its own, because they fail in unrelated ways: a rail ceiling that
              browns the card out says nothing about whether a crossbar offset is stable. Enable and
-             Disable write the card straight away, the way mVolt+ does, so this window is an action
+             Disable write the card straight away, the way the comparison monitor does, so this window is an action
              rather than another pending edit for the main window's Apply. -->
         <Border DockPanel.Dock="Top" Style="{StaticResource Panel}" Padding="12,10" Margin="0,0,0,8">
             <StackPanel>

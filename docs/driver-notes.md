@@ -39,44 +39,44 @@ began as an attempt to add a feature that turned out not to be there.
   card](docs/diag-rtx5070ti.txt) is kept as the evidence behind these findings.
 - **Ten clock domains, and the info struct only lists nine of them.** Core, crossbar, SYS and video
   have their own controls; HUBCLK, DISPCLK, L2CLK and the reference clock are read-only readings in
-  the monitor. The names come from mVolt's telemetry tab and were checked rather than trusted —
+  the monitor. The names come from the comparison monitor's telemetry tab and were checked rather than trusted —
   reading both tools at once, their figures and ours agree to within about 2 MHz on every domain
   (HUBCLK 539/540, DISPCLK 674/676, L2CLK 1679/1681, reference 107/108), and type 20 tracks the core
   clock under load exactly as an L2 clock should.
   The reference clock is the reason this list is built by asking the frequency counter for every type
   id rather than by walking the info struct: the walk misses type 22 entirely, though the counter
   answers for it perfectly well. Both are used, because the walk carries type 31 — a domain that
-  reads a flat zero, which a probe keeping only what moves would drop. Type 31 stays unnamed; mVolt
+  reads a flat zero, which a probe keeping only what moves would drop. Type 31 stays unnamed; the comparison monitor
   does not name it either, and a number with no name is more honest than a name with no evidence.
-- **The crossbar is a single flat offset, not a curve.** HYDRA 2.3B carries a 127-entry
+- **The crossbar is a single flat offset, not a curve.** the reference tuning tool 2.3B carries a 127-entry
   `xbar_curve_points` array beside its 127 `curve_points`, which suggests a per-voltage-point
   crossbar table. There isn't one on this driver, and all three places it could live were checked:
   the 127-point V/F space is entirely the core curve (its points continue monotonically to 1240 mV /
   3247 MHz, with no second domain in it); each domain's 772-byte control block holds one type word
   and the flat offset field this tool already writes; each domain's 1072-byte info entry holds 12-13
   scattered scalars with a longest run of 4 — a per-point table would be a run of about 127.
-  HYDRA's own saved profile has that array all-zero, so it has never written one either.
+  the reference tuning tool's own saved profile has that array all-zero, so it has never written one either.
   `RochGPU.exe diag` prints all four domain blocks and info entries, so a card that does carry a
   table will show it as a long run.
-- **No temperature limit on Blackwell, and the power limit's ceiling is the driver's own.** HYDRA
+- **No temperature limit on Blackwell, and the power limit's ceiling is the driver's own.** the reference tuning tool
   offers a 90 °C limit and power to 150 %; on a 5070 Ti neither is something the driver will
   discuss. The thermal policy family answers both of its entry points (`ClientThermalPoliciesGetInfo`
   and `GetLimit`) with zero policies, in both struct versions it accepts (v1 and v2 — it refuses
   anything newer, with no list of alternatives), and pre-filling the count does not change that, so
-  it is not the mask trap. HYDRA's native helper embeds only the *Set* entry point for that family
+  it is not the mask trap. the reference tuning tool's native helper embeds only the *Set* entry point for that family
   and none of the reads: it writes a limit blind, with the same v2 struct, and never asks whether
   there was a policy to write to. Power is the same shape one step over — the info struct reports
   83.3 / 100 / 116.7 % and accepts only v1, so there is no newer version carrying a bigger number,
-  while HYDRA embeds only `SetStatus` and pairs it with `NvAPI_RestartDisplayDriver`. A write past
+  while the reference tuning tool embeds only `SetStatus` and pairs it with `NvAPI_RestartDisplayDriver`. A write past
   the reported maximum was tried, elevated, at idle, with the same v1 struct that works at the
   maximum: 120 % and 150 % both come back `NVAPI_INVALID_ARGUMENT` (-5) and the read-back stays at
   116 667, while 116 667 itself is accepted (status 0) as the control. The driver refuses rather
-  than clamps, so HYDRA's 150 % cannot be landing through this call either; whatever its driver
+  than clamps, so the reference tuning tool's 150 % cannot be landing through this call either; whatever its driver
   restart is for, it is not this. `RochGPU.exe diag` prints the read-only probe under *Policy
   shapes*.
 - **The sub-volt rail currents are not readable, so the OCP limits have no live figure beside them.**
   The power monitor family (`0xF40238EF`) is decoded — current at +0x00 in milliamps, voltage at
-  +0x04 in microvolts — and checked against mVolt+ reading the same card under the same load, where
+  +0x04 in microvolts — and checked against the comparison monitor reading the same card under the same load, where
   every channel lines up one for one: board total 25.75 A against its 26.375, PCIe 12V 0.58
   against 0.585, and the rest within a few per cent. The word at +0x04 is a **bitmask, not a count**,
   and **bit 6 is invalid** — every mask containing it is refused (0x40, 0x7F, 0xFF all fail; 0x3F and
@@ -86,12 +86,12 @@ began as an attempt to add a feature that turned out not to be there.
 
   The channels an OCP limit actually guards — NVVDD output and MSVDD at about 1.05 V, which reach
   **286 A** under load against a 300 A limit — are in neither that family nor the ADC family, whose
-  entries carry a voltage and no current. Nor is HYDRA a way in: its exported
+  entries carry a voltage and no current. Nor is the reference tuning tool a way in: its exported
   `NvApi_GetPowerRailSnapshot` compiles to the same implementation calling these same two ids, so it
   sees the same seven. And the OCP family's own fourth entry point — `0x67F31384`, struct 0xA70
   version 4, the range call — reports the live current as **−1**: it carries a minimum, a default
-  and a maximum per channel and no reading. mVolt+ shows twelve channels and keeps no plaintext
-  entry points, so unlike HYDRA there is no binary to read the answer out of. Until that changes, the
+  and a maximum per channel and no reading. the comparison monitor shows twelve channels and keeps no plaintext
+  entry points, so unlike the reference tuning tool there is no binary to read the answer out of. Until that changes, the
   OCP sliders set a limit with no live current to compare against.
 - **Only one of the two OCP limits gets its window from the driver.** That range call reports the
   core limit as min 250 A, default 300 A, max 350 A, and the sliders now use it. For MSVDD the only

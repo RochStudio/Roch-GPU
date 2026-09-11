@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using NvAPIWrapper.Native.GPU.Structures;
 
 namespace GpuTuner.Core.Backends.Nvidia;
@@ -601,24 +601,24 @@ internal static class NvApiPrivate
 
     // ---- OCP current limits -----------------------------------------------------------------
     //
-    // The per-rail over-current protection limit, in amps: mVolt+ shows 300 A on NVVDD and 120 A on
-    // MSVDD, and HYDRA calls the same thing Core/Mem OCP.
+    // The per-rail over-current protection limit, in amps: the comparison monitor shows 300 A on NVVDD and 120 A on
+    // MSVDD, and the reference tuning tool calls the same thing Core/Mem OCP.
     //
     // Not the voltage rail family, which was the obvious guess and carries no such field - measured,
     // by scanning all three of its buffers for those two figures in every plausible unit and finding
-    // neither. It is its own family, and the layout below was read out of HYDRA's own NVAPI.dll
+    // neither. It is its own family, and the layout below was read out of the reference tuning tool's own NVAPI.dll
     // rather than guessed: its exported NvApi_SetCoreOcpLimit and NvApi_SetMemOcpLimit are thunks
     // that differ only in a selector - 1 for the core rail, 0x10 for memory - and both call one
     // implementation that reads this family first, checks the requested value against a min and a
     // max, and only then writes.
     // The write entry point took two goes to identify, and the first answer was wrong in a way worth
-    // recording. Reading HYDRA's initialiser, each id is resolved and its result stored to a global;
+    // recording. Reading the reference tuning tool's initialiser, each id is resolved and its result stored to a global;
     // the compiler schedules the NEXT id's "mov ecx" before the PREVIOUS result's store, so pairing
     // a store with the nearest preceding id is off by one. That gave 0xEDCF624E, which the driver
     // rejects for this struct with INCOMPATIBLE_STRUCT_VERSION. Pairing the store with the call it
     // actually follows gives 0xAFFC2279, which the driver accepts.
     // The family's fourth entry point, 0x67F31384, is the range call: struct 0xA70 version 4, from
-    // HYDRA's own call site. It reports a minimum, a default and a maximum per channel - 250000,
+    // the reference tuning tool's own call site. It reports a minimum, a default and a maximum per channel - 250000,
     // 300000 and 350000 milliamps for the core one, which is the real window rather than the
     // half-to-half-again this tool offers - and it reports the live current as -1. So the current an
     // OCP limit is actually guarding is not there either, and this was the last family that could
@@ -635,7 +635,7 @@ internal static class NvApiPrivate
     /// <summary>
     /// Write one OCP channel's limit, in milliamps. Null on success, else the reason.
     ///
-    /// Read-modify-write against the same buffer the getter fills, which is how HYDRA does it: every
+    /// Read-modify-write against the same buffer the getter fills, which is how the reference tuning tool does it: every
     /// other channel keeps whatever it already had, so a write to one rail cannot disturb the other.
     ///
     /// Measured end to end on a 5070 Ti: NVVDD 300 A -> 290 A read back as 290, and back to 300.
@@ -678,7 +678,7 @@ internal static class NvApiPrivate
     /// <summary>
     /// Read every OCP channel this card reports. Empty when the family is unavailable.
     ///
-    /// Read-only. The entry point is the one HYDRA's setter calls to read the current state before
+    /// Read-only. The entry point is the one the reference tuning tool's setter calls to read the current state before
     /// deciding whether a write is needed, so this is the same call it makes on the way in.
     /// </summary>
     public static List<OcpChannel> ReadOcpChannels(PhysicalGPUHandle handle)
@@ -705,9 +705,9 @@ internal static class NvApiPrivate
 
     // ---- power monitor: per-channel readings ---------------------------------------------------
     //
-    // The family HYDRA calls for its rail snapshots. Two shapes, tried in the order it tries them:
+    // The family the reference tuning tool calls for its rail snapshots. Two shapes, tried in the order it tries them:
     // the short one first, the long one when the driver refuses it. Both sizes and both versions
-    // come from HYDRA's own call sites rather than from a sweep — sweeping sizes at this family is
+    // come from the reference tuning tool's own call sites rather than from a sweep — sweeping sizes at this family is
     // what corrupted the heap twice while the OCP limits were being found.
     // What a 5070 Ti returns, probed at both shapes: the short one fills five entries at 0x28 on a
     // 0x2C stride, each with a small number at +0x00, a near-constant ~11.9M at +0x04, a large
@@ -718,7 +718,7 @@ internal static class NvApiPrivate
     // (408322961, 408322967, 408322973, 408322980, 408323022), so it is a timestamp rather than a
     // reading — that much is measured. Pinning the rest needs samples taken under load and matched
     // against known board power, which is an experiment rather than a read.
-    // Seven channels on a 5070 Ti, all on the 12 V side. Checked against mVolt+ reading the same card
+    // Seven channels on a 5070 Ti, all on the 12 V side. Checked against the comparison monitor reading the same card
     // under the same load across six paired samples, they line up one for one: board total 25.75 A
     // against its 26.375, PCIe 0.58/0.585, and rails 218, 214, NVVDD-input and 212 at 25.17/25.790,
     // 15.97/16.356, 9.90/10.142 and 6.07/6.214.
@@ -728,19 +728,19 @@ internal static class NvApiPrivate
     // family look six wide for a while. 0xBF - every valid bit - is the whole of it, and bits from 8
     // up are refused too, so seven channels is all there is.
     //
-    // The sub-volt channels mVolt+ also lists - NVVDD output and MSVDD, the ones an OCP limit
+    // The sub-volt channels the comparison monitor also lists - NVVDD output and MSVDD, the ones an OCP limit
     // guards, the ones reaching 286 A under load - are not among them, and not in the ADC family
-    // either, whose entries carry a voltage and no current. Nor is HYDRA a way in: its exported
+    // either, whose entries carry a voltage and no current. Nor is the reference tuning tool a way in: its exported
     // NvApi_GetPowerRailSnapshot compiles to this same implementation, calling these same two ids,
-    // so it sees the same seven. mVolt+ shows twelve and keeps no plaintext entry points, so
-    // whatever it reads them through is not recoverable from its binary the way HYDRA's was.
+    // so it sees the same seven. the comparison monitor shows twelve and keeps no plaintext entry points, so
+    // whatever it reads them through is not recoverable from its binary the way the reference tuning tool's was.
     private const uint PowerChannelMask = 0xBF;
     private const uint FnPowerMonitorStatus = 0xF40238EF;
 
     /// <summary>
-    /// Every channel of the power monitor, decoded. Read-only, at the two shapes HYDRA calls.
+    /// Every channel of the power monitor, decoded. Read-only, at the two shapes the reference tuning tool calls.
     ///
-    /// Layout established by cross-checking a raw dump against mVolt+'s telemetry on the same card
+    /// Layout established by cross-checking a raw dump against the comparison monitor's telemetry on the same card
     /// at the same idle: current sits at +0x00 in milliamps and voltage at +0x04 in microvolts, and
     /// the proof is arithmetic rather than resemblance - the first channel reads 1782 mA at
     /// 11891134 uV, whose product is 21.19 W, which is exactly the 21190 the struct carries at +0x08
@@ -1343,7 +1343,7 @@ internal static class NvApiPrivate
     /// becomes readable instead of assumed. Nothing here writes: GetControl only.
     /// </summary>
     /// <summary>
-    /// Every word of one domain's control block, read-only. HYDRA carries a 128-entry
+    /// Every word of one domain's control block, read-only. the reference tuning tool carries a 128-entry
     /// xbar_curve_points array beside its 128 curve_points, so something holds a per-point crossbar
     /// table; this shows whether it is in the block we already write the flat offset into. The buffer
     /// is over-allocated the way ExploreXbarControl does, so a driver that fills more than the

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -475,7 +475,7 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>
     /// Which XOC levers are armed. Not a pending edit like the sliders are: each Enable and Disable
-    /// writes the hardware on the spot, the way mVolt+ does, so there is nothing left over for Apply
+    /// writes the hardware on the spot, the way the comparison monitor does, so there is nothing left over for Apply
     /// to send. Bound through XocLeverConverter rather than a boolean pair per lever, so adding a
     /// seventh lever costs one enum member instead of two more properties.
     /// </summary>
@@ -999,7 +999,7 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Enable / Disable, mVolt+ style: one click writes that one lever, or puts it back. Deliberately
+    /// Enable / Disable, the comparison monitor style: one click writes that one lever, or puts it back. Deliberately
     /// narrow - it touches neither the other levers nor the clocks, power, temp and fan, so arming
     /// one cannot smuggle a half-finished slider edit elsewhere onto the card behind the user's back.
     /// </summary>
