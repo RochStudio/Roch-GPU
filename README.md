@@ -51,7 +51,7 @@ Install the **.NET 10 SDK**, then run in PowerShell:
 .\build.ps1
 ```
 
-Open `dist\RochGPU.exe`. The current source version is **1.0.4**; it has not been released yet.
+Open `dist\RochGPU.exe`. The current version is **1.0.4**.
 
 > Overclocking can cause crashes, data loss or hardware damage. Test changes carefully. Controls and sensor readings depend on what your driver exposes.
 
