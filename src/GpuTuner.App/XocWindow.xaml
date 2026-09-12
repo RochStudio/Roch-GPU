@@ -28,10 +28,9 @@
 
     <DockPanel Margin="12">
 
-        <!-- Each lever is armed on its own, because they fail in unrelated ways: a rail ceiling that
-             browns the card out says nothing about whether a crossbar offset is stable. Enable and
-             Disable write the card straight away, the way the comparison monitor does, so this window is an action
-             rather than another pending edit for the main window's Apply. -->
+        <!-- Each dangerous rail, OCP or clock-range lever is armed on its own. Enable and Disable
+             write the card straight away, so this window is an action rather than another pending
+             edit for the main window's Apply. -->
         <Border DockPanel.Dock="Top" Style="{StaticResource Panel}" Padding="12,10" Margin="0,0,0,8">
             <StackPanel>
                 <TextBlock Text="XOC" Style="{StaticResource SectionTitle}"/>
@@ -39,10 +38,7 @@
             </StackPanel>
         </Border>
 
-        <!-- One warning for the window rather than a paragraph per lever. The old note explained the
-             rails and the clock domains and had nothing to say about the OCP limits added since,
-             which are the ones that need saying most: everything else here is performance, and those
-             two are protection. -->
+        <!-- One warning for the window rather than a paragraph per lever. -->
         <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="10,7" Margin="0,8,0,0">
             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource WarnBrush}" FontSize="11.5">
                 <Run FontWeight="Bold" Text="These can damage hardware, not just crash it."/>
@@ -153,84 +149,6 @@
                             Command="{Binding ToggleLeverCommand}" CommandParameter="MsvddOcp"
                             Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=MsvddOcp}"
                             ToolTip="Write this current limit to the card now, or put it back"/>
-                </StackPanel>
-
-                <!-- Crossbar clock offset - private domain, not in PStates20 -->
-                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasXbar, Converter={StaticResource BoolToVis}}">
-                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Xbar}">
-                        <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="XBAR Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
-                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                     ToolTip="{Binding XbarOffsetRangeText}"
-                                     Text="{Binding XbarOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                        </Grid>
-                        <Grid Margin="0,1,0,0">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                          Command="{Binding NudgeCommand}" CommandParameter="xbar:-1"/>
-                            <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.XbarOffsetMinMhz}" Maximum="{Binding Caps.XbarOffsetMaxMhz}"
-                                    Value="{Binding XbarOffset, Mode=TwoWay}" TickFrequency="15"/>
-                            <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                          Command="{Binding NudgeCommand}" CommandParameter="xbar:1"/>
-                        </Grid>
-                    </StackPanel>
-                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
-                            Command="{Binding ToggleLeverCommand}" CommandParameter="Xbar"
-                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Xbar}"
-                            ToolTip="Write this offset to the card now, or put it back"/>
-                </StackPanel>
-
-                <!-- SYS clock offset -->
-                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasSys, Converter={StaticResource BoolToVis}}">
-                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Sys}">
-                        <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="SYS Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
-                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                     ToolTip="{Binding SysOffsetRangeText}"
-                                     Text="{Binding SysOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                        </Grid>
-                        <Grid Margin="0,1,0,0">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                          Command="{Binding NudgeCommand}" CommandParameter="sys:-1"/>
-                            <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.SysOffsetMinMhz}" Maximum="{Binding Caps.SysOffsetMaxMhz}"
-                                    Value="{Binding SysOffset, Mode=TwoWay}" TickFrequency="15"/>
-                            <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                          Command="{Binding NudgeCommand}" CommandParameter="sys:1"/>
-                        </Grid>
-                    </StackPanel>
-                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
-                            Command="{Binding ToggleLeverCommand}" CommandParameter="Sys"
-                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Sys}"
-                            ToolTip="Write this offset to the card now, or put it back"/>
-                </StackPanel>
-
-                <!-- Video clock offset -->
-                <StackPanel Margin="0,2,0,6" Visibility="{Binding HasVideo, Converter={StaticResource BoolToVis}}">
-                    <StackPanel IsEnabled="{Binding XocArmed, Converter={StaticResource Armed}, ConverterParameter=Video}">
-                        <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Text="Video Clock (MHz offset)" Style="{StaticResource RowLabel}"/>
-                            <TextBox Grid.Column="1" Style="{StaticResource ValueBox}"
-                                     ToolTip="{Binding VideoOffsetRangeText}"
-                                     Text="{Binding VideoOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
-                        </Grid>
-                        <Grid Margin="0,1,0,0">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
-                                          Command="{Binding NudgeCommand}" CommandParameter="video:-1"/>
-                            <Slider Grid.Column="1" Style="{StaticResource Tight}" Minimum="{Binding Caps.VideoOffsetMinMhz}" Maximum="{Binding Caps.VideoOffsetMaxMhz}"
-                                    Value="{Binding VideoOffset, Mode=TwoWay}" TickFrequency="15"/>
-                            <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
-                                          Command="{Binding NudgeCommand}" CommandParameter="video:1"/>
-                        </Grid>
-                    </StackPanel>
-                    <Button Style="{StaticResource Gate}" HorizontalAlignment="Right" Margin="0,3,0,0"
-                            Command="{Binding ToggleLeverCommand}" CommandParameter="Video"
-                            Content="{Binding XocArmed, Converter={StaticResource GateLabel}, ConverterParameter=Video}"
-                            ToolTip="Write this offset to the card now, or put it back"/>
                 </StackPanel>
 
                 <!-- Clock range. The one lever here that can only hold the card down rather than push

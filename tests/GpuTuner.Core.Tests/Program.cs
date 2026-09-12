@@ -1005,6 +1005,27 @@ Check("2 INVALID_ARGUMENT does not retry", !Nvml.SessionMayBeStale(2));
     Check("fan-only apply never writes tuning", backend.Calls.All(c => c == "SetFanAuto" || c == "SetZeroRpm"));
     Check("applied profile reflects Zero RPM", fanService.AppliedProfile!.ZeroRpm == false);
 }
+// The Graphics window is a fixed, read-only counterpart to Roch Viewer's Graphics section.
+{
+    var device = new GpuDevice(0, "Test GPU", "NVIDIA", "PCI", "610.88", 16304, "98.00");
+    var info = GpuGraphicsInfo.FromDevice(device) with
+    {
+        BoardManufacturer = "Test Board",
+        CodeName = "TEST-100",
+        Revision = "A1",
+    };
+    Check("graphics rows match Viewer field count", info.Rows.Count == 15);
+    Check("graphics rows start with GPU", info.Rows[0].Name == "GPU" && info.Rows[0].Value == "Test GPU");
+    Check("graphics rows end with driver date", info.Rows[^1].Name == "Driver Date");
+    Check("graphics rows alternate shading", info.Rows.Select((row, i) => row.IsBanded == (i % 2 == 1)).All(x => x));
+    Check("missing graphics readings use em dash", info.Rows.Single(r => r.Name == "Memory Type").Value == "—");
+    Check("graphics memory size comes from device", info.MemorySize == "15.92 GB");
+    Check("PNP board maker is decoded", GpuIdentity.BoardVendor(0x1458) == "GIGABYTE Technology");
+    Check("unknown board maker retains its id", GpuIdentity.BoardVendor(0x1234) == "0x1234");
+    Check("Windows driver date is normalized", GpuIdentity.DriverDateText("7-22-2026") == "2026-07-22");
+    Check("PCIe interface uses driver maximum link", GpuIdentity.PcieBusInterface(5, 16, 2, 16) == "5.0 x16");
+    Check("PCIe interface omits an unavailable maximum", GpuIdentity.PcieBusInterface(0, 0, 4, 8) == "4.0 x8");
+}
 Console.WriteLine($"{pass} passed, {fail} failed");
 return fail == 0 ? 0 : 1;
 

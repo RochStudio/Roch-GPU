@@ -64,6 +64,8 @@ internal static class AdlNative
     public static extern int ADL2_Adapter_MemoryInfo2_Get(IntPtr context, int adapterIndex, IntPtr memoryInfo);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     public static extern int ADL2_Adapter_MemoryInfo_Get(IntPtr context, int adapterIndex, IntPtr memoryInfo);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int ADL2_Adapter_MemoryInfoX4_Get(IntPtr context, int adapterIndex, IntPtr memoryInfo);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct AdapterInfo
@@ -83,6 +85,20 @@ internal static class AdlNative
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string strDriverPathExt;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string strPNPString;
         public int iOSDisplayIndex;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct MemoryInfoX4
+    {
+        public long iMemorySize;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string strMemoryType;
+        public long iMemoryBandwidth;
+        public long iHyperMemorySize;
+        public long iInvisibleMemorySize;
+        public long iVisibleMemorySize;
+        public int iVramVendorRevId;
+        public int iMemoryBandwidthX2;
+        public int iMemoryType;
     }
 
     public static string Describe(int rc) => rc switch

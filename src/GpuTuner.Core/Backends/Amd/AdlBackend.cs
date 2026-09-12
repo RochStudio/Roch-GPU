@@ -1,5 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 using GpuTuner.Core.Models;
+using System.Text.RegularExpressions;
 
 namespace GpuTuner.Core.Backends.Amd;
 
@@ -17,6 +18,7 @@ public sealed class AdlBackend : IGpuBackend
     private IntPtr _context;
     private readonly List<GpuDevice> _devices = new();
     private readonly List<int> _adapterIndex = new();     // device index -> ADL adapter index
+    private readonly List<string> _pnpIds = new();         // same index -> PCI identity
     private readonly List<string> _adapterFailures = new();
     // Per adapter: a second AMD card has its own limits, and clamping one card's writes to the
     // other's ranges would silently truncate them.
@@ -94,10 +96,12 @@ public sealed class AdlBackend : IGpuBackend
                 // Mark the PCI device seen only after success: another display entry may work.
                 int gpuIndex = _devices.Count;
                 _adapterIndex.Add(ai.iAdapterIndex);
+                _pnpIds.Add(ai.strPNPString ?? "");
                 try { LoadRanges(gpuIndex); }
                 catch (GpuBackendException e)
                 {
                     _adapterIndex.RemoveAt(gpuIndex);
+                    _pnpIds.RemoveAt(gpuIndex);
                     _caps.Remove(gpuIndex);
                     _rangesByGpu.Remove(gpuIndex);
                     _adapterFailures.Add($"{ai.strAdapterName?.Trim()} (ADL {ai.iAdapterIndex}): {e.Message}");
@@ -240,6 +244,64 @@ public sealed class AdlBackend : IGpuBackend
         // and "unknown" is a better answer than "1048576 GB".
         return mb is >= 256 and <= 262144 ? mb : 0L;
     }, 0L);
+
+    private static readonly Regex PnpIdentity = new(
+        @"DEV_([0-9A-F]{4})&SUBSYS_([0-9A-F]{4})([0-9A-F]{4})&REV_([0-9A-F]{2})",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public GpuGraphicsInfo ReadGraphicsInfo(int gpuIndex)
+    {
+        lock (_gate)
+        {
+        var device = _devices[gpuIndex];
+        var match = PnpIdentity.Match(_pnpIds[gpuIndex]);
+        int deviceId = match.Success ? Convert.ToInt32(match.Groups[1].Value, 16) : 0;
+        int boardVendor = match.Success ? Convert.ToInt32(match.Groups[3].Value, 16) : 0;
+        int revision = match.Success ? Convert.ToInt32(match.Groups[4].Value, 16) : -1;
+        var memory = ReadMemoryIdentity(Adapter(gpuIndex));
+        var telemetry = ReadTelemetry(gpuIndex);
+        int Pcie(string key) => telemetry.SupplementalSensors
+            .FirstOrDefault(sensor => sensor.Key == key) is { } sensor && double.IsFinite(sensor.Value)
+                ? (int)Math.Round(sensor.Value)
+                : 0;
+        int currentGeneration = Pcie("adl:40");
+        int currentWidth = Pcie("adl:41");
+        int maximumGeneration = Pcie("adl:58");
+
+        // Device plus revision identifies the exact silicon cut. Unknown cards keep those fields
+        // empty rather than borrowing a neighbouring model's unit counts.
+        bool navi48 = deviceId == 0x7550 && revision == 0xC0;
+        return GpuGraphicsInfo.FromDevice(device) with
+        {
+            BoardManufacturer = GpuIdentity.BoardVendor(boardVendor),
+            CodeName = navi48 ? "Navi 48" : "",
+            Revision = revision >= 0 ? $"{revision:X2}" : "",
+            Cores = navi48 ? "4096" : "",
+            RopsTmus = navi48 ? "128 / 256" : "",
+            Technology = navi48 ? "4 nm" : "",
+            MemoryType = memory.Type.Length > 0 ? memory.Type : navi48 ? "GDDR6" : "",
+            MemoryVendor = memory.Vendor,
+            BusWidth = navi48 ? "256 bits" : "",
+            BusInterface = GpuIdentity.PcieBusInterface(
+                maximumGeneration, 0, currentGeneration, currentWidth),
+        };
+        }
+    }
+
+    private (string Type, string Vendor) ReadMemoryIdentity(int adapterIndex) =>
+        WithBuffer(Marshal.SizeOf<AdlNative.MemoryInfoX4>(), buf =>
+        {
+            if (AdlNative.ADL2_Adapter_MemoryInfoX4_Get(_context, adapterIndex, buf)
+                != AdlNative.AdlOk) return ("", "");
+            var info = Marshal.PtrToStructure<AdlNative.MemoryInfoX4>(buf);
+            string vendor = info.iVramVendorRevId switch
+            {
+                1 => "Samsung",
+                > 0 => $"Vendor {info.iVramVendorRevId}",
+                _ => "",
+            };
+            return ((info.strMemoryType ?? "").Trim(), vendor);
+        }, ("", ""));
 
     private int Adapter(int gpuIndex) =>
         gpuIndex >= 0 && gpuIndex < _adapterIndex.Count
@@ -781,6 +843,7 @@ public sealed class AdlBackend : IGpuBackend
             _context = IntPtr.Zero;
             _devices.Clear();
             _adapterIndex.Clear();
+            _pnpIds.Clear();
             _caps.Clear();
             _rangesByGpu.Clear();
             _adapterFailures.Clear();

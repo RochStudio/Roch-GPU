@@ -16,10 +16,11 @@ Windows x64 and a compatible vendor graphics driver are required. The self-conta
 
 - **NVIDIA and AMD in one app:** supported core/memory clocks, voltage controls and power limits, with controls adapted to the detected card.
 - **Live telemetry:** temperatures, voltages, clocks, utilization, power, fans, GPU memory and PCIe readings where available. Summary cards and current/minimum/maximum/average columns make changes easy to track.
+- **Hardware-read GPU identity:** the main header shows driver and vBIOS versions, VRAM type/vendor, maximum PCIe generation and lane width, and Resizable BAR state. The read-only **Graphics** window adds board, silicon, memory and installed-driver details.
 - **Native AMD monitoring:** ADL and ADLX read the installed AMD driver directly—no HWiNFO, shared-memory feed or extra monitoring driver.
 - **Fan control:** manual speed and fan curves; AMD Zero RPM lives in the Fan window. NVIDIA software curves require the app to keep running.
 - **Five saved profiles:** save tuning setups and choose a startup profile. Startup uses a frozen copy; toggle Startup off/on after saving changes to refresh it.
-- **NVIDIA V/F curve editor and advanced XOC controls:** additional voltage/frequency and rail controls on supported cards. Advanced controls are gated and hardware-dependent.
+- **NVIDIA clock and voltage controls:** V/F Curve, XOC and Fan editors sit together above the main controls. Supported XBAR, SYS and video offsets appear directly below Core Offset and apply without separate enable switches; potentially damaging rail, OCP and clock-range controls remain individually gated in XOC.
 - **AMD memory timings:** select the modes your driver exposes, alongside voltage offset and memory-clock tuning. Unsupported timing modes are not invented.
 - **Light/dark interface and CLI:** grouped tuning controls, a separate telemetry window, diagnostics and command-line monitoring/tuning from the same executable.
 - **Social links:** YouTube | X | Discord in the bottom-left footer, matching Roch CPU and Viewer.
@@ -51,7 +52,7 @@ Install the **.NET 10 SDK**, then run in PowerShell:
 .\build.ps1
 ```
 
-Open `dist\RochGPU.exe`. The current version is **1.0.4**.
+Open `dist\RochGPU.exe`. The current version is **1.0.5**.
 
 > Overclocking can cause crashes, data loss or hardware damage. Test changes carefully. Controls and sensor readings depend on what your driver exposes.
 

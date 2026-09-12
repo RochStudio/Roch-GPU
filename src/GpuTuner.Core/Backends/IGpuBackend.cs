@@ -17,6 +17,10 @@ public interface IGpuBackend : IDisposable
 
     IReadOnlyList<GpuDevice> Devices { get; }
 
+    /// <summary>Static identity shown by the read-only Graphics window.</summary>
+    GpuGraphicsInfo ReadGraphicsInfo(int gpuIndex) =>
+        GpuGraphicsInfo.FromDevice(Devices[gpuIndex]);
+
     GpuCapabilities GetCapabilities(int gpuIndex);
     GpuTelemetry ReadTelemetry(int gpuIndex);
 

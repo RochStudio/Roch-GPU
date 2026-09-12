@@ -250,6 +250,9 @@
                                     <TextBlock Text="{Binding DriverLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button Content="Graphics" Click="Graphics_Click"
+                                            Style="{StaticResource HeaderButton}" Width="80"
+                                            ToolTip="Open static graphics-card and driver information"/>
                                     <Button x:Name="MonitorToggle" Content="Telemetry" Click="ToggleMonitor_Click"
                                             Style="{StaticResource HeaderButton}" Width="80" ToolTip="Open the hardware monitor in its own window"/>
                                     <!-- No Tray button: the title bar's minimise already goes to the tray, via the
@@ -263,6 +266,9 @@
                                 </StackPanel>
                             </Grid>
                             <TextBlock Text="{Binding BiosLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding MemoryTypeLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding PcieBusLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding ResizableBarLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
                             <TextBlock Text="{Binding LimitReasonText}" Foreground="{Binding LimitIsActive, Converter={StaticResource LimitBrush}}"
                                        FontSize="11" Margin="0,2,0,0"/>
                         </StackPanel>
@@ -272,23 +278,30 @@
                     <Border Grid.Row="1" Style="{StaticResource Panel}" Margin="0,4,0,0" Padding="10,10">
                         <StackPanel>
 
-                            <!-- V/F curve editor, above the sliders it belongs to (Afterburner Ctrl+F) -->
-                            <Button Content="V/F Curve" Click="CurveEditor_Click" Padding="10,4" Margin="0,0,0,7"
-                                    HorizontalAlignment="Stretch" FontWeight="SemiBold"
-                                    Visibility="{Binding HasCurveEditor, Converter={StaticResource BoolToVis}}"
-                                    ToolTip="Open the voltage/frequency curve (Afterburner Ctrl+F equivalent)"/>
-
-                            <!-- The levers that can brown a card out live behind their own gate, off
-                                 by default, rather than sitting in the main column where a stray drag
-                                 reaches them. -->
-                            <Button Content="XOC" Click="Xoc_Click" Padding="10,4" Margin="0,0,0,7"
-                                    HorizontalAlignment="Stretch" FontWeight="SemiBold"
-                                    Visibility="{Binding HasXoc, Converter={StaticResource BoolToVis}}"
-                                    ToolTip="XOC: rail ranges, the OCP current limits, the crossbar, SYS and video clocks, and the clock range"/>
-                            <Button Content="Fan" Click="Fan_Click" Padding="10,4" Margin="0,0,0,7"
-                                    HorizontalAlignment="Stretch" FontWeight="SemiBold"
-                                    IsEnabled="{Binding Caps.CanSetFanSpeed}"
-                                    ToolTip="Fan control: a duty per fan, or a curve"/>
+                            <!-- The three hardware editors share one row. Their visibility and
+                                 enable rules still come from what this card actually exposes. -->
+                            <Grid Margin="0,0,0,7">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="6"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Content="V/F Curve" Click="CurveEditor_Click"
+                                        Padding="10,4" HorizontalAlignment="Stretch" FontWeight="SemiBold"
+                                        Visibility="{Binding HasCurveEditor, Converter={StaticResource BoolToVis}}"
+                                        ToolTip="Open the voltage/frequency curve (Afterburner Ctrl+F equivalent)"/>
+                                <!-- Rail, OCP and clock-range controls remain behind the XOC gate. -->
+                                <Button Grid.Column="2" Content="XOC" Click="Xoc_Click"
+                                        Padding="10,4" HorizontalAlignment="Stretch" FontWeight="SemiBold"
+                                        Visibility="{Binding HasXoc, Converter={StaticResource BoolToVis}}"
+                                        ToolTip="XOC: rail ranges, OCP current limits, and the clock range"/>
+                                <Button Grid.Column="4" Content="Fan" Click="Fan_Click"
+                                        Padding="10,4" HorizontalAlignment="Stretch" FontWeight="SemiBold"
+                                        IsEnabled="{Binding Caps.CanSetFanSpeed}"
+                                        ToolTip="Fan control: a duty per fan, or a curve"/>
+                            </Grid>
 
                             <Border Style="{StaticResource LayoutPanel}" Padding="14,10" Margin="0,8,0,0"><StackPanel>
                             <!-- 1a. Over-voltage percentage (Afterburner's "Core Voltage (%)"). Raises the
@@ -351,6 +364,54 @@
  <TextBox Grid.Column="2" Style="{StaticResource ValueBox}"
                                          ToolTip="{Binding CoreRangeText}"
                                          Text="{Binding CoreOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
+
+                            <!-- XBAR, SYS and video are regular clock controls. Unlike the rail and
+                                 OCP controls in XOC, they have no separate Enable/Disable gate: the
+                                 value shown here is what Apply writes, and zero restores stock. -->
+                            <Grid Margin="0,5,0,5" Visibility="{Binding HasXbar, Converter={StaticResource BoolToVis}}">
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="XBAR Clock (MHz offset)" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                              Command="{Binding NudgeCommand}" CommandParameter="xbar:-1"/>
+                                <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.XbarOffsetMinMhz}" Maximum="{Binding Caps.XbarOffsetMaxMhz}"
+                                        Value="{Binding XbarOffset, Mode=TwoWay}" TickFrequency="15" SmallChange="15" LargeChange="15"/>
+                                <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                              Command="{Binding NudgeCommand}" CommandParameter="xbar:1"/>
+                            </Grid>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" ToolTip="{Binding XbarOffsetRangeText}"
+                                  Text="{Binding XbarOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
+
+                            <Grid Margin="0,5,0,5" Visibility="{Binding HasSys, Converter={StaticResource BoolToVis}}">
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="SYS Clock (MHz offset)" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                              Command="{Binding NudgeCommand}" CommandParameter="sys:-1"/>
+                                <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.SysOffsetMinMhz}" Maximum="{Binding Caps.SysOffsetMaxMhz}"
+                                        Value="{Binding SysOffset, Mode=TwoWay}" TickFrequency="15" SmallChange="15" LargeChange="15"/>
+                                <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                              Command="{Binding NudgeCommand}" CommandParameter="sys:1"/>
+                            </Grid>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" ToolTip="{Binding SysOffsetRangeText}"
+                                  Text="{Binding SysOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
+ </Grid>
+
+                            <Grid Margin="0,5,0,5" Visibility="{Binding HasVideo, Converter={StaticResource BoolToVis}}">
+ <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+ <TextBlock Text="Video Clock (MHz offset)" Style="{StaticResource RowLabel}" VerticalAlignment="Center" FontSize="13"/>
+ <Grid Grid.Column="1" Margin="8,0,18,0" VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <RepeatButton Style="{StaticResource Nudge}" Content="&#9664;" Margin="0,0,4,0"
+                                              Command="{Binding NudgeCommand}" CommandParameter="video:-1"/>
+                                <Slider Grid.Column="1" Style="{StaticResource LayoutSlider}" Minimum="{Binding Caps.VideoOffsetMinMhz}" Maximum="{Binding Caps.VideoOffsetMaxMhz}"
+                                        Value="{Binding VideoOffset, Mode=TwoWay}" TickFrequency="15" SmallChange="15" LargeChange="15"/>
+                                <RepeatButton Grid.Column="2" Style="{StaticResource Nudge}" Content="&#9654;" Margin="4,0,0,0"
+                                              Command="{Binding NudgeCommand}" CommandParameter="video:1"/>
+                            </Grid>
+ <TextBox Grid.Column="2" Style="{StaticResource ValueBox}" ToolTip="{Binding VideoOffsetRangeText}"
+                                  Text="{Binding VideoOffsetInput, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Height="30" FontSize="14" VerticalContentAlignment="Center"/>
  </Grid>
 
                             <!-- 3. Memory clock -->

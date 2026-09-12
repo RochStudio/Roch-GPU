@@ -113,6 +113,27 @@ public partial class MainWindow : Window
     }
     private XocWindow? _xocWindow;
 
+    private GraphicsWindow? _graphicsWindow;
+
+    private void Graphics_Click(object sender, RoutedEventArgs e)
+    {
+        if (_graphicsWindow is { IsLoaded: true })
+        {
+            if (_graphicsWindow.WindowState == WindowState.Minimized)
+                _graphicsWindow.WindowState = WindowState.Normal;
+            _graphicsWindow.Activate();
+            return;
+        }
+        _graphicsWindow = new GraphicsWindow(_svc.ReadGraphicsInfo())
+        {
+            Owner = this,
+            Left = Left + Width + 8,
+            Top = Top,
+        };
+        _graphicsWindow.Closed += (_, _) => _graphicsWindow = null;
+        _graphicsWindow.Show();
+    }
+
     // ------------------------------------------------------------------ custom title bar
     //
     // WindowStyle=None means we own the caption. Windows will only ever grey a maximize button out,

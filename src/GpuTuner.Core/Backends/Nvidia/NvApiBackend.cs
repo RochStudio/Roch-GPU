@@ -31,6 +31,19 @@ public sealed class NvApiBackend : IGpuBackend
     public string BackendName => "NVIDIA (NVAPI)";
     public IReadOnlyList<GpuDevice> Devices => _devices;
 
+    // Marketing chip cuts and ROP counts are not exposed consistently by the driver. The device
+    // id is read from the card; an unknown id stays unknown instead of borrowing a neighbouring
+    // model's specifications.
+    private static readonly IReadOnlyDictionary<ushort, (string Code, int Rops)> NvidiaParts =
+        new Dictionary<ushort, (string, int)>
+        {
+            [0x2684] = ("AD102-300", 176),
+            [0x2704] = ("AD103-300", 112),
+            [0x2782] = ("AD104-400", 80),
+            [0x2786] = ("AD104-250", 64),
+            [0x2C05] = ("GB203-300", 96),
+        };
+
     public void Initialize()
     {
         // Idempotent: BackendFactory initialises while probing, then TuningService initialises again.
@@ -73,6 +86,72 @@ public sealed class NvApiBackend : IGpuBackend
         if (index < 0 || index >= _gpus.Length) throw new ArgumentOutOfRangeException(nameof(index));
         return _gpus[index];
     }
+
+    public GpuGraphicsInfo ReadGraphicsInfo(int gpuIndex)
+    {
+        var gpu = Gpu(gpuIndex);
+        var device = _devices[gpuIndex];
+        var pci = SafeGet<PCIIdentifiers?>(() => gpu.BusInformation.PCIIdentifiers, null);
+        bool hasPci = !ReferenceEquals(pci, null);
+        ushort deviceId = hasPci ? pci!.ExternalDeviceId : (ushort)0;
+        NvidiaParts.TryGetValue(deviceId, out var part);
+
+        int cores = SafeGet(() => gpu.ArchitectInformation.NumberOfCores, 0);
+        int rops = SafeGet(() => gpu.ArchitectInformation.NumberOfROPs, 0);
+        if (rops <= 0) rops = part.Rops;
+        int tmus = cores > 0 ? cores / 32 : 0;
+
+        string code = part.Code ?? SafeGet(() => gpu.ArchitectInformation.ShortName, "");
+        uint memoryType = SafeGet(() => (uint)GPUApi.GetRAMType(gpu.Handle), 0u);
+        uint memoryMaker = SafeGet(() => (uint)GPUApi.GetRAMMaker(gpu.Handle), 0u);
+        uint busWidth = SafeGet(() => GPUApi.GetRAMBusWidth(gpu.Handle), 0u);
+        var pcie = Nvml.PcieLink(gpuIndex);
+        bool? rebar = Nvml.ResizableBarEnabled(gpuIndex);
+
+        return GpuGraphicsInfo.FromDevice(device) with
+        {
+            BoardManufacturer = !hasPci
+                ? ""
+                : GpuIdentity.BoardVendor((int)(pci!.SubSystemId & 0xFFFF)),
+            CodeName = code,
+            Revision = !hasPci ? "" : $"{pci!.RevisionId & 0xFF:X2}",
+            Cores = cores > 0 ? cores.ToString() : "",
+            RopsTmus = rops > 0 && tmus > 0 ? $"{rops} / {tmus}" : "",
+            Technology = TechnologyFor(code),
+            MemoryType = MemoryTypeName(memoryType),
+            MemoryVendor = MemoryMakerName(memoryMaker),
+            BusWidth = busWidth > 0 ? $"{busWidth} bits" : "",
+            BusInterface = GpuIdentity.PcieBusInterface(
+                pcie.MaxGeneration, pcie.MaxWidth,
+                pcie.CurrentGeneration, pcie.CurrentWidth),
+            ResizableBar = rebar.HasValue ? (rebar.Value ? "Enabled" : "Disabled") : "",
+        };
+    }
+
+    private static string TechnologyFor(string code) => code.ToUpperInvariant() switch
+    {
+        var value when value.StartsWith("GB") => "4 nm",
+        var value when value.StartsWith("AD") => "4 nm",
+        var value when value.StartsWith("GA") => "8 nm",
+        var value when value.StartsWith("TU") => "12 nm",
+        _ => "",
+    };
+
+    private static string MemoryTypeName(uint code) => code switch
+    {
+        15 => "GDDR6X",
+        16 => "GDDR7",
+        > 0 and <= 10 => ((GPUMemoryType)code).ToString(),
+        _ => code > 0 ? $"Type {code}" : "",
+    };
+
+    private static string MemoryMakerName(uint code) => code switch
+    {
+        1 => "Samsung",
+        6 => "SK hynix",
+        10 => "Micron",
+        _ => code > 0 ? $"Maker {code}" : "",
+    };
 
     // ------------------------------------------------------------------ capabilities
 

@@ -14,6 +14,7 @@ public sealed class MainViewModel : ObservableObject
 {
     private readonly TuningService _svc;
     private readonly ProfileStore _store;
+    private readonly GpuGraphicsInfo _graphicsInfo;
 
     public MainViewModel(TuningService svc, ProfileStore store)
     {
@@ -21,6 +22,7 @@ public sealed class MainViewModel : ObservableObject
         Caps = svc.Capabilities;
         Device = svc.Device;
         BackendName = svc.Backend.BackendName;
+        _graphicsInfo = svc.ReadGraphicsInfo();
 
         // Seed the measured ceilings BEFORE loading the editor. The cap slider defaults to the stock
         // ceiling, and until an observation is in hand that falls back to the V/F table's top — on a
@@ -138,9 +140,22 @@ public sealed class MainViewModel : ObservableObject
         ? $"{Device.Name} ({Device.VramMegabytes / 1024.0:0.#}GB)"
         : Device.Name;
     public string DriverLine => !string.IsNullOrWhiteSpace(Device.DriverVersion)
-        ? $"Driver {Device.DriverVersion}" : BackendName;
+        ? $"Driver: {Device.DriverVersion}" : $"Backend: {BackendName}";
     public string BiosLine => !string.IsNullOrWhiteSpace(Device.BiosVersion)
-        ? $"vBIOS {Device.BiosVersion}" : "";
+        ? $"vBIOS: {Device.BiosVersion}" : "";
+    public string MemoryTypeLine
+    {
+        get
+        {
+            string value = string.Join(" ", new[] { _graphicsInfo.MemoryType, _graphicsInfo.MemoryVendor }
+                .Where(part => !string.IsNullOrWhiteSpace(part)));
+            return value.Length == 0 ? "" : $"Memory Type: {value}";
+        }
+    }
+    public string PcieBusLine => string.IsNullOrWhiteSpace(_graphicsInfo.BusInterface)
+        ? "" : $"PCIe Bus: {_graphicsInfo.BusInterface}";
+    public string ResizableBarLine => string.IsNullOrWhiteSpace(_graphicsInfo.ResizableBar)
+        ? "" : $"Resizable BAR: {_graphicsInfo.ResizableBar}";
 
     /// <summary>
     /// Legacy combined identity line kept for consumers outside the main window.
@@ -184,11 +199,23 @@ public sealed class MainViewModel : ObservableObject
     public bool HasClockLock => Caps.CanLockClocks;
     public bool HasSys => Caps.CanSetSysOffset;
     public bool HasVideo => Caps.CanSetVideoOffset;
-    /// <summary>Whether the card exposes any of the gated levers, and so whether the XOC button appears.</summary>
-    public bool HasXoc => HasVoltageRail || HasMsvddRail || HasXbar || HasSys || HasVideo || HasClockLock;
+    /// <summary>
+    /// Whether the card exposes any lever that remains behind the XOC gate. XBAR, SYS and video are
+    /// ordinary main-window clock controls now and are deliberately not part of this decision.
+    /// </summary>
+    public bool HasXoc => HasVoltageRail || HasMsvddRail || HasOcp || HasClockLock;
     public bool HasTempLimit => Caps.CanSetTempLimit;
     public bool HasZeroRpm => Caps.CanSetZeroRpm;
     public bool HasMemoryTiming => Caps.CanSetMemoryTiming && Caps.MemoryTimingOptions.Count > 0;
+
+    /// <summary>
+    /// Clock domains shown beside the everyday core and memory controls. They have no separate
+    /// Enable/Disable state: an Apply always writes their displayed offset, including zero.
+    /// </summary>
+    private XocLever MainClockLevers =>
+        (HasXbar ? XocLever.Xbar : 0) |
+        (HasSys ? XocLever.Sys : 0) |
+        (HasVideo ? XocLever.Video : 0);
 
     public string MemoryLabel => Caps.MemoryClockIsAbsolute ? "Memory Clock (MHz)" : "Memory Clock (MHz offset)";
     public string CoreLabel => "Core Offset (MHz)";
@@ -911,7 +938,7 @@ public sealed class MainViewModel : ObservableObject
         ClockLockMinMhz = HasClockLock && !ClockLockIsOff ? ClockLockMin : 0,
         ClockLockMaxMhz = HasClockLock && !ClockLockIsOff ? ClockLockMax : 0,
         VideoOffsetMhz = HasVideo ? VideoOffset : 0,
-        XocArmed = XocArmed,
+        XocArmed = XocArmed | MainClockLevers,
         // The cap has no slider in this window — the curve editor's flatten owns it — but it does
         // have a value here: LoadIntoEditor sets it from the profile, and the flatten pushes its own
         // back. This used to read the lock off the card instead, which meant an apply could only ever
@@ -951,7 +978,9 @@ public sealed class MainViewModel : ObservableObject
         ClockLockMin = p.ClockLockMinMhz > 0 ? p.ClockLockMinMhz : Caps.ClockLockMinMhz;
         ClockLockMax = p.ClockLockMaxMhz > 0 ? p.ClockLockMaxMhz : Caps.ClockLockMaxMhz;
         VideoOffset = p.VideoOffsetMhz;
-        XocArmed = p.XocArmed;
+        // These clocks no longer expose a gate in the UI. Keep only the genuinely gated XOC bits
+        // in editor state; BuildProfileFromEditor adds the main clocks back for every Apply.
+        XocArmed = p.XocArmed & ~MainClockLevers;
         OnPropertyChanged(nameof(XocStatusText));   // live-ness may have changed even if the flags did not
         // "No cap" is the top of what the card can reach, not the stock ceiling: with a boost applied
         // the two differ, and seeding the lower one would turn "uncapped" into a cap at stock the

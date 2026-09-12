@@ -17,6 +17,7 @@ public sealed class TuningService : IDisposable
     public int GpuIndex { get; private set; }
     public GpuCapabilities Capabilities { get; private set; } = new();
     public GpuDevice Device => Backend.Devices[GpuIndex];
+    public GpuGraphicsInfo ReadGraphicsInfo() => Backend.ReadGraphicsInfo(GpuIndex);
 
     /// <summary>The profile currently applied to hardware (null = untouched since launch).</summary>
     public TuningProfile? AppliedProfile { get; private set; }

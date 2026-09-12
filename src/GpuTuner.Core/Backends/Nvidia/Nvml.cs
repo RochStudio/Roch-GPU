@@ -41,6 +41,20 @@ internal static class Nvml
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetPowerUsage")] private static extern int GetPowerUsage(IntPtr device, out uint milliwatts);
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetMaxClockInfo")] private static extern int GetMaxClock(IntPtr device, int type, out uint mhz);
     [DllImport(Dll, EntryPoint = "nvmlDeviceGetMinMaxClockOfPState")] private static extern int GetMinMaxOfPState(IntPtr device, int type, int pstate, out uint min, out uint max);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetMemoryInfo")] private static extern int GetMemoryInfo(IntPtr device, out NvmlMemory memory);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetBAR1MemoryInfo")] private static extern int GetBar1MemoryInfo(IntPtr device, out NvmlMemory memory);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetCurrPcieLinkGeneration")] private static extern int GetCurrentPcieGeneration(IntPtr device, out uint generation);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetMaxPcieLinkGeneration")] private static extern int GetMaximumPcieGeneration(IntPtr device, out uint generation);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetCurrPcieLinkWidth")] private static extern int GetCurrentPcieWidth(IntPtr device, out uint width);
+    [DllImport(Dll, EntryPoint = "nvmlDeviceGetMaxPcieLinkWidth")] private static extern int GetMaximumPcieWidth(IntPtr device, out uint width);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NvmlMemory
+    {
+        public ulong Total;
+        public ulong Free;
+        public ulong Used;
+    }
 
     private static bool _initTried, _initOk;
     private static readonly object Gate = new();
@@ -102,6 +116,41 @@ internal static class Nvml
     {
         uint mhz = 0;
         return Read(gpuIndex, dev => GetMaxClock(dev, ClockGraphics, out mhz)) ? (int)mhz : 0;
+    }
+
+    /// <summary>
+    /// Whether BAR1 spans nearly all VRAM. A legacy 256 MB aperture means disabled; when Resizable
+    /// BAR is enabled NVML reports an aperture close to the frame-buffer size.
+    /// </summary>
+    public static bool? ResizableBarEnabled(int gpuIndex)
+    {
+        NvmlMemory vram = default, bar = default;
+        bool ok = Read(gpuIndex, dev =>
+        {
+            int memoryResult = GetMemoryInfo(dev, out vram);
+            return memoryResult == Success ? GetBar1MemoryInfo(dev, out bar) : memoryResult;
+        });
+        if (!ok || vram.Total == 0 || bar.Total == 0) return null;
+        return bar.Total >= vram.Total * 0.9;
+    }
+
+    /// <summary>
+    /// PCIe capability and the link negotiated right now. NVML reports both sides independently,
+    /// which matters because the generation commonly drops while the GPU is idle even though lane
+    /// width and the slot/card capability do not change.
+    /// </summary>
+    public static (int MaxGeneration, int MaxWidth, int CurrentGeneration, int CurrentWidth) PcieLink(int gpuIndex)
+    {
+        uint maxGeneration = 0, maxWidth = 0, currentGeneration = 0, currentWidth = 0;
+        bool haveMaxGeneration = Read(gpuIndex, dev => GetMaximumPcieGeneration(dev, out maxGeneration));
+        bool haveMaxWidth = Read(gpuIndex, dev => GetMaximumPcieWidth(dev, out maxWidth));
+        bool haveCurrentGeneration = Read(gpuIndex, dev => GetCurrentPcieGeneration(dev, out currentGeneration));
+        bool haveCurrentWidth = Read(gpuIndex, dev => GetCurrentPcieWidth(dev, out currentWidth));
+        return (
+            haveMaxGeneration ? (int)maxGeneration : 0,
+            haveMaxWidth ? (int)maxWidth : 0,
+            haveCurrentGeneration ? (int)currentGeneration : 0,
+            haveCurrentWidth ? (int)currentWidth : 0);
     }
 
     /// <summary>
