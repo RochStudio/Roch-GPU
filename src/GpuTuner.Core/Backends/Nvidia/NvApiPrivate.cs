@@ -644,9 +644,6 @@ internal static class NvApiPrivate
     /// </summary>
     public static string? WriteOcpLimit(PhysicalGPUHandle handle, int slot, int milliamps)
     {
-        var fn = Resolve(FnOcpSetControl);
-        if (fn == null) return "the driver does not export the OCP control entry point";
-
         var buf = Marshal.AllocHGlobal(OcpSize + CallSlack);
         try
         {
@@ -661,15 +658,49 @@ internal static class NvApiPrivate
             catch (Exception e) { return e.Message; }
             if (st != 0) return $"reading the OCP limits first: status {st}";
 
+            if (slot != OcpSlotNvvdd && slot != OcpSlotMsvdd)
+                return $"Unsupported OCP slot {slot}; no write attempted";
             int at = OcpEntries + slot * OcpStride + OcpEntryValue;
-            if (at + 4 > OcpSize) return $"OCP slot {slot} is outside the struct";
-            Marshal.WriteInt32(buf, at, milliamps);
-
-            try { st = fn(handle.MemoryAddress, buf); }
-            catch (Exception e) { return e.Message; }
-            return st == 0 ? null : $"nvapi 0x{FnOcpSetControl:X8}: status {st}";
+            int currentMa = Marshal.ReadInt32(buf, at);
+            uint driver = 0;
+            try { driver = NvAPIWrapper.NVIDIA.DriverVersion; } catch { }
+            if (driver >= 61500 && currentMa != milliamps)
+            {
+                // R615+ accepts legacy reads, but needs the full modern control layout for writes.
+                // Do not retry a failed modern setter using the legacy layout.
+                return ModernOcpControl.Apply(slot, milliamps,
+                    b => CallOcpBuffer(handle, FnOcpGetControl, b),
+                    b => CallOcpBuffer(handle, FnOcpGetRanges, b),
+                    b => CallOcpBuffer(handle, FnOcpSetControl, b));
+            }
+            return OcpWriteGuard.Apply(driver, currentMa, milliamps, () =>
+            {
+                var fn = Resolve(FnOcpSetControl);
+                if (fn == null) return -3; // NVAPI_NO_IMPLEMENTATION
+                Marshal.WriteInt32(buf, at, milliamps);
+                try { return fn(handle.MemoryAddress, buf); }
+                catch { return -1; }
+            });
         }
         finally { Marshal.FreeHGlobal(buf); }
+    }
+
+    private static int CallOcpBuffer(PhysicalGPUHandle handle, uint id, byte[] data)
+    {
+        var fn = Resolve(id);
+        if (fn == null) return -3;
+        var buffer = Marshal.AllocHGlobal(data.Length + CallSlack);
+        try
+        {
+            Marshal.Copy(data, 0, buffer, data.Length);
+            for (int i = data.Length; i < data.Length + CallSlack; i += 4)
+                Marshal.WriteInt32(buffer, i, 0);
+            int status = fn(handle.MemoryAddress, buffer);
+            if (status == 0) Marshal.Copy(buffer, data, 0, data.Length);
+            return status;
+        }
+        catch { return -1; }
+        finally { Marshal.FreeHGlobal(buffer); }
     }
 
     /// <summary>One OCP channel: its selector, the limit it carries, and the entry's other words.</summary>

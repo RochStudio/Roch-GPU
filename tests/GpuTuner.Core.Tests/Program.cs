@@ -8,6 +8,59 @@ int pass = 0, fail = 0;
 void Check(string name, bool cond) { if (cond) pass++; else { fail++; Console.WriteLine("FAIL: " + name); } }
 void Eq(string name, double expected, double actual, double tol = 1e-6) => Check($"{name} (expected {expected}, got {actual})", Math.Abs(expected - actual) <= tol);
 
+// ---- R615 OCP compatibility: unchanged limits must never reach the private setter.
+int ocpWrites = 0;
+int OcpSet() { ocpWrites++; return 0; }
+Check("R615 unchanged OCP is verified no-op", OcpWriteGuard.Apply(61692, 300000, 300000, OcpSet) == null && ocpWrites == 0);
+Check("R615 changed OCP blocked before driver write", OcpWriteGuard.Apply(61656, 300000, 310000, OcpSet) != null && ocpWrites == 0);
+Check("unknown driver OCP fails closed", OcpWriteGuard.Apply(0, 300000, 310000, OcpSet) != null && ocpWrites == 0);
+Check("unknown current OCP fails closed", OcpWriteGuard.Apply(61088, 0, 300000, OcpSet) != null && ocpWrites == 0);
+Check("R610 changed OCP retains supported write", OcpWriteGuard.Apply(61088, 300000, 290000, OcpSet) == null && ocpWrites == 1);
+Check("OCP rejection remains error", OcpWriteGuard.Apply(61088, 300000, 290000, () => -1) != null);
+
+
+
+var modernControl = new byte[0x2486e0];
+var modernRanges = new byte[0x2ba030];
+void Put(byte[] b, int at, int value) => BitConverter.GetBytes(value).CopyTo(b, at);
+Put(modernControl, 0, 0x2786e0); Put(modernControl, 0x88, 0x1ffff);
+Put(modernRanges, 0, 0x2ba030);
+foreach (int slot in new[] {13, 14})
+{
+    int value = slot == 13 ? 300000 : 120000;
+    int at = 0xa68 + slot * 0x2448;
+    Put(modernControl, at, 19); Put(modernControl, at + 0x44, value);
+    at = 0x4b0 + slot * 0x296c;
+    Put(modernRanges, at, 19); Put(modernRanges, at + 0xc, 100000);
+    Put(modernRanges, at + 0x10, value); Put(modernRanges, at + 0x14, 350000);
+}
+int ModernGet(byte[] b) { modernControl.CopyTo(b, 0); return 0; }
+int ModernInfo(byte[] b) { modernRanges.CopyTo(b, 0); return 0; }
+int modernWrites = 0;
+int ModernSet(byte[] b) { modernWrites++; b.CopyTo(modernControl, 0); return 0; }
+Check("modern OCP writes selected rail and verifies", ModernOcpControl.Apply(13, 290000, ModernGet, ModernInfo, ModernSet) == null && modernWrites == 1 && BitConverter.ToInt32(modernControl, 0x1e254) == 290000 && BitConverter.ToInt32(modernControl, 0x2069c) == 120000);
+
+Check("modern OCP unchanged does not resolve setter or bounds", ModernOcpControl.Apply(13, 290000, ModernGet, _ => throw new Exception("info called"), _ => throw new Exception("set called")) == null);
+Check("modern OCP unknown rail fails before calls", ModernOcpControl.Apply(12, 290000, _ => throw new Exception("get called"), ModernInfo, ModernSet) != null);
+Check("modern OCP negative request blocked", ModernOcpControl.Apply(13, -1, ModernGet, ModernInfo, ModernSet) != null);
+Check("modern OCP control error blocks write", ModernOcpControl.Apply(13, 280000, _ => -1, ModernInfo, ModernSet) != null);
+Check("modern OCP range error blocks write", ModernOcpControl.Apply(13, 280000, ModernGet, _ => -1, ModernSet) != null);
+Check("modern OCP out-of-range blocked", ModernOcpControl.Apply(13, 400000, ModernGet, ModernInfo, ModernSet) != null);
+Put(modernControl, 0x1e210, 18);
+Check("modern OCP wrong rail type blocked", ModernOcpControl.Apply(13, 280000, ModernGet, ModernInfo, ModernSet) != null);
+Put(modernControl, 0x1e210, 19);
+Put(modernControl, 0, 0);
+Check("modern OCP changed header blocked", ModernOcpControl.Apply(13, 280000, ModernGet, ModernInfo, ModernSet) != null);
+Put(modernControl, 0, 0x2786e0);
+Put(modernControl, 0x88, 0);
+Check("modern OCP missing channel mask blocked", ModernOcpControl.Apply(13, 280000, ModernGet, ModernInfo, ModernSet) != null);
+Put(modernControl, 0x88, 0x1ffff);
+Check("invalid modern cases never wrote", modernWrites == 1);
+Check("modern OCP rejection propagated", ModernOcpControl.Apply(13, 280000, ModernGet, ModernInfo, _ => -1) != null);
+Check("modern OCP ignored write detected", ModernOcpControl.Apply(13, 280000, ModernGet, ModernInfo, _ => 0) != null);
+Check("modern OCP memory rail applies", ModernOcpControl.Apply(14, 110000, ModernGet, ModernInfo, ModernSet) == null && modernWrites == 2);
+Check("modern OCP other rail change detected", ModernOcpControl.Apply(14, 120000, ModernGet, ModernInfo, b => { Put(b, 0x1e254, 270000); return ModernSet(b); }) != null);
+
 // ---- Native AMD telemetry (no installed driver or external monitor needed for these tests)
 var noPm = new Dictionary<int, double>();
 var noAdlx = new Dictionary<string, double>();

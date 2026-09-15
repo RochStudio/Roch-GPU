@@ -12,6 +12,27 @@ A Windows tuning and monitoring tool for NVIDIA and AMD GPUs. Adjust supported c
 
 Windows x64 and a compatible vendor graphics driver are required. The self-contained executable needs no separate .NET installation.
 
+## Driver compatibility
+
+Compatibility depends on the GPU, board firmware and installed driver; an available control is not a guarantee that every card supports it.
+
+**Version 1.0.6 includes the NVIDIA OCP compatibility fix below. Earlier releases do not include this fix.**
+
+| GPU / driver | Verification status |
+|---|---|
+| GeForce RTX 5070 Ti — **616.92** | Power, core and memory offsets passed write/read-back/restore tests. Both NVVDD and MSVDD OCP rails passed a scoped hardware test; the updated app was subsequently confirmed working by its owner, including OCP. |
+| NVIDIA **616.56** | Original reported failure version. The modern OCP path is implemented, but this exact driver has **not been tested directly**. |
+| Other NVIDIA drivers / GPUs | Feature-dependent; not covered by the 616.92 test. Older drivers retain the legacy OCP path. R615+ changed-limit requests require validation of the modern OCP layout; unknown driver identity blocks changed OCP writes. |
+| AMD | Uses ADL/ADLX rather than NVIDIA's OCP path. See [RX 9070 XT support](#rx-9070-xt-support) for verified features; this NVIDIA fix does not establish additional AMD driver compatibility. |
+
+### NVIDIA OCP on newer drivers
+
+Newer drivers can accept the old OCP read structure while rejecting writes using that structure. Roch GPU now uses the modern control layout for changed OCP limits on R615+, validates the reported rail types and bounds, and checks both the requested rail and the untouched rail after writing. Matching live limits are accepted without unnecessary writes; a failed modern write is not retried with the legacy layout.
+
+On the tested RTX 5070 Ti / 616.92, NVVDD **300 → 290 → 300 A** and MSVDD **120 → 110 → 120 A** were verified. These were temporary reductions followed by restoration—not tests of above-default current limits. Higher OCP limits reduce protection headroom; driver-reported bounds are not safe tuning recommendations. Interrupted-write recovery and all possible settings are not exhaustively validated.
+
+After replacing the executable or updating the driver, fully exit the previous Roch GPU window **and tray instance** before opening the new build. If Apply fails, retain the recovery journal and collect diagnostics with `RochGPU.exe diag`, along with the GPU model, driver, vBIOS and app version. See [driver compatibility details](docs/r615-compatibility.md).
+
 ## Features
 
 - **NVIDIA and AMD in one app:** supported core/memory clocks, voltage controls and power limits, with controls adapted to the detected card.
@@ -52,7 +73,7 @@ Install the **.NET 10 SDK**, then run in PowerShell:
 .\build.ps1
 ```
 
-Open `dist\RochGPU.exe`. The current version is **1.0.5**.
+Open `dist\RochGPU.exe`. The current source version is **1.0.6**.
 
 > Overclocking can cause crashes, data loss or hardware damage. Test changes carefully. Controls and sensor readings depend on what your driver exposes.
 
