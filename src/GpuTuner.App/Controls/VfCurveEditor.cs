@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using GpuTuner.App.Native;
 using GpuTuner.Core.Models;
 
 namespace GpuTuner.App.Controls;
@@ -145,22 +146,47 @@ public sealed class VfCurveEditor : FrameworkElement
         InvalidateVisual();
     }
 
-    private static readonly Brush GridBrush = Freeze(new SolidColorBrush(Color.FromArgb(34, 255, 255, 255)));
-    private static readonly Brush LabelBrush = Freeze(new SolidColorBrush(Color.FromArgb(170, 255, 255, 255)));
-    private static readonly Brush StockBrush = Freeze(new SolidColorBrush(Color.FromArgb(90, 200, 210, 225)));
+    // This control draws directly into a DrawingContext, so WPF's DynamicResource brushes cannot
+    // style its lines and labels for us. Keep explicit high-contrast palettes for both modes.
+    private static readonly Brush DarkGridBrush = Freeze(new SolidColorBrush(Color.FromArgb(34, 255, 255, 255)));
+    private static readonly Brush LightGridBrush = Freeze(new SolidColorBrush(Color.FromArgb(58, 71, 85, 105)));
+    private static readonly Brush DarkLabelBrush = Freeze(new SolidColorBrush(Color.FromArgb(210, 255, 255, 255)));
+    private static readonly Brush LightLabelBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x47, 0x55, 0x69)));
+    private static readonly Brush DarkStockBrush = Freeze(new SolidColorBrush(Color.FromArgb(105, 200, 210, 225)));
+    private static readonly Brush LightStockBrush = Freeze(new SolidColorBrush(Color.FromArgb(205, 100, 116, 139)));
     /// <summary>The edited curve: its line and its points are one object, so they are one colour.</summary>
-    private static readonly Brush CurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x3C, 0x3C)));
-    private static readonly Brush PointFill = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x16, 0x1A)));
-    private static readonly Brush SelectBrush = Freeze(new SolidColorBrush(Colors.White));
-    private static readonly Brush LiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x4B)));
+    private static readonly Brush DarkCurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x3C, 0x3C)));
+    private static readonly Brush LightCurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C)));
+    private static readonly Brush DarkPointFill = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x16, 0x1A)));
+    private static readonly Brush LightPointFill = Freeze(new SolidColorBrush(Colors.White));
+    private static readonly Brush DarkSelectBrush = Freeze(new SolidColorBrush(Colors.White));
+    private static readonly Brush LightSelectBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x0F, 0x17, 0x2A)));
+    private static readonly Brush DarkLiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x4B)));
+    private static readonly Brush LightLiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xB4, 0x53, 0x09)));
     // The cap marker is white rather than red: red now belongs to the curve points, and two different
     // reds a shade apart read as one thing that has gone wrong somewhere.
-    private static readonly Brush CeilingBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x7F, 0xB0, 0xE8)));
+    private static readonly Brush DarkCeilingBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x7F, 0xB0, 0xE8)));
+    private static readonly Brush LightCeilingBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x25, 0x63, 0xEB)));
     /// <summary>Wash over the stretch of curve the card cannot reach. Faint on purpose — it marks
     /// the region without hiding the points, which are still real table data.</summary>
-    private static readonly Brush UnreachableBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x18, 0x7F, 0xB0, 0xE8)));
-    private static readonly Brush CapBrush = Freeze(new SolidColorBrush(Colors.White));
-    private static readonly Brush CapShade = Freeze(new SolidColorBrush(Color.FromArgb(26, 255, 255, 255)));
+    private static readonly Brush DarkUnreachableBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x18, 0x7F, 0xB0, 0xE8)));
+    private static readonly Brush LightUnreachableBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x18, 0x25, 0x63, 0xEB)));
+    private static readonly Brush DarkCapBrush = Freeze(new SolidColorBrush(Colors.White));
+    private static readonly Brush LightCapBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x0F, 0x17, 0x2A)));
+    private static readonly Brush DarkCapShade = Freeze(new SolidColorBrush(Color.FromArgb(26, 255, 255, 255)));
+    private static readonly Brush LightCapShade = Freeze(new SolidColorBrush(Color.FromArgb(20, 15, 23, 42)));
+
+    private static Brush GridBrush => Theme.IsDark ? DarkGridBrush : LightGridBrush;
+    private static Brush LabelBrush => Theme.IsDark ? DarkLabelBrush : LightLabelBrush;
+    private static Brush StockBrush => Theme.IsDark ? DarkStockBrush : LightStockBrush;
+    private static Brush CurveBrush => Theme.IsDark ? DarkCurveBrush : LightCurveBrush;
+    private static Brush PointFill => Theme.IsDark ? DarkPointFill : LightPointFill;
+    private static Brush SelectBrush => Theme.IsDark ? DarkSelectBrush : LightSelectBrush;
+    private static Brush LiveBrush => Theme.IsDark ? DarkLiveBrush : LightLiveBrush;
+    private static Brush CeilingBrush => Theme.IsDark ? DarkCeilingBrush : LightCeilingBrush;
+    private static Brush UnreachableBrush => Theme.IsDark ? DarkUnreachableBrush : LightUnreachableBrush;
+    private static Brush CapBrush => Theme.IsDark ? DarkCapBrush : LightCapBrush;
+    private static Brush CapShade => Theme.IsDark ? DarkCapShade : LightCapShade;
     private static readonly Typeface Face = new("Segoe UI");
     private static Brush Freeze(Brush b) { b.Freeze(); return b; }
 
@@ -169,7 +195,11 @@ public sealed class VfCurveEditor : FrameworkElement
         Focusable = true;
         Cursor = Cursors.Cross;
         ClipToBounds = true;
+        Loaded += (_, _) => Theme.Changed += Theme_Changed;
+        Unloaded += (_, _) => Theme.Changed -= Theme_Changed;
     }
+
+    private void Theme_Changed(object? sender, EventArgs e) => InvalidateVisual();
 
     // ---- axes: voltage on X (from the points), frequency on Y (padded round numbers)
     /// <summary>

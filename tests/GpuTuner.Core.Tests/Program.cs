@@ -263,6 +263,59 @@ using (var svc = new TuningService(new MockBackend()))
 // ---- XOC gate: the rails and crossbar are written only while armed, and disarming puts them back.
 // Regression guard for the reason the gate exists — a rail ceiling left standing from an earlier
 // session is exactly the state that browns a card out on the next boot.
+// A never-armed rail is different: it belongs to the driver. Voltage Boost can move that live
+// baseline by a card-specific amount, so a normal Apply must not overwrite it with a startup value.
+using (var boostBackend = new MockBackend())
+using (var boostSvc = new TuningService(boostBackend))
+{
+    boostSvc.Initialize();
+    boostSvc.SeedRailDefaults(1035, 985);
+    boostBackend.Calls.Clear();
+
+    boostSvc.Apply(new TuningProfile { VoltageBoostPercent = 100, XocArmed = XocLever.None });
+    var boosted = boostBackend.ReadTuningState(0);
+    Check("voltage boost leaves disabled NVVDD on driver-derived ceiling", boosted.VoltageRailMaxMv == 1055);
+    Check("voltage boost leaves disabled MSVDD on driver-derived ceiling", boosted.MsvddRailMaxMv == 1005);
+    Check("normal boost apply does not write disabled rail ceilings",
+          !boostBackend.Calls.Contains(nameof(MockBackend.SetVoltageRailMax)) &&
+          !boostBackend.Calls.Contains(nameof(MockBackend.SetMsvddRailMax)));
+
+    boostSvc.Apply(new TuningProfile { VoltageBoostPercent = 0, XocArmed = XocLever.None });
+    var stockBoost = boostBackend.ReadTuningState(0);
+    Check("zero boost returns disabled rails to driver-derived stock",
+          stockBoost.VoltageRailMaxMv == 1035 && stockBoost.MsvddRailMaxMv == 985);
+
+    boostSvc.Apply(new TuningProfile
+    {
+        VoltageBoostPercent = 100,
+        XocArmed = XocLever.Nvvdd | XocLever.Msvdd,
+        VoltageRailMaxMv = 1075,
+        MsvddRailMaxMv = 1050
+    });
+    boostSvc.Apply(new TuningProfile { VoltageBoostPercent = 100, XocArmed = XocLever.None });
+    var disabledAtBoost = boostBackend.ReadTuningState(0);
+    Check("disabling NVVDD at full boost restores its boosted driver baseline",
+          disabledAtBoost.VoltageRailMaxMv == 1055);
+    Check("disabling MSVDD at full boost restores its boosted driver baseline",
+          disabledAtBoost.MsvddRailMaxMv == 1005);
+
+    var explicitRailsAtBoost = new TuningProfile
+    {
+        VoltageBoostPercent = 100,
+        XocArmed = XocLever.Nvvdd | XocLever.Msvdd,
+        VoltageRailMaxMv = 1075,
+        MsvddRailMaxMv = 1050
+    };
+    boostSvc.Apply(explicitRailsAtBoost);
+    boostSvc.SetXocLever(explicitRailsAtBoost, XocLever.Nvvdd, false);
+    var nvvddDisabledDirectly = boostBackend.ReadTuningState(0);
+    Check("per-lever NVVDD disable restores boosted driver baseline",
+          nvvddDisabledDirectly.VoltageRailMaxMv == 1055 && nvvddDisabledDirectly.MsvddRailMaxMv == 1050);
+    boostSvc.SetXocLever(explicitRailsAtBoost, XocLever.Msvdd, false);
+    Check("per-lever MSVDD disable restores boosted driver baseline",
+          boostBackend.ReadTuningState(0).MsvddRailMaxMv == 1005);
+}
+
 using (var svc = new TuningService(new MockBackend()))
 {
     svc.Initialize();

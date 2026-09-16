@@ -373,9 +373,26 @@ public sealed class TuningService : IDisposable
                             $"(curve top {Capabilities.StockMaxVoltageMv}, seen {ObservedMaxVoltageMv})");
             }
 
+            // A rail that is being disabled must be restored at 0% boost first. Its saved default is
+            // the card's 0%-boost figure; restoring that absolute value after boost is applied would
+            // cancel the driver's card-specific rail movement. Once restored, reapplying boost lets
+            // the driver derive the live NVVDD/MSVDD ceilings itself.
+            var railsTurningOff = (ArmedOnCard & ~p.XocArmed) & (XocLever.Nvvdd | XocLever.Msvdd);
+            if (railsTurningOff != XocLever.None)
+            {
+                bool atStockBoost = !Capabilities.CanSetVoltageBoost;
+                if (Capabilities.CanSetVoltageBoost)
+                    Try("Voltage boost (rail restore)", () =>
+                    {
+                        Backend.SetVoltageBoost(GpuIndex, 0);
+                        atStockBoost = true;
+                    });
+                if (atStockBoost) WriteXoc(p, Try, railsTurningOff);
+            }
+
             if (Capabilities.CanSetVoltageBoost) Try("Voltage boost", () => Backend.SetVoltageBoost(GpuIndex, boostPct));
-            // Armed or not, the hardware ends up where the gate says it should be: disarmed means
-            // "back to the driver's own values", not "whatever the last run happened to leave".
+            // Armed rails take their explicit targets after boost. Disabled rails that were never
+            // armed are not touched, so the driver-owned, card-specific baseline remains visible.
             WriteXoc(p, Try);
 
             // The undervolt is enforced by the voltage lock, which is independent of the p-state clock
@@ -551,17 +568,23 @@ public sealed class TuningService : IDisposable
     // ------------------------------------------------------------------ extreme OC (XOC)
 
     /// <summary>
-    /// Write the gated levers, each either to the profile's value or back to the driver's own.
-    /// Runs on every apply as well as from the XOC window's per-lever buttons, so the card always
-    /// matches what is armed instead of drifting from what an earlier session wrote.
+    /// Write the gated levers. Armed levers take the profile's value; a lever this service previously
+    /// armed is restored when it becomes disarmed. Never-armed voltage rails are left to the driver:
+    /// Voltage Boost can move their card-specific baselines, and rewriting a startup snapshot after
+    /// the boost call would cancel that movement.
     ///
     /// <paramref name="which"/> narrows it to the levers a single button touched. Without that, one
     /// Enable would rewrite all six, and a rail that was deliberately left alone would be quietly
     /// pulled into whatever the sliders happened to show.
     /// </summary>
-    private void WriteXoc(TuningProfile p, Action<string, Action> Try, XocLever which = XocLever.All)
+    private void WriteXoc(
+        TuningProfile p,
+        Action<string, Action> Try,
+        XocLever which = XocLever.All,
+        bool forceRestoreDisarmed = false)
     {
         var on = p.XocArmed;
+        var wasOn = ArmedOnCard;
         // Record it here rather than at each call site: this is the one routine every lever write
         // goes through, from an apply, a per-lever button or a reset alike. Masked by what the card
         // can do, so a profile asking for a domain this GPU has not got cannot report itself live.
@@ -569,21 +592,40 @@ public sealed class TuningService : IDisposable
 
         if (which.Has(XocLever.Nvvdd) && Capabilities.CanSetVoltageRail)
         {
-            // Disarmed, the ceiling goes back to what was recorded before anything touched it. A
-            // default we never saw is left alone rather than guessed at, because guessing low browns
-            // the card out. Floors have a real default of zero offset, unlike the ceilings.
-            int max = on.Has(XocLever.Nvvdd) && p.VoltageRailMaxMv > 0 ? p.VoltageRailMaxMv : NvvddDefaultMaxMv;
-            if (max > 0) Try("Core rail ceiling", () => Backend.SetVoltageRailMax(GpuIndex, max));
-            int floor = on.Has(XocLever.Nvvdd) ? p.VoltageRailFloorMv : 0;
-            Try("Core rail floor", () => Backend.SetVoltageRailFloor(GpuIndex, floor));
+            bool armed = on.Has(XocLever.Nvvdd);
+            bool restore = !armed && (forceRestoreDisarmed || wasOn.Has(XocLever.Nvvdd));
+            if (armed)
+            {
+                if (p.VoltageRailMaxMv > 0)
+                    Try("Core rail ceiling", () => Backend.SetVoltageRailMax(GpuIndex, p.VoltageRailMaxMv));
+                Try("Core rail floor", () => Backend.SetVoltageRailFloor(GpuIndex, p.VoltageRailFloorMv));
+            }
+            else if (restore)
+            {
+                // A default we never saw is left alone rather than guessed at. Floors have a real
+                // default of zero offset, unlike ceilings.
+                if (NvvddDefaultMaxMv > 0)
+                    Try("Core rail ceiling", () => Backend.SetVoltageRailMax(GpuIndex, NvvddDefaultMaxMv));
+                Try("Core rail floor", () => Backend.SetVoltageRailFloor(GpuIndex, 0));
+            }
         }
 
         if (which.Has(XocLever.Msvdd) && Capabilities.CanSetMsvddRail)
         {
-            int max = on.Has(XocLever.Msvdd) && p.MsvddRailMaxMv > 0 ? p.MsvddRailMaxMv : MsvddDefaultMaxMv;
-            if (max > 0) Try("MSVDD ceiling", () => Backend.SetMsvddRailMax(GpuIndex, max));
-            int floor = on.Has(XocLever.Msvdd) ? p.MsvddRailFloorMv : 0;
-            Try("MSVDD floor", () => Backend.SetMsvddRailFloor(GpuIndex, floor));
+            bool armed = on.Has(XocLever.Msvdd);
+            bool restore = !armed && (forceRestoreDisarmed || wasOn.Has(XocLever.Msvdd));
+            if (armed)
+            {
+                if (p.MsvddRailMaxMv > 0)
+                    Try("MSVDD ceiling", () => Backend.SetMsvddRailMax(GpuIndex, p.MsvddRailMaxMv));
+                Try("MSVDD floor", () => Backend.SetMsvddRailFloor(GpuIndex, p.MsvddRailFloorMv));
+            }
+            else if (restore)
+            {
+                if (MsvddDefaultMaxMv > 0)
+                    Try("MSVDD ceiling", () => Backend.SetMsvddRailMax(GpuIndex, MsvddDefaultMaxMv));
+                Try("MSVDD floor", () => Backend.SetMsvddRailFloor(GpuIndex, 0));
+            }
         }
 
         if (which.Has(XocLever.Xbar) && Capabilities.CanSetXbarOffset)
@@ -658,7 +700,34 @@ public sealed class TuningService : IDisposable
                 catch (Exception e) { errors.Add($"{what}: {e.Message}"); Log?.Invoke($"{what}: FAILED - {e.Message}"); }
             }
 
-            WriteXoc(p, Try, lever);
+            bool disablingVoltageRail = !on &&
+                (lever == XocLever.Nvvdd || lever == XocLever.Msvdd) &&
+                ArmedOnCard.Has(lever);
+            if (disablingVoltageRail && Capabilities.CanSetVoltageBoost)
+            {
+                // The persisted rail default is the 0%-boost value. Restore it there, then put the
+                // live boost back so the driver can derive this card's effective ceiling. Reading the
+                // current value keeps this per-lever action from changing an unrelated boost setting.
+                int restoreBoost = p.VoltageBoostPercent;
+                try { restoreBoost = Backend.ReadTuningState(GpuIndex).VoltageBoostPercent; }
+                catch { /* The editor value is the best safe fallback. */ }
+
+                bool atStockBoost = false;
+                Try("Voltage boost (rail restore)", () =>
+                {
+                    Backend.SetVoltageBoost(GpuIndex, 0);
+                    atStockBoost = true;
+                });
+                if (atStockBoost)
+                {
+                    WriteXoc(p, Try, lever);
+                    Try("Voltage boost (rail restore complete)", () => Backend.SetVoltageBoost(GpuIndex, restoreBoost));
+                }
+            }
+            else
+            {
+                WriteXoc(p, Try, lever);
+            }
 
             // Keep the applied profile describing the card, so the summary line agrees with what is
             // actually on it.
@@ -704,7 +773,10 @@ public sealed class TuningService : IDisposable
             // after this method, and nothing pointed at it. A disarmed WriteXoc puts each one back -
             // rails to the figures recorded on first sight, private domains to no offset, the clock
             // range to unpinned - and picks up any lever added later for free.
-            WriteXoc(new TuningProfile(), (_, a) => { try { a(); } catch (GpuBackendException) { } });
+            WriteXoc(
+                new TuningProfile(),
+                (_, a) => { try { a(); } catch (GpuBackendException) { } },
+                forceRestoreDisarmed: true);
             AppliedProfile = TuningProfile.Stock(Capabilities, Device.Name);
             RefreshLiveVoltageState();
             Log?.Invoke("Reset to driver defaults");

@@ -134,7 +134,17 @@ public sealed class MockBackend : IGpuBackend
     /// </summary>
     public List<string> Calls { get; } = new();
 
-    public void SetVoltageBoost(int gpuIndex, int percent) { Calls.Add(nameof(SetVoltageBoost)); _voltBoost = percent; }
+    public void SetVoltageBoost(int gpuIndex, int percent)
+    {
+        Calls.Add(nameof(SetVoltageBoost));
+        // Model a card whose driver-owned NVVDD/MSVDD ceilings move with Voltage Boost. The 20 mV
+        // full-range travel matches the development card, but production code must read whatever its
+        // own card reports rather than depending on this mock value.
+        int railShiftMv = (percent - _voltBoost) / 5;
+        _railMax += railShiftMv;
+        _msvddMax += railShiftMv;
+        _voltBoost = percent;
+    }
     private int _voltLockMv;
     public void SetVoltageLock(int gpuIndex, int targetMv) { Calls.Add(nameof(SetVoltageLock)); _voltLockMv = targetMv; }
     public int ReadVoltageLockMv(int gpuIndex) => _voltLockMv;

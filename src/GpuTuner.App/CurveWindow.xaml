@@ -23,6 +23,8 @@
                     <TextBlock Text="mV" VerticalAlignment="Center" Margin="4,0,8,0" Style="{StaticResource Muted}"/>
                     <Button Content="Apply flatten" Click="Flatten_Click" Padding="10,4"
                             ToolTip="Clamp every point above this voltage to the frequency at that point — the classic undervolt"/>
+                    <Button Content="Remove flatten" Click="RemoveFlatten_Click" Padding="10,4" Margin="6,0,0,0"
+                            ToolTip="Clear the active voltage cap and reveal the underlying curve again"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal">

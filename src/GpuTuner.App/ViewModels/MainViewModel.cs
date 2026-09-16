@@ -1008,6 +1008,10 @@ public sealed class MainViewModel : ObservableObject
                 ? $"Applied at {DateTime.Now:HH:mm:ss}"
                 : string.Join("  |  ", errs);
             StatusIsError = false; PendingChanges = false;
+            // Disabled rail editors display the card's driver-owned live ceilings. Voltage Boost can
+            // move both by a card-specific amount, so do not leave startup values on screen after a
+            // successful apply.
+            RefreshDriverOwnedRailCeilings();
             // Only a name that can be loaded again. An apply with no slot selected builds a
             // throwaway profile called "Session" that is never written, and recording that left the
             // setting pointing at a file which does not exist.
@@ -1067,11 +1071,11 @@ public sealed class MainViewModel : ObservableObject
         switch (lever)
         {
             case XocLever.Nvvdd:
-                VoltageRailMax = StockNvvddMaxMv;
+                RefreshDriverOwnedRailCeilings();
                 VoltageRailFloor = Caps.VoltageRailStockFloorMv;
                 break;
             case XocLever.Msvdd:
-                MsvddRailMax = StockMsvddMaxMv;
+                RefreshDriverOwnedRailCeilings();
                 MsvddRailFloor = Caps.MsvddRailStockFloorMv;
                 break;
             case XocLever.Xbar: XbarOffset = 0; break;
@@ -1083,6 +1087,41 @@ public sealed class MainViewModel : ObservableObject
                 ClockLockMax = Caps.ClockLockMaxMhz;
                 break;
         }
+    }
+
+    /// <summary>
+    /// Refresh only ceilings whose explicit XOC controls are disabled. Enabled controls remain editor
+    /// targets; disabled controls are read-only views of the driver's live, card-specific policy.
+    /// Assign fields directly so a read-back never marks the editor dirty.
+    /// </summary>
+    private void RefreshDriverOwnedRailCeilings()
+    {
+        try
+        {
+            var live = _svc.Backend.ReadTuningState(_svc.GpuIndex);
+            if (!_xocArmed.Has(XocLever.Nvvdd) && live.VoltageRailMaxMv > 0)
+            {
+                int value = Math.Clamp(live.VoltageRailMaxMv, Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv);
+                if (_rail != value)
+                {
+                    _rail = value;
+                    RaiseVal(nameof(VoltageRailMax));
+                    OnPropertyChanged(nameof(BoostCeilingMv));
+                    OnPropertyChanged(nameof(XocStatusText));
+                }
+            }
+            if (!_xocArmed.Has(XocLever.Msvdd) && live.MsvddRailMaxMv > 0)
+            {
+                int value = Math.Clamp(live.MsvddRailMaxMv, Caps.MsvddRailMinMv, Caps.MsvddRailMaxMv);
+                if (_msvdd != value)
+                {
+                    _msvdd = value;
+                    RaiseVal(nameof(MsvddRailMax));
+                    OnPropertyChanged(nameof(XocStatusText));
+                }
+            }
+        }
+        catch { /* Read-back is informational; Apply already reports write failures. */ }
     }
 
     private void Reset()

@@ -21,6 +21,9 @@ namespace GpuTuner.App.Native;
 /// </summary>
 public static class Theme
 {
+    /// <summary>Raised after the shared palette changes so custom-drawn controls can repaint.</summary>
+    public static event EventHandler? Changed;
+
     /// <summary>Key, then the colour in light mode and in dark mode.</summary>
     private static readonly (string Key, string Light, string Dark)[] Palette =
     {
@@ -74,6 +77,8 @@ public static class Theme
             if (!w.IsLoaded && !w.IsVisible) continue;
             WindowTheme.SetDarkTitleBar(w, dark);
         }
+
+        Changed?.Invoke(null, EventArgs.Empty);
     }
 
     /// <summary>

@@ -111,7 +111,9 @@ public partial class CurveWindow : Window
             {
                 nv.SetVoltageLock(_svc.GpuIndex, mv);
                 Editor.SetVoltageCap(mv);
-                Editor.FlattenFrom(mv);            // mirror it in the plot's own points too
+                // The editor draws everything above an active cap flat without changing the stored
+                // points. Keeping them intact means Remove flatten can reveal the exact underlying
+                // curve, including any pending manual edits.
                 _vm.TargetVoltage = mv;            // and in the main window, which saves and applies it
                 Say($"Voltage capped at {mv} mV — applied to the GPU now. Check the live voltage.");
                 return;
@@ -120,6 +122,31 @@ public partial class CurveWindow : Window
             Say($"Flattened everything above {mv} mV. Press Apply to GPU to commit.");
         }
         catch (Exception ex) { Say("Could not set the voltage cap: " + ex.Message, true); }
+    }
+
+    private void RemoveFlatten_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            int before = ReadCapMv();
+            if (before <= 0)
+            {
+                Say("No active voltage flatten to remove.");
+                return;
+            }
+
+            _svc.Backend.SetVoltageLock(_svc.GpuIndex, 0);
+            int after = ReadCapMv();
+            if (after > 0)
+                throw new InvalidOperationException($"the driver still reports a {after} mV cap");
+
+            Editor.SetVoltageCap(0);
+            // At the reachable ceiling the main-window profile serializes this as 0 (no cap), so a
+            // later Apply cannot quietly restore the flatten we just removed.
+            _vm.TargetVoltage = _vm.ReachableCeilingMv;
+            Say($"Voltage flatten removed (was {before} mV). The underlying curve is unchanged.");
+        }
+        catch (Exception ex) { Say("Could not remove the voltage flatten: " + ex.Message, true); }
     }
 
     private int ReadCapMv()
@@ -192,8 +219,10 @@ public partial class CurveWindow : Window
     private void Say(string msg, bool error = false)
     {
         StatusText.Text = msg;
-        StatusText.Foreground = error
-            ? (Brush)FindResource("DangerBrush")
-            : (Brush)FindResource("MutedBrush");
+        // Keep this as a resource reference rather than assigning the current brush object. Theme
+        // switches replace palette entries, so a copied dark-mode brush stays pale in light mode.
+        StatusText.SetResourceReference(
+            System.Windows.Controls.TextBlock.ForegroundProperty,
+            error ? "DangerBrush" : "MutedBrush");
     }
 }

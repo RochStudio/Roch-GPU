@@ -16,7 +16,7 @@ Windows x64 and a compatible vendor graphics driver are required. The self-conta
 
 Compatibility depends on the GPU, board firmware and installed driver; an available control is not a guarantee that every card supports it.
 
-**Version 1.0.6 includes the NVIDIA OCP compatibility fix below. Earlier releases do not include this fix.**
+**Version 1.0.7 keeps disabled NVVDD and MSVDD rail limits under the NVIDIA driver's control, so Voltage Boost can update both live ceilings by the amount reported for that specific card. It does not hard-code the 20 mV behavior observed on the development RTX 5070 Ti. Version 1.0.6 introduced the NVIDIA OCP compatibility fix below.**
 
 | GPU / driver | Verification status |
 |---|---|
