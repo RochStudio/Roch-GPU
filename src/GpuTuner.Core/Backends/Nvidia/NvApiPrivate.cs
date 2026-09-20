@@ -1215,10 +1215,7 @@ internal static class NvApiPrivate
     }
 
     /// <summary>Crossbar offset currently applied, in MHz.</summary>
-    public static int ReadXbarOffsetMhz(PhysicalGPUHandle handle) =>
-        XbarCall(handle, FnXbarGetControl, XbarControlSize, XbarControlVersion, selector: true) is { } c
-            ? BitConverter.ToInt32(c, XbarControlOffsetKhz) / 1000
-            : 0;
+    public static int ReadXbarOffsetMhz(PhysicalGPUHandle handle) => ReadDomainOffsetMhz(handle, SlotXbar);
 
     /// <summary>Apply a crossbar offset in MHz. Read-modify-write. Returns the NVAPI status (0 = Ok).</summary>
     /// <summary>Slots in the info list, which are also the domains this family will offset.</summary>
@@ -1241,36 +1238,31 @@ internal static class NvApiPrivate
         var fnGet = Resolve(FnXbarGetControl);
         if (fnSet == null || fnGet == null) return -1;
 
-        int selector = 1 << slot;
-        int field = ControlOffsetFor(slot);
-        if (field + 4 > XbarControlSize) return -1;
-
-        var buf = Marshal.AllocHGlobal(XbarControlSize);
-        try
+        int Call(byte[] bytes, RawDelegate fn)
         {
-            for (int i = 0; i < XbarControlSize; i += 4) Marshal.WriteInt32(buf, i, 0);
-            Marshal.WriteInt32(buf, 0, unchecked((int)XbarControlVersion));
-            Marshal.WriteInt32(buf, XbarControlSelector, selector);
-            try { fnGet(handle.MemoryAddress, buf); } catch { }
-            Marshal.WriteInt32(buf, 0, unchecked((int)XbarControlVersion));
-            Marshal.WriteInt32(buf, XbarControlSelector, selector);
-            Marshal.WriteInt32(buf, field, mhz * 1000);
-            try { return fnSet(handle.MemoryAddress, buf); }
+            var buf = Marshal.AllocHGlobal(bytes.Length);
+            try
+            {
+                Marshal.Copy(bytes, 0, buf, bytes.Length);
+                int status = fn(handle.MemoryAddress, buf);
+                Marshal.Copy(buf, bytes, 0, bytes.Length);
+                return status;
+            }
             catch { return -2; }
+            finally { Marshal.FreeHGlobal(buf); }
         }
-        finally { Marshal.FreeHGlobal(buf); }
+        return DomainOffsetControl.Apply(slot, mhz, b => Call(b, fnGet), b => Call(b, fnSet));
     }
-
     /// <summary>The offset a domain is currently carrying, in MHz; 0 when it cannot be read.</summary>
     public static int ReadDomainOffsetMhz(PhysicalGPUHandle handle, int slot)
     {
-        int field = ControlOffsetFor(slot);
-        if (field + 4 > XbarControlSize) return 0;
+        if (slot < 0 || slot >= 32) return 0;
         var c = XbarCall(handle, FnXbarGetControl, XbarControlSize, XbarControlVersion,
                          selector: true, selectorValue: 1 << slot);
-        return c == null ? 0 : BitConverter.ToInt32(c, field) / 1000;
+        if (c == null) return 0;
+        int field = DomainOffsetControl.OffsetField(c, slot);
+        return field < 0 ? 0 : BitConverter.ToInt32(c, field) / 1000;
     }
-
     public static int WriteXbarOffsetMhz(PhysicalGPUHandle handle, int mhz) =>
         WriteDomainOffsetMhz(handle, SlotXbar, mhz);
 
@@ -1493,26 +1485,13 @@ internal static class NvApiPrivate
         return results;
     }
 
-    // Measured, 4070 Ti (591.86) against a 5070 Ti (610.88) where the write lands. Every observable
-    // is identical: only 0x61A4 x v2 is accepted and every other shape answers -9; +0x000C reads
-    // 0x01010000 on both; the selector is an 8-bit mask over eight blocks at 0x124 + n*0x304 on both;
-    // both report a -1000..+1000 range. The block counts differ (10 vs 15) and track the GPU's clock
-    // domain count, which is not the difference that matters.
-    //
-    // The one difference is the write. On the 5070 Ti a +30 MHz offset changes exactly one word,
-    // +0x053C = 30000 kHz, which is block_start + 0x114 for selector bit 1. On the 4070 Ti that same
-    // write is refused with -1 -- a content rejection, since a wrong shape gives -9 -- for every value
-    // tried, in either unit, positive or negative, under every selector. Writing 0 succeeds, which is
-    // what a no-op does regardless.
-    //
-    // So the field address is right and Ada simply will not apply a non-zero crossbar offset. The
-    // range it reports is the width of the delta field, not a promise, the same way its +/-1000 MHz
-    // core offset is. Do not go looking for the offset field again on the strength of the -1.
+    // The outer size/version is shared by multiple inner layouts. The block tag
+    // selects +0x10C (10) or +0x114 (15); see DomainOffsetControl.
 
     /// <summary>
     /// Read-only: which (size, version) shape does GetControl accept? NVAPI answers a wrong struct
-    /// version with -9 and a wrong *content* with -1, so this separates "the driver wants a different
-    /// structure on this driver build" from "the structure is fine and the value was refused".
+    /// version with -9 and a wrong *content* with -1, so this probes "the driver wants a different
+    /// outer structure on this driver build"; it does not validate inner offset fields.
     /// GetControl only; nothing is written.
     /// </summary>
     public static List<(string shape, int status)> ProbeXbarControlShapes(PhysicalGPUHandle handle)

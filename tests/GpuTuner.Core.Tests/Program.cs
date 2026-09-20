@@ -8,6 +8,33 @@ int pass = 0, fail = 0;
 void Check(string name, bool cond) { if (cond) pass++; else { fail++; Console.WriteLine("FAIL: " + name); } }
 void Eq(string name, double expected, double actual, double tol = 1e-6) => Check($"{name} (expected {expected}, got {actual})", Math.Abs(expected - actual) <= tol);
 
+// Private clock writes must fail closed and verify the exact offset, not an idle frequency.
+foreach (int layout in new[] { 10, 15 })
+foreach (int slot in new[] { 1, 3 })
+{
+    var live = new byte[DomainOffsetControl.Size];
+    BitConverter.GetBytes(DomainOffsetControl.Version).CopyTo(live, 0);
+    BitConverter.GetBytes(1 << slot).CopyTo(live, 8);
+    BitConverter.GetBytes(layout).CopyTo(live, 0x124 + slot * 0x304);
+    int expectedField = 0x124 + slot * 0x304 + (layout == 10 ? 0x10C : 0x114);
+    live[100] = 42;
+    int writes = 0;
+    int Read(byte[] b) { live.CopyTo(b, 0); return 0; }
+    int Write(byte[] b) { writes++; Check("domain changes only selected offset", b.Where((v, i) => i < expectedField || i >= expectedField + 4).SequenceEqual(live.Where((v, i) => i < expectedField || i >= expectedField + 4))); Check("domain preserves unrelated payload", b[100] == 42); b.CopyTo(live, 0); return 0; }
+    Check("domain getter failure prevents setter", DomainOffsetControl.Apply(slot, -15, _ => -9, Write) == -9 && writes == 0);
+    Check("domain invalid header prevents setter", DomainOffsetControl.Apply(slot, -15, b => { Array.Clear(b); return 0; }, Write) == DomainOffsetControl.InvalidLayout && writes == 0);
+    Check("unknown inner layout prevents write", DomainOffsetControl.Apply(slot, -15, b => { Read(b); BitConverter.GetBytes(99).CopyTo(b, 0x124 + slot * 0x304); return 0; }, Write) == DomainOffsetControl.InvalidLayout && writes == 0);
+    Check("domain unchanged is no-op", DomainOffsetControl.Apply(slot, 0, Read, Write) == 0 && writes == 0);
+    Check("domain rejected write propagates", DomainOffsetControl.Apply(slot, -15, Read, _ => -1) == -1);
+    Check("domain ignored write fails verification", DomainOffsetControl.Apply(slot, -15, Read, _ => 0) == DomainOffsetControl.VerificationFailed);
+    Check("domain applies negative offset", DomainOffsetControl.Apply(slot, -15, Read, Write) == 0 && writes == 1);
+    Check("correct layout offset field", DomainOffsetControl.OffsetField(live, slot) == 0x124 + slot * 0x304 + (layout == 10 ? 0x10C : 0x114));
+    Check("domain restores offset", DomainOffsetControl.Apply(slot, 0, Read, Write) == 0 && writes == 2);
+}
+Check("negative domain blocked", DomainOffsetControl.Apply(-1, 0, _ => throw new Exception(), _ => throw new Exception()) == DomainOffsetControl.InvalidRequest);
+Check("oversized domain blocked", DomainOffsetControl.Apply(32, 0, _ => throw new Exception(), _ => throw new Exception()) == DomainOffsetControl.InvalidRequest);
+Check("overflowing offset blocked", DomainOffsetControl.Apply(1, int.MaxValue, _ => throw new Exception(), _ => throw new Exception()) == DomainOffsetControl.InvalidRequest);
+
 // ---- R615 OCP compatibility: unchanged limits must never reach the private setter.
 int ocpWrites = 0;
 int OcpSet() { ocpWrites++; return 0; }

@@ -11,6 +11,18 @@ began as an attempt to add a feature that turned out not to be there.
 `RochGPU.exe diag` prints the raw material behind all of it, and
 [docs/diag-rtx5070ti.txt](diag-rtx5070ti.txt) is a sample dump from the card these were taken on.
 
+RTX 4070 / 591.86 supports XBAR and SYS offsets. Earlier failures came from
+using the layout-15 offset field (+0x114) on layout 10 (+0x10C). Comparing the
+user-supplied mVolt+ executable exposed the layout selection. Roch GPU now
+reads the leading block tag and uses the corresponding field; unknown tags
+fail closed. Both domains passed +15 -> 0 -> +15 MHz writes and exact offset
+readback on this card. Idle frequency counters are not expected to track offsets.
+The temporary GPU/driver restriction has been removed.
+Domain writes now require a successful, validated control read, preserve the
+getter payload, skip unchanged offsets, and verify the requested offset through
+a fresh control read. Frequency counters are still useful under load, but idle
+clock movement is not used as proof that an offset was applied.
+
 ---
 
 - **The SYS and video clock offsets both work, and neither is worth much yet.** Video was confirmed
@@ -22,10 +34,8 @@ began as an attempt to add a feature that turned out not to be there.
   bottleneck is elsewhere.
   Check a domain with `RochGPU.exe domains`, which reads each one's own counter — but **check it
   under load**. Monitoring tools do not expose the SYS clock, and an idle reading of it says nothing.
-- **The crossbar clock is tunable on Blackwell, read-only on Ada.** A 5070 Ti takes a +30 MHz offset
-  and reads it back. A 4070 Ti reports a ±1000 MHz range and refuses every non-zero value while 0
-  succeeds — a rejection of the value, not of the request shape, so that range is the width of the
-  delta field rather than a promise.
+- **Crossbar offsets work on the tested RTX 4070 and 5070 Ti.** The earlier
+  read-only-Ada conclusion used the wrong control field and is withdrawn.
 - **MSVDD is Blackwell-only.** The rail control is present on a 5070 Ti and absent on the 40-series
   cards tested, where NVVDD works on its own.
 - **Hot spot and memory chip temperature are not exposed on Blackwell.** Not a gap in the reading:

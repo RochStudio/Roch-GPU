@@ -52,5 +52,25 @@ foreach (var row in table.Rows)
     else { banding &= row.IsBanded == (data % 2 == 1); data++; }
 }
 Check("inserted sensors preserve striping", banding);
+table.Add(empty with { SupplementalSensors = new SupplementalSensor[]
+{
+    new("nv:video-load", "Video engine", "%", 0),
+    new("nv:pcie-speed", "PCIe link speed", "GT/s", 2.5),
+    new("nv:memory-free", "Available VRAM", "MB", 11000),
+    new("nv:limit-power", "Power limit active", "state", 0)
+} });
+Check("video engine grouped with load", GroupOf("Video engine") == "LOAD");
+Check("PCIe speed grouped with link", GroupOf("PCIe link speed") == "PCIE LINK");
+Check("free memory grouped with memory", GroupOf("Available VRAM") == "MEMORY");
+Check("idle limit displays No", table.Rows.Single(r => r.Name == "Power limit active").Current == "No");
+Check("PCIe fractional speed retained", table.Rows.Single(r => r.Name == "PCIe link speed").Current == 2.5.ToString("F1") + " GT/s");
+table.Add(empty with { SupplementalSensors = new[] { new SupplementalSensor("nv:limit-power", "Power limit active", "state", 1) } });
+Check("active limit displays Yes", table.Rows.Single(r => r.Name == "Power limit active").Current == "Yes");
+Check("limit average is active fraction", table.Rows.Single(r => r.Name == "Power limit active").Average == 50.0.ToString("F1") + " % active");
+Check("missing video reading cleared", table.Rows.Single(r => r.Name == "Video engine").Current == "—");
+var readOnlyClocks = new TelemetryTable(empty, new GpuCapabilities(), new[] { "xbar", "sys" });
+Check("read-only XBAR telemetry visible", readOnlyClocks.Rows.Any(r => r.Name == "Crossbar"));
+Check("read-only SYS telemetry visible", readOnlyClocks.Rows.Any(r => r.Name == "SYS"));
+Check("instantaneous clock not called effective", readOnlyClocks.Rows.Any(r => r.Name == "GPU core (measured)") && !readOnlyClocks.Rows.Any(r => r.Name.Contains("effective")));
 Console.WriteLine($"Telemetry: {pass} passed, {fail} failed");
 Environment.ExitCode = fail == 0 ? 0 : 1;

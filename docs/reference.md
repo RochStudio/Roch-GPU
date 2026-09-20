@@ -77,7 +77,7 @@ values. That's always safe and the first thing to try.
 | Voltage cap | in the curve editor's flatten | offset, mV (undervolt) |
 | NVVDD / MSVDD rail | floor and ceiling, mV — MSVDD is Blackwell-only | — |
 | NVVDD / MSVDD OCP | over-current limit, A — Blackwell | — |
-| XBAR / SYS / video clock | offset, MHz — XBAR writable on Blackwell only | — |
+| XBAR / SYS / video clock | offset, MHz — layout-dependent; verified on RTX 4070 and 5070 Ti | — |
 | Clock range | pin the graphics clock, bounds from the driver | — |
 | Power limit | % of TDP | % offset |
 | Temperature limit | ✓ | driver-owned, hidden |
@@ -99,7 +99,7 @@ the width of its delta field, not a claim about the silicon. Both ends are slide
 measurements: nothing up there is known to be stable.
 
 **Tested on:** RTX 5070 Ti (Blackwell, full feature set), RTX 4070 Ti and 4070 (Ada — no MSVDD rail,
-crossbar reads but won't take a write), RX 9070 XT (RDNA 4).
+crossbar requires the layout-10 offset field), RX 9070 XT (RDNA 4).
 
 ---
 

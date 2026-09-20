@@ -594,6 +594,7 @@ public sealed class NvApiBackend : IGpuBackend
             FanPercent = fanPcts.Count > 0 ? fanPcts.Max() : 0,
             FanRpm = fanRpms.Count > 0 ? fanRpms.Max() : 0,
             FanPercents = fanPcts.ToArray(), FanRpms = fanRpms.ToArray(),
+            SupplementalSensors = NvidiaSupplementalTelemetry.Read(g, NvmlIndexFor(gpuIndex)),
             PerfState = pstate, LimitReason = limit
         };
     }
@@ -810,7 +811,7 @@ public sealed class NvApiBackend : IGpuBackend
         try
         {
             // The core's own counter, which is not the requested clock: at idle the card reports a
-            // boost figure it is not running. This is the one a monitoring tool calls "effective".
+            // boost figure it is not running. This instantaneous counter is not an interval-averaged effective clock.
             d["coremeasured"] = NvApiPrivate.MeasureClockKhz(g.Handle, NvApiPrivate.DomainCore) / 1000.0;
             d["xbar"] = NvApiPrivate.MeasureClockKhz(g.Handle, NvApiPrivate.DomainXbar) / 1000.0;
             d["sys"] = NvApiPrivate.MeasureClockKhz(g.Handle, 2) / 1000.0;
@@ -966,29 +967,19 @@ public sealed class NvApiBackend : IGpuBackend
     {
         int status = NvApiPrivate.WriteDomainOffsetMhz(Gpu(gpuIndex).Handle, slot, offsetMhz);
         if (status == 0) return;
+        string detail = status switch
+        {
+            DomainOffsetControl.InvalidRequest => "Invalid domain or offset; no write attempted.",
+            DomainOffsetControl.InvalidLayout => "The driver returned an unrecognized control layout.",
+            DomainOffsetControl.VerificationFailed => "The requested offset did not read back after the write.",
+            _ => "The driver operation failed; a reported range does not establish write support."
+        };
         throw new GpuBackendException(
-            $"Failed to set the {name} clock offset to {offsetMhz:+#;-#;0} MHz: status {status}." +
-            (status == -1 ? " The request was accepted and the value refused." : ""));
+            $"Failed to set the {name} clock offset to {offsetMhz:+#;-#;0} MHz: status {status}. {detail}");
     }
 
-    public void SetXbarOffset(int gpuIndex, int offsetMhz)
-    {
-        var g = Gpu(gpuIndex);
-        int status = NvApiPrivate.WriteXbarOffsetMhz(g.Handle, offsetMhz);
-        if (status == 0) return;
-
-        // -1 is the driver refusing the value, not the request: a wrong struct shape answers -9, and
-        // every other part of this family checks out on a card that still refuses to move. Say which
-        // it is, because "status -1" alone sends the next person looking for a layout bug that is not
-        // there. See the note on ProbeXbarControlShapes.
-        string why = status == -1
-            ? " The request was accepted and the value refused, which is what a card that reports a " +
-              "crossbar range but has no controllable crossbar domain does. Reads and 0 still work."
-            : "";
-        throw new GpuBackendException(
-            $"Failed to set the crossbar offset to {offsetMhz:+#;-#;0} MHz: status {status}.{why}");
-    }
-
+    public void SetXbarOffset(int gpuIndex, int offsetMhz) =>
+        SetDomain(gpuIndex, NvApiPrivate.SlotXbar, offsetMhz, "XBAR");
     public void SetCoreOffset(int gpuIndex, int offsetMhz) => SetClockDelta(gpuIndex, PublicClockDomain.Graphics, offsetMhz);
     public void SetMemoryOffset(int gpuIndex, int offsetMhz) => SetClockDelta(gpuIndex, PublicClockDomain.Memory, offsetMhz);
 

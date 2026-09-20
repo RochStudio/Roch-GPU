@@ -16,3 +16,7 @@ distcli/
 *.log
 roch-gpu-diag.txt
 roch-gpu-info.txt
+
+# Local validation tools and machine-specific test output
+.test-sdk/
+test-results/

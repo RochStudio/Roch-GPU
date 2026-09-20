@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -67,7 +67,7 @@ public sealed class TelemetryRow : ObservableObject
     }
 
     private string Format(double v) =>
-        double.IsNaN(v) ? Dash : v.ToString("F" + _decimals, CultureInfo.CurrentCulture) + " " + _unit;
+        double.IsNaN(v) ? Dash : _unit == "state" ? (v == 0 ? "No" : v == 1 ? "Yes" : (v * 100).ToString("F1", CultureInfo.CurrentCulture) + " % active") : v.ToString("F" + _decimals, CultureInfo.CurrentCulture) + " " + _unit;
 }
 
 /// <summary>
@@ -122,12 +122,12 @@ public sealed class TelemetryTable
 
         Group("Clocks");
         Sensor("core", "GPU core", "MHz");
-        if (!caps.PowerLimitIsOffset) Sensor("coremeasured", "GPU core (effective)", "MHz");
+        if (!caps.PowerLimitIsOffset) Sensor("coremeasured", "GPU core (measured)", "MHz");
         Sensor("mem", "Memory", "MHz");
         if (!double.IsNaN(first.FabricClockMhz)) Sensor("fclk", "Fabric (FCLK)", "MHz");
         if (!double.IsNaN(first.SocClockMhz)) Sensor("socclk", "SoC", "MHz");
-        if (caps.CanSetXbarOffset) Sensor("xbar", "Crossbar", "MHz");
-        if (caps.CanSetSysOffset) Sensor("sys", "SYS", "MHz");
+        if (caps.CanSetXbarOffset || extraClockKeys.Contains("xbar")) Sensor("xbar", "Crossbar", "MHz");
+        if (caps.CanSetSysOffset || extraClockKeys.Contains("sys")) Sensor("sys", "SYS", "MHz");
         if (caps.CanSetVideoOffset) Sensor("video", "Video", "MHz");
         // Whatever else this card reports. The backend supplies the name where one has been checked
         // against the hardware and the bare type number where it has not. Built from the first
@@ -246,14 +246,15 @@ public sealed class TelemetryTable
         string group = unit switch
         {
             "°C" => "TEMPERATURES", "mV" or "V" => "VOLTAGES", "MHz" => "CLOCKS",
-            "W" => "POWER", "MB" => "MEMORY", "gen" or "lanes" => "PCIe LINK",
+            "W" => "POWER", "MB" => "MEMORY", "gen" or "lanes" or "GT/s" => "PCIe LINK",
+            "%" => "LOAD", "A" => "RAIL CURRENT",
             _ => "LIMITERS"
         };
         int heading = _all.FindIndex(r => r.IsHeader && r.Name == group.ToUpperInvariant());
         if (heading < 0) { Group(group); heading = _all.Count - 1; }
         int end = _all.FindIndex(heading + 1, r => r.IsHeader);
         if (end < 0) end = _all.Count;
-        int decimals = unit is "°C" or "W" ? 1 : 0;
+        int decimals = unit is "°C" or "W" or "%" or "GT/s" ? 1 : unit == "V" ? 3 : unit == "A" ? 2 : 0;
         var row = TelemetryRow.Sensor(name, Stat(key), unit, decimals);
         _all.Insert(end, row);
         Rows.Insert(end, row);

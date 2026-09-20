@@ -12,6 +12,15 @@ A Windows tuning and monitoring tool for NVIDIA and AMD GPUs. Adjust supported c
 
 Windows x64 and a compatible vendor graphics driver are required. The self-contained executable needs no separate .NET installation.
 
+## What's new in 1.0.8
+
+- **XBAR and SYS clock offsets fixed on RTX 4070:** select the correct driver control layout for reads and writes, validate the getter, and verify offsets after writing. Both domains passed +15 → 0 → +15 MHz read-back tests on driver 591.86. The earlier read-only-Ada conclusion was incorrect; see [layout details](docs/xbar-sys-layout-fix.md).
+- **13 additional native NVIDIA sensor readings:** video-engine/bus load, available VRAM and usage, video clock, thermal limit, performance-limit flags, and current PCIe generation/speed/width. No HWiNFO dependency. See [sensor coverage and limitations](docs/rtx4070-telemetry.md).
+- **Clearer telemetry:** instantaneous GPU clock is labelled measured; XBAR/SYS monitoring does not require writable controls.
+- **Sun/moon theme toggle:** now beside Minimize, matching Roch Viewer.
+
+Release validation: 425 core checks and 28 telemetry checks passed. Hardware verification covers RTX 4070 / 591.86; it is not a stress-stability test or proof of support on every GPU.
+
 ## Driver compatibility
 
 Compatibility depends on the GPU, board firmware and installed driver; an available control is not a guarantee that every card supports it.
@@ -73,7 +82,7 @@ Install the **.NET 10 SDK**, then run in PowerShell:
 .\build.ps1
 ```
 
-Open `dist\RochGPU.exe`. The current source version is **1.0.6**.
+Open `dist\RochGPU.exe`. The current source version is **1.0.8**.
 
 > Overclocking can cause crashes, data loss or hardware damage. Test changes carefully. Controls and sensor readings depend on what your driver exposes.
 

@@ -176,6 +176,10 @@
                                VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button x:Name="ThemeButton" Style="{StaticResource TitleButton}"
+                            Content="☀" FontFamily="Segoe UI Symbol" FontSize="18"
+                            Click="Theme_Click" ToolTip="Switch to light mode"
+                            AutomationProperties.Name="Switch to light mode"/>
                     <Button Style="{StaticResource TitleButton}" Content="&#x2013;" Click="TitleMinimize_Click"
                             ToolTip="Minimise"/>
                     <Button Style="{StaticResource TitleCloseButton}" Content="&#x2715;" Click="TitleClose_Click"
@@ -258,11 +262,6 @@
                                     <!-- No Tray button: the title bar's minimise already goes to the tray, via the
                                          StateChanged handler in MainWindow.xaml.cs. -->
                                     <Button Content="Log" Click="OpenLog_Click" Style="{StaticResource HeaderButton}"/>
-                                    <!-- One button, showing the mode you are in, the way Roch Viewer
-                                         does it: a Light/Dark pair spends half its width naming the
-                                         mode you are not in. -->
-                                    <Button x:Name="ThemeButton" Content="Dark" Click="Theme_Click"
-                                            Style="{StaticResource HeaderButton}" ToolTip="Switch between light and dark"/>
                                 </StackPanel>
                             </Grid>
                             <TextBlock Text="{Binding BiosLine}" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>

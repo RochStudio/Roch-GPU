@@ -1,4 +1,4 @@
-﻿using GpuTuner.Core.Backends;
+using GpuTuner.Core.Backends;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
 using GpuTuner.Core.Models;
@@ -51,6 +51,13 @@ public static class CommandLine
             switch (args[0].ToLowerInvariant())
             {
                 case "info": Start(); return Info(svc);
+                case "sensors":
+                    Start();
+                    var telemetry = svc.Backend.ReadTelemetry(svc.GpuIndex);
+                    Console.WriteLine(Fmt(telemetry));
+                    foreach (var sensor in telemetry.SupplementalSensors)
+                        Console.WriteLine($"{sensor.Name}: {sensor.Value:0.###} {sensor.Unit}");
+                    return 0;
                 case "monitor": Start(); return Monitor(svc, store, opts);
                 case "apply": Start(); return Apply(svc, opts);
                 case "apply-profile":
@@ -401,6 +408,7 @@ public static class CommandLine
         RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
 
           RochGPU.exe info
+          RochGPU.exe sensors                    list supplemental native sensor readings
           RochGPU.exe monitor [--interval 1000]
           RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
             each gated flag arms its own lever for that apply; a lever you do not name goes back to the driver's own value
