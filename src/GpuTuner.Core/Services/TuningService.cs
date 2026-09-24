@@ -17,7 +17,30 @@ public sealed class TuningService : IDisposable
     public int GpuIndex { get; private set; }
     public GpuCapabilities Capabilities { get; private set; } = new();
     public GpuDevice Device => Backend.Devices[GpuIndex];
-    public GpuGraphicsInfo ReadGraphicsInfo() => Backend.ReadGraphicsInfo(GpuIndex);
+    public GpuGraphicsInfo ReadGraphicsInfo()
+    {
+        lock (_lock) { return Backend.ReadGraphicsInfo(GpuIndex); }
+    }
+
+    public GpuTuningState ReadTuningState()
+    {
+        lock (_lock) { return Backend.ReadTuningState(GpuIndex); }
+    }
+
+    public int ReadVoltageLockMv()
+    {
+        lock (_lock) { return Backend.ReadVoltageLockMv(GpuIndex); }
+    }
+
+    /// <summary>Curve-editor cap changes share the polling lock with full-profile writes.</summary>
+    public void SetVoltageLock(int targetMv)
+    {
+        lock (_lock)
+        {
+            Backend.SetVoltageLock(GpuIndex, targetMv);
+            RefreshLiveVoltageState();
+        }
+    }
 
     /// <summary>The profile currently applied to hardware (null = untouched since launch).</summary>
     public TuningProfile? AppliedProfile { get; private set; }
@@ -289,6 +312,9 @@ public sealed class TuningService : IDisposable
     /// <summary>Apply every setting in the profile. Returns a list of per-setting failures (empty on success).</summary>
     public IReadOnlyList<string> Apply(TuningProfile profile)
     {
+        if (Capabilities.VoltageStyle == VoltageControlStyle.Percent
+            && !string.IsNullOrEmpty(profile.GpuName) && profile.GpuName != Device.Name)
+            return new[] { $"Profile belongs to {profile.GpuName}. Save a new profile for {Device.Name}; Intel tuning units differ." };
         var errors = new List<string>();
         var p = profile.Clone();
         p.ClampTo(Capabilities);
@@ -322,7 +348,7 @@ public sealed class TuningService : IDisposable
                 boostPct = 0;
                 Log?.Invoke($"Voltage offset: {curveOffsetMv:+#;-#;0} mV");
             }
-            else
+            else if (Capabilities.VoltageStyle == VoltageControlStyle.Absolute)
             {
                 // Two independent levers, the way Afterburner exposes them:
                 //   VoltageBoostPercent raises the ceiling above the top of the V/F table
@@ -393,7 +419,7 @@ public sealed class TuningService : IDisposable
             if (Capabilities.CanSetVoltageBoost) Try("Voltage boost", () => Backend.SetVoltageBoost(GpuIndex, boostPct));
             // Armed rails take their explicit targets after boost. Disabled rails that were never
             // armed are not touched, so the driver-owned, card-specific baseline remains visible.
-            WriteXoc(p, Try);
+            WriteXoc(p, Try, Capabilities.VoltageStyle == VoltageControlStyle.Percent ? XocLever.All & ~XocLever.ClockRange : XocLever.All);
 
             // The undervolt is enforced by the voltage lock, which is independent of the p-state clock
             // offset — so unlike the old delta-table approach these no longer share storage and both
@@ -427,13 +453,16 @@ public sealed class TuningService : IDisposable
             if (Capabilities.CanSetFanSpeed)
                 WriteFans(p.FanMode, p.FixedFanPercent, p.FixedFanPercents, p.FanCurve, Try);
 
-            if (ManualCurveActive && (Capabilities.CanSetVoltageCurve || Capabilities.CanSetCoreOffset))
+            if (ManualCurveActive && !Capabilities.CanEditVfCurve && (Capabilities.CanSetVoltageCurve || Capabilities.CanSetCoreOffset))
             {
                 errors.Add("Note: your hand-edited V/F curve was overwritten — the curve editor and these " +
                            "sliders share the same delta table. Re-open the curve editor to redo it.");
                 ManualCurveActive = false;
             }
 
+            // Intel frequency limits go after offset writes, which may touch the same policy.
+            if (Capabilities.VoltageStyle == VoltageControlStyle.Percent && Capabilities.CanLockClocks)
+                WriteXoc(p, Try, XocLever.ClockRange);
             AppliedProfile = p;
 
             // Verify-after-write, still holding the lock: the vendor libraries are not re-entrant and
@@ -516,13 +545,13 @@ public sealed class TuningService : IDisposable
         }
 
         Note("core offset", asked.CoreOffsetMhz, applied.CoreOffsetMhz, " MHz");
-        Note("memory offset", asked.MemoryOffsetMhz, applied.MemoryOffsetMhz, " MHz");
+        Note("memory tuning", asked.MemoryOffsetMhz, applied.MemoryOffsetMhz, " " + Capabilities.MemoryClockUnit);
         Note("power limit", asked.PowerLimitPercent, applied.PowerLimitPercent, "%");
         // Only when the card has a thermal policy at all. Where it hasn't, the profile still carries
         // a default nobody asked for — a hidden, driver-owned limit on RDNA 4 — and noting that on
         // every apply is noise. The front-end that knows the user actually asked says so instead.
         if (Capabilities.CanSetTempLimit)
-            Note("temperature limit", asked.TempLimitC, applied.TempLimitC, "°C");
+            Note("temperature limit", asked.TempLimitC, applied.TempLimitC, Capabilities.TempLimitUnit);
         Note("voltage boost", asked.VoltageBoostPercent, applied.VoltageBoostPercent, "%");
         Note("undervolt", asked.VoltageOffsetMv, applied.VoltageOffsetMv, " mV");
         // Only worth reporting for a lever that was armed; the rest were written back to the
@@ -819,10 +848,17 @@ public sealed class TuningService : IDisposable
     /// <summary>Read what the driver currently has, as a profile (used to seed the sliders on launch).</summary>
     public TuningProfile ReadCurrentAsProfile()
     {
+        lock (_lock) { return ReadCurrentAsProfileLocked(); }
+    }
+
+    private TuningProfile ReadCurrentAsProfileLocked()
+    {
         var s = Backend.ReadTuningState(GpuIndex);
         return new TuningProfile
         {
             Name = "Current",
+            XocArmed = Capabilities.VoltageStyle == VoltageControlStyle.Percent && Capabilities.CanLockClocks
+                && (s.LockedClockMinMhz > 0 || s.LockedClockMaxMhz > 0) ? XocLever.ClockRange : XocLever.None,
             GpuName = Device.Name,
             CoreOffsetMhz = s.CoreOffsetMhz,
             MemoryOffsetMhz = s.MemoryOffsetMhz,
@@ -853,7 +889,8 @@ public sealed class TuningService : IDisposable
                 ? lk
                 : VoltagePlan.CeilingMv(s.VoltageBoostPercent, s.VoltageOffsetMv,
                                         StockCeilingMv, BoostCeilingMv, Capabilities.StockMaxVoltageMv),
-            FanMode = s.FanManual ? FanMode.Fixed : FanMode.Auto,
+            FanMode = s.HardwareFanCurve != null ? s.DetectedFanMode ?? FanMode.Curve : s.FanManual ? FanMode.Fixed : FanMode.Auto,
+            FanCurve = s.HardwareFanCurve?.Clone() ?? new FanCurve(),
             FixedFanPercent = s.FanPercent
         };
     }
@@ -920,12 +957,20 @@ public sealed class TuningService : IDisposable
         RunFanCurve(t);
     }
 
-    public void StopPolling()
+    public void StopPolling() => StopPolling(TimeSpan.FromSeconds(10));
+
+    internal void StopPolling(TimeSpan timeout)
     {
         _pollCts?.Cancel();
-        // Wait it out rather than timing out: Dispose tears the vendor context down next, and a poll
-        // still inside a native call would be handed a dead handle.
-        try { _pollTask?.Wait(TimeSpan.FromSeconds(10)); } catch { }
+        // Dispose must not unload a library while a stalled poll is still executing inside it.
+        // Keep the task/context alive on timeout so a later stop can finish safely.
+        try
+        {
+            if (_pollTask != null && !_pollTask.Wait(timeout))
+                throw new GpuBackendException("GPU polling did not stop in time; the driver connection was kept open. Try closing again after the driver responds.");
+        }
+        catch (AggregateException) when (_pollTask?.IsCompleted == true) { }
+        _pollCts?.Dispose();
         _pollCts = null; _pollTask = null;
     }
 
@@ -982,20 +1027,21 @@ public sealed class TuningService : IDisposable
 
     private void RunFanCurve(GpuTelemetry t)
     {
-        FanCurve? curve;
-        lock (_lock) { curve = _activeCurve; }
-        if (curve == null) return;
-
-        var next = curve.Step(t.TemperatureC);
-        if (next == null) return;
-        int pct = (int)Math.Round(next.Value);
-        if (!double.IsNaN(_lastCurveFanSent) && Math.Abs(pct - _lastCurveFanSent) < 1) return;
-        try
+        lock (_lock)
         {
-            lock (_lock) { Backend.SetFanSpeed(GpuIndex, -1, pct); }
-            _lastCurveFanSent = pct;
+            // A fan-mode change must not be followed by a write from the old curve.
+            if (_activeCurve == null || !double.IsFinite(t.TemperatureC)) return;
+            var next = _activeCurve.Step(t.TemperatureC);
+            if (next == null) return;
+            int pct = (int)Math.Round(next.Value);
+            if (!double.IsNaN(_lastCurveFanSent) && Math.Abs(pct - _lastCurveFanSent) < 1) return;
+            try
+            {
+                Backend.SetFanSpeed(GpuIndex, -1, pct);
+                _lastCurveFanSent = pct;
+            }
+            catch (Exception e) { Log?.Invoke("Fan curve: " + e.Message); }
         }
-        catch (Exception e) { Log?.Invoke("Fan curve: " + e.Message); }
     }
 
     /// <summary>

@@ -31,9 +31,7 @@ jobs:
       - name: Test
         run: dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build --nologo
 
-  # Windows is where it actually ships, so prove the thing publishes and produces both executables
-  # in one folder — the CLI-then-GUI order is load-bearing on case-insensitive NTFS and has silently
-  # eaten an executable before.
+  # Windows runs core, telemetry and app regression tests, then publishes the combined GUI/CLI.
   publish-windows:
     name: Publish (windows)
     runs-on: windows-latest

@@ -30,7 +30,14 @@ public sealed class VfCurveEditor : FrameworkElement
     private const double HitRadius = 10;
 
     /// <summary>One press of Up/Down; matches the driver's 5 MHz granularity (see FreqFromY).</summary>
-    private const int NudgeMhz = 5, NudgeCoarseMhz = 25;
+    public int FrequencyStepMhz { get; set; } = 5;
+    public int FrequencyMinMhz { get; set; }
+    public int FrequencyMaxMhz { get; set; } = 10000;
+    public bool DisplayFullFrequencyRange { get; set; }
+    public int VoltageMinMv { get; set; } = 700;
+    public int VoltageMaxMv { get; set; } = 1200;
+    private int NudgeMhz => FrequencyStepMhz;
+    private int NudgeCoarseMhz => FrequencyStepMhz * 5;
 
     private List<VfCurveSample> _points = new();   // Index/VoltageMv/StockMhz fixed; LiveMhz is edited
     private int _dragIndex = -1;
@@ -219,7 +226,7 @@ public sealed class VfCurveEditor : FrameworkElement
         // The top ends are grown to fit, because clipping there hides real data — a 5070 Ti's curve
         // runs to 1240 mV and 3247 MHz, past the 1200/3400 frame, and the last points simply vanished
         // off the right-hand edge with nothing to say they existed.
-        int vMax = AxisVMax, fMax = AxisFMax;
+        int vMax = VoltageMaxMv, fMax = DisplayFullFrequencyRange ? FrequencyMaxMhz : Math.Min(FrequencyMaxMhz, AxisFMax);
         if (_points.Count > 0)
         {
             int topMv = _points[^1].VoltageMv;
@@ -228,7 +235,9 @@ public sealed class VfCurveEditor : FrameworkElement
             for (int i = 0; i < _points.Count; i++) topMhz = Math.Max(topMhz, DisplayMhz(i));
             if (topMhz > fMax) fMax = (topMhz + 199) / 200 * 200;     // next 200 MHz tick
         }
-        return (AxisVMin, vMax, AxisFMin, fMax);
+        int vMin = _points.Count > 0 ? Math.Min(VoltageMinMv, _points[0].VoltageMv) : VoltageMinMv;
+        int fMin = _points.Count > 0 ? Math.Min(AxisFMin, _points.Min(p => Math.Min(p.LiveMhz, p.StockMhz))) : AxisFMin;
+        return (vMin, vMax, DisplayFullFrequencyRange ? FrequencyMinMhz : Math.Max(FrequencyMinMhz, fMin), Math.Min(FrequencyMaxMhz, fMax));
     }
 
     private double PlotW => Math.Max(1, ActualWidth - PadL - PadR);
@@ -246,7 +255,7 @@ public sealed class VfCurveEditor : FrameworkElement
     {
         var (_, _, fMin, fMax) = Bounds();
         double f = fMin + (PadT + PlotH - y) / PlotH * (fMax - fMin);
-        int mhz = (int)Math.Round(f / 5.0) * 5;   // 5 MHz steps, like the driver's granularity
+        int mhz = (int)Math.Round(f / FrequencyStepMhz) * FrequencyStepMhz;
         return Math.Clamp(mhz, fMin, fMax);       // never let a drag off-screen ask for an absurd clock
     }
 

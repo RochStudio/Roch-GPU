@@ -28,6 +28,15 @@ public partial class CurveWindow : Window
         _svc = svc;
         _vm = vm;
         InitializeComponent();
+        Editor.FrequencyStepMhz = svc.Capabilities.VfCurveStepMhz;
+        Editor.FrequencyMinMhz = svc.Capabilities.VfCurveMinMhz;
+        Editor.FrequencyMaxMhz = svc.Capabilities.VfCurveMaxMhz;
+        if (svc.Capabilities.CanEditVfCurve)
+        {
+            Editor.DisplayFullFrequencyRange = true;
+            Editor.VoltageMinMv = svc.Capabilities.MinVoltageMv;
+            Editor.VoltageMaxMv = svc.Capabilities.MaxVoltageMv;
+        }
         Theme.Register(this);   // paints the chrome now, and follows every later light/dark switch
 
         Editor.CurveChanged += (_, _) => UpdateStatus();
@@ -72,7 +81,7 @@ public partial class CurveWindow : Window
                 ? $" The table stops at {top} mV; the boost lets the card run to {ceiling} mV, but adds no points."
                 : "";
             Say($"{pts.Count} curve points loaded ({pts.Min(p => p.VoltageMv)}–{top} mV).{boost} " +
-                "Drag a point, or click one and use ↑/↓ (Shift = 25 MHz, ←/→ to step along). Then Apply to GPU.");
+                $"Drag a point, or use ↑/↓ ({Editor.FrequencyStepMhz} MHz, Shift = {Editor.FrequencyStepMhz * 5} MHz). Then Apply to GPU.");
         }
         catch (Exception ex) { Say("Could not read the curve: " + ex.Message, true); }
     }
@@ -102,14 +111,14 @@ public partial class CurveWindow : Window
         // conversion into something arbitrary.
         var caps = _svc.Capabilities;
         int lo = caps.MinVoltageMv > 0 ? caps.MinVoltageMv : 600;
-        int hi = _svc.BoostCeilingMv > 0 ? _svc.BoostCeilingMv : 1200;
+        int hi = caps.CanEditVfCurve ? caps.MaxVoltageMv : _svc.BoostCeilingMv > 0 ? _svc.BoostCeilingMv : 1200;
         if (mv < lo || mv > hi) { Say($"Voltage must be between {lo} and {hi} mV on this card.", true); return; }
 
         try
         {
             if (_svc.Backend is GpuTuner.Core.Backends.Nvidia.NvApiBackend nv)
             {
-                nv.SetVoltageLock(_svc.GpuIndex, mv);
+                _svc.SetVoltageLock(mv);
                 Editor.SetVoltageCap(mv);
                 // The editor draws everything above an active cap flat without changing the stored
                 // points. Keeping them intact means Remove flatten can reveal the exact underlying
@@ -126,6 +135,12 @@ public partial class CurveWindow : Window
 
     private void RemoveFlatten_Click(object sender, RoutedEventArgs e)
     {
+        if (_svc.Capabilities.CanEditVfCurve)
+        {
+            LoadCurve();
+            Say("Reloaded the applied curve. Use Reset to stock to remove an applied Intel curve flatten.");
+            return;
+        }
         try
         {
             int before = ReadCapMv();
@@ -135,7 +150,7 @@ public partial class CurveWindow : Window
                 return;
             }
 
-            _svc.Backend.SetVoltageLock(_svc.GpuIndex, 0);
+            _svc.SetVoltageLock(0);
             int after = ReadCapMv();
             if (after > 0)
                 throw new InvalidOperationException($"the driver still reports a {after} mV cap");
@@ -156,7 +171,7 @@ public partial class CurveWindow : Window
             // Ask through the interface rather than casting to the NVIDIA backend: ReadVoltageLockMv
             // already returns -1 for "can't report", which is the same answer the cast was producing
             // for everything else, and going through it lets the mock draw a cap too.
-            int mv = _svc.Backend.ReadVoltageLockMv(_svc.GpuIndex);
+            int mv = _svc.ReadVoltageLockMv();
             return mv > 0 ? mv : 0;
         }
         catch { return 0; }
@@ -168,9 +183,10 @@ public partial class CurveWindow : Window
     /// </summary>
     private int ReadCeilingMv()
     {
+        if (_svc.Capabilities.VoltageStyle == VoltageControlStyle.Percent) return 0;
         try
         {
-            var st = _svc.Backend.ReadTuningState(_svc.GpuIndex);
+            var st = _svc.ReadTuningState();
             // Measured ceilings, not the table's top and a compiled-in headroom: the dashed
             // extrapolation past the last curve point is only honest if it stops where the card does.
             // The curve offset needs its own baseline passed in — see VoltagePlan.CeilingMv.
@@ -189,6 +205,7 @@ public partial class CurveWindow : Window
         try
         {
             _svc.SetVfCurveTargets(Array.Empty<VfCurveSample>());
+            if (_svc.Capabilities.CanEditVfCurve) { _vm.CoreOffset = 0; LoadCurve(); }
             Say("Curve cleared on the GPU — back to stock.");
         }
         catch (Exception ex) { Say("Reset failed: " + ex.Message, true); }
@@ -201,6 +218,8 @@ public partial class CurveWindow : Window
             // Only send the points that actually differ; the backend returns the rest to stock.
             var targets = Editor.Points.Where(p => p.LiveMhz != p.StockMhz).ToList();
             _svc.SetVfCurveTargets(targets);
+            if (_svc.Capabilities.CanEditVfCurve)
+                _vm.CoreOffset = _svc.ReadTuningState().CoreOffsetMhz;
 
             // Read back so the user sees what the driver really accepted (it snaps to its own grid).
             var after = _svc.ReadVfCurve();

@@ -1,4 +1,4 @@
-using GpuTuner.App.ViewModels;
+﻿using GpuTuner.App.ViewModels;
 using GpuTuner.Core.Models;
 
 int pass = 0, fail = 0;
@@ -72,5 +72,18 @@ var readOnlyClocks = new TelemetryTable(empty, new GpuCapabilities(), new[] { "x
 Check("read-only XBAR telemetry visible", readOnlyClocks.Rows.Any(r => r.Name == "Crossbar"));
 Check("read-only SYS telemetry visible", readOnlyClocks.Rows.Any(r => r.Name == "SYS"));
 Check("instantaneous clock not called effective", readOnlyClocks.Rows.Any(r => r.Name == "GPU core (measured)") && !readOnlyClocks.Rows.Any(r => r.Name.Contains("effective")));
+var intelTable = new TelemetryTable(empty, new GpuCapabilities { VoltageStyle = VoltageControlStyle.Percent });
+Check("Intel has no invented measured-core sensor", !intelTable.Rows.Any(r => r.Name == "GPU core (measured)"));
+Check("Intel board-power row exists before second sample", intelTable.Rows.Any(r => r.Name == "Board draw"));
+intelTable.Add(empty with { PowerWatts = 36.5 });
+Check("Intel second sample populates board-power row", intelTable.Rows.Single(r => r.Name == "Board draw").Current == 36.5.ToString("F1") + " W");
+intelTable.Add(empty with { SupplementalSensors = new[] {
+    new SupplementalSensor("intel-memory-read", "Memory read bandwidth", "MB/s", 122818),
+    new SupplementalSensor("intel-memory-voltage", "Memory voltage", "V", 1.352),
+    new SupplementalSensor("intel-sa-vr", "SA voltage regulator", "°C", 71),
+    new SupplementalSensor("intel-gpu-power", "GPU power", "W", 110.196) } });
+Check("Intel bandwidth gets its own group", intelTable.Rows.Any(r => r.IsHeader && r.Name == "MEMORY BANDWIDTH"));
+Check("Intel memory voltage retains precision", intelTable.Rows.Single(r => r.Name == "Memory voltage").Current == 1.352.ToString("F3") + " V");
+Check("Intel GPU power rendered", intelTable.Rows.Single(r => r.Name == "GPU power").Current == 110.196.ToString("F1") + " W");
 Console.WriteLine($"Telemetry: {pass} passed, {fail} failed");
 Environment.ExitCode = fail == 0 ? 0 : 1;

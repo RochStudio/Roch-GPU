@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -78,7 +78,8 @@ public sealed class MainViewModel : ObservableObject
         // null, so a ?? chain over names stopped there and never reached the startup profile.
         var fanSource = Load(lastFanProfile) ?? Load(settings.StartupProfile);
         TuningProfile? Load(string? name) => string.IsNullOrEmpty(name) ? null : store.Load(name);
-        if (fanSource is { } sawFans)
+        if (!Caps.CanReadHardwareFanCurve && fanSource is { } sawFans
+            && (string.IsNullOrEmpty(sawFans.GpuName) || sawFans.GpuName == Device.Name))
         {
             FanModeIndex = (int)sawFans.FanMode;
             FixedFan = sawFans.FixedFanPercent;
@@ -136,13 +137,16 @@ public sealed class MainViewModel : ObservableObject
     public GpuDevice Device { get; }
     public string BackendName { get; }
     public string VramText => Device.VramMegabytes > 0 ? $"{Device.VramMegabytes / 1024.0:0.#} GB" : "";
+    public string TelemetryDeviceName => DeviceDisplayName +
+        (Device.Name.Contains("Arc", StringComparison.OrdinalIgnoreCase) && Device.Name.Contains("Pro B60", StringComparison.OrdinalIgnoreCase)
+            ? " · Battlemage BMG-G21 WKSTN" : "");
     public string DeviceDisplayName => Device.VramMegabytes > 0
         ? $"{Device.Name} ({Device.VramMegabytes / 1024.0:0.#}GB)"
         : Device.Name;
     public string DriverLine => !string.IsNullOrWhiteSpace(Device.DriverVersion)
         ? $"Driver: {Device.DriverVersion}" : $"Backend: {BackendName}";
     public string BiosLine => !string.IsNullOrWhiteSpace(Device.BiosVersion)
-        ? $"vBIOS: {Device.BiosVersion}" : "";
+        ? $"vBIOS: {Device.BiosVersion}" : Device.Vendor == "Intel" ? "vBIOS: Unavailable" : "";
     public string MemoryTypeLine
     {
         get
@@ -153,7 +157,7 @@ public sealed class MainViewModel : ObservableObject
         }
     }
     public string PcieBusLine => string.IsNullOrWhiteSpace(_graphicsInfo.BusInterface)
-        ? "" : $"PCIe Bus: {_graphicsInfo.BusInterface}";
+        ? Device.Vendor == "Intel" ? "PCIe Bus: Unavailable" : "" : $"PCIe Bus: {_graphicsInfo.BusInterface}";
     public string ResizableBarLine => string.IsNullOrWhiteSpace(_graphicsInfo.ResizableBar)
         ? "" : $"Resizable BAR: {_graphicsInfo.ResizableBar}";
 
@@ -172,7 +176,7 @@ public sealed class MainViewModel : ObservableObject
         }
     }    public string CoreRangeText => $"{Caps.CoreOffsetMinMhz:+#;-#;0} … {Caps.CoreOffsetMaxMhz:+#;-#;0} MHz";
     public string MemRangeText => Caps.MemoryClockIsAbsolute
-        ? $"{Caps.MemoryOffsetMinMhz} … {Caps.MemoryOffsetMaxMhz} MHz (stock {Caps.MemoryClockDefaultMhz})"
+        ? $"{Caps.MemoryOffsetMinMhz} … {Caps.MemoryOffsetMaxMhz} {Caps.MemoryClockUnit} (stock {Caps.MemoryClockDefaultMhz})"
         : $"{Caps.MemoryOffsetMinMhz:+#;-#;0} … {Caps.MemoryOffsetMaxMhz:+#;-#;0} MHz";
 
     // ---------------- which controls this card actually has ----------------
@@ -186,8 +190,8 @@ public sealed class MainViewModel : ObservableObject
     /// card may reach above the top of the V/F table; it is a separate lever from the cap, which
     /// holds the core at or below a chosen mV.
     /// </summary>
-    public bool HasVoltageBoost => IsVoltageAbsolute && Caps.CanSetVoltageBoost;
-    public bool HasCurveEditor => Caps.CanSetVoltageCurve;
+    public bool HasVoltageBoost => (IsVoltageAbsolute || Caps.VoltageStyle == VoltageControlStyle.Percent) && Caps.CanSetVoltageBoost;
+    public bool HasCurveEditor => Caps.CanSetVoltageCurve || Caps.CanEditVfCurve;
     /// <summary>NVVDD: the core rail's own ceiling, a separate lever from the boost and the cap.</summary>
     public bool HasVoltageRail => Caps.CanSetVoltageRail;
     /// <summary>MSVDD: the rail feeding the crossbar, SYS and video domains.</summary>
@@ -203,7 +207,13 @@ public sealed class MainViewModel : ObservableObject
     /// Whether the card exposes any lever that remains behind the XOC gate. XBAR, SYS and video are
     /// ordinary main-window clock controls now and are deliberately not part of this decision.
     /// </summary>
-    public bool HasXoc => HasVoltageRail || HasMsvddRail || HasOcp || HasClockLock;
+    public bool HasXoc => HasVoltageRail || HasMsvddRail || HasOcp || (HasClockLock && !IntelTuning);
+    public bool HasIntelClockRange => IntelTuning && HasClockLock;
+    public bool IntelClockRangeEnabled
+    {
+        get => XocArmed.Has(XocLever.ClockRange);
+        set { if (value != IntelClockRangeEnabled) { XocArmed = XocArmed.With(XocLever.ClockRange, value); Dirty(); } }
+    }
     public bool HasTempLimit => Caps.CanSetTempLimit;
     public bool HasZeroRpm => Caps.CanSetZeroRpm;
     public bool HasMemoryTiming => Caps.CanSetMemoryTiming && Caps.MemoryTimingOptions.Count > 0;
@@ -217,7 +227,9 @@ public sealed class MainViewModel : ObservableObject
         (HasSys ? XocLever.Sys : 0) |
         (HasVideo ? XocLever.Video : 0);
 
-    public string MemoryLabel => Caps.MemoryClockIsAbsolute ? "Memory Clock (MHz)" : "Memory Clock (MHz offset)";
+    public string MemoryLabel => Caps.MemoryClockUnit == "Mbps" ? "Memory Speed (Mbps)" : Caps.MemoryClockIsAbsolute ? "Memory Clock (MHz)" : "Memory Clock (MHz offset)";
+    public string TempLabel => $"Temperature Limit ({Caps.TempLimitUnit})";
+    public string VoltageBoostLabel => Caps.VoltageStyle == VoltageControlStyle.Percent ? "Voltage Limit (%)" : "Voltage Boost (%)";
     public string CoreLabel => "Core Offset (MHz)";
     public string AmdClockSupportText => $"Offset range: {CoreRangeText}. Absolute core limits and FCLK adjustment are unavailable in this backend. FCLK appears in Telemetry when reported.";
     public string VoltageLabel => IsVoltageOffset ? "Voltage Offset (mV)" : "Core Voltage (mV)";
@@ -225,7 +237,7 @@ public sealed class MainViewModel : ObservableObject
 
     public IReadOnlyList<string> MemoryTimingOptions => Caps.MemoryTimingOptions;
     public string VoltageOffsetRangeText => $"{Caps.VoltageOffsetMinMv} … {Caps.VoltageOffsetMaxMv} mV (0 = stock)";
-    public string VoltageBoostRangeText =>
+    public string VoltageBoostRangeText => Caps.VoltageStyle == VoltageControlStyle.Percent ? $"{Caps.VoltageBoostMinPercent} … {Caps.VoltageBoostMaxPercent}% of Intel voltage headroom." :
         $"{Caps.VoltageBoostMinPercent} … {Caps.VoltageBoostMaxPercent} % (0 = stock ceiling). " +
         "Raises how far the core may be driven above the top of the V/F table; it does not add curve points.";
 
@@ -235,7 +247,7 @@ public sealed class MainViewModel : ObservableObject
     // ask. Better to show nothing than a number invented for a different card.
 
     public string PowerRangeText => $"{Caps.PowerLimitMinPercent} … {Caps.PowerLimitMaxPercent} % (default {Caps.PowerLimitDefaultPercent})";
-    public string TempRangeText => $"{Caps.TempLimitMinC} … {Caps.TempLimitMaxC} °C (default {Caps.TempLimitDefaultC})";
+    public string TempRangeText => $"{Caps.TempLimitMinC} … {Caps.TempLimitMaxC} {Caps.TempLimitUnit} (default {Caps.TempLimitDefaultC})";
 
     // ------------------------------------------------------------------ editor values (sliders)
     private int _core, _mem, _power, _temp, _volt, _uv, _vTarget, _rail, _railFloor, _msvdd, _msvddFloor, _xbar, _sys, _video, _lockLo, _lockHi, _fanFixed, _fanModeIndex;
@@ -243,26 +255,31 @@ public sealed class MainViewModel : ObservableObject
 
     // Each numeric property clamps to the driver range on set, so typing "+9999" or dragging past the end is safe,
     // and raises both the "…Text" label and the "…Input" text-box mirror so slider and box stay in sync.
-    /// <summary>Core offsets snap to the driver's own 15 MHz grid — see <see cref="ClockStep"/>.</summary>
-    private const int CoreStepMhz = ClockStep.CoreMhz;
+    /// <summary>Core offset editor increments use a 15 MHz grid on Intel — see <see cref="ClockStep"/>.</summary>
+    private bool _loadingEditor;
+    private int EditorStep(int step) => IntelTuning && _loadingEditor ? 1 : step;
+    private bool IntelTuning => Caps.VoltageStyle == VoltageControlStyle.Percent;
+    public int CoreStepMhz => IntelTuning ? 15 : Caps.CoreOffsetStepMhz;
 
-    public int CoreOffset { get => _core; set => SetTuned(ref _core, ClockStep.SnapWithin(value, CoreStepMhz, Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz), Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz, nameof(CoreOffset)); }
+    public int CoreOffset { get => _core; set => SetTuned(ref _core, ClockStep.SnapWithin(value, EditorStep(CoreStepMhz), Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz), Caps.CoreOffsetMinMhz, Caps.CoreOffsetMaxMhz, nameof(CoreOffset)); }
     /// <summary>
     /// Grid the memory value snaps to. An NVIDIA offset goes in 25 MHz steps; an absolute AMD memory
     /// clock is deliberately left alone (1 = no snapping), because its stock value sits wherever the
     /// driver puts it — 2518 MHz would round to 2525 and overclock the card just from reading it.
     /// </summary>
-    private int MemorySnapMhz => Caps.MemoryClockIsAbsolute ? 1 : ClockStep.MemoryMhz;
+    private int MemorySnapMhz => IntelTuning ? EditorStep(100) : Caps.MemoryClockIsAbsolute ? 1 : ClockStep.MemoryMhz;
 
     /// <summary>How far one nudge or slider step moves memory. Bound by the slider too.</summary>
-    public int MemoryStepMhz => Caps.MemoryClockIsAbsolute ? 5 : ClockStep.MemoryMhz;
+    public int MemoryStepMhz => IntelTuning ? 100 : Caps.MemoryClockIsAbsolute ? 5 : ClockStep.MemoryMhz;
+    public int PowerStepPercent => IntelTuning ? 5 : 1;
+    public int TempStep => IntelTuning ? 5 : 1;
 
     public int MemoryOffset { get => _mem; set => SetTuned(ref _mem, ClockStep.SnapWithin(value, MemorySnapMhz, Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz), Caps.MemoryOffsetMinMhz, Caps.MemoryOffsetMaxMhz, nameof(MemoryOffset)); }
-    public int PowerLimit { get => _power; set => SetTuned(ref _power, value, Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent, nameof(PowerLimit)); }
-    public int TempLimit { get => _temp; set => SetTuned(ref _temp, value, Caps.TempLimitMinC, Caps.TempLimitMaxC, nameof(TempLimit)); }
+    public int PowerLimit { get => _power; set => SetTuned(ref _power, ClockStep.SnapWithin(value, EditorStep(PowerStepPercent), Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent), Caps.PowerLimitMinPercent, Caps.PowerLimitMaxPercent, nameof(PowerLimit)); }
+    public int TempLimit { get => _temp; set => SetTuned(ref _temp, ClockStep.SnapWithin(value, EditorStep(TempStep), Caps.TempLimitMinC, Caps.TempLimitMaxC), Caps.TempLimitMinC, Caps.TempLimitMaxC, nameof(TempLimit)); }
     /// <summary>Over-voltage percentage. Snaps to the 5% grid — see <see cref="ClockStep.VoltageBoostPercent"/>.</summary>
-    private const int VoltageBoostStepPercent = ClockStep.VoltageBoostPercent;
-    public int VoltageBoost { get => _volt; set => SetTuned(ref _volt, ClockStep.SnapWithin(value, VoltageBoostStepPercent, Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent), Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent, nameof(VoltageBoost)); }
+    public int VoltageBoostStepPercent => ClockStep.VoltageBoostPercent;
+    public int VoltageBoost { get => _volt; set => SetTuned(ref _volt, ClockStep.SnapWithin(value, EditorStep(VoltageBoostStepPercent), Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent), Caps.VoltageBoostMinPercent, Caps.VoltageBoostMaxPercent, nameof(VoltageBoost)); }
     public int VoltageOffset { get => _uv; set { if (SetTuned(ref _uv, value, Caps.VoltageOffsetMinMv, Caps.VoltageOffsetMaxMv, nameof(VoltageOffset))) OnPropertyChanged(nameof(VoltageCapText)); } }
     /// <summary>Absolute ceiling in mV the core is held at — the "voltage cap" slider. Independent of
     /// <see cref="VoltageBoost"/>, which raises the top of the range this caps within.</summary>
@@ -339,8 +356,7 @@ public sealed class MainViewModel : ObservableObject
         string name = spec[..colon];
         if (!int.TryParse(spec[(colon + 1)..], out int dir) || dir == 0) return;
 
-        // Step sizes match how coarse each control is: the clocks in the driver's own granularity
-        // (core 15 MHz, memory offset 25), voltage in 5s, percentages in 1s.
+        // Use the same increments for arrow buttons and sliders.
         switch (name)
         {
             case "volt": TargetVoltage += 5 * dir; break;
@@ -350,8 +366,8 @@ public sealed class MainViewModel : ObservableObject
             case "voltoffset": VoltageOffset += 5 * dir; break;
             case "core": CoreOffset += CoreStepMhz * dir; break;
             case "mem": MemoryOffset += MemoryStepMhz * dir; break;
-            case "power": PowerLimit += dir; break;
-            case "temp": TempLimit += dir; break;
+            case "power": PowerLimit += PowerStepPercent * dir; break;
+            case "temp": TempLimit += TempStep * dir; break;
             case "rail": VoltageRailMax += 5 * dir; break;
             case "msvdd": MsvddRailMax += 5 * dir; break;
             case "railfloor": VoltageRailFloor += 5 * dir; break;
@@ -457,8 +473,9 @@ public sealed class MainViewModel : ObservableObject
     public int[] PerFanPercents { get; private set; } = Array.Empty<int>();
 
     /// <summary>The fan window wrote to the card; bring this window's controls into line with it.</summary>
-    public void SyncFansFromService(FanMode mode, int[] perFan)
+    public void SyncFansFromService(FanMode mode, int percent, int[] perFan)
     {
+        FixedFan = percent;
         PerFanPercents = (int[])perFan.Clone();
         FanModeIndex = (int)mode;
         RefreshAppliedSummary();
@@ -509,7 +526,7 @@ public sealed class MainViewModel : ObservableObject
     public XocLever XocArmed
     {
         get => _xocArmed;
-        private set { if (Set(ref _xocArmed, value)) OnPropertyChanged(nameof(XocStatusText)); }
+        private set { if (Set(ref _xocArmed, value)) { OnPropertyChanged(nameof(XocStatusText)); OnPropertyChanged(nameof(IntelClockRangeEnabled)); } }
     }
     private XocLever _xocArmed;
 
@@ -557,7 +574,7 @@ public sealed class MainViewModel : ObservableObject
     public string CoreOffsetText => $"{CoreOffset:+#;-#;0} MHz";
     public string MemoryOffsetText => $"{MemoryOffset:+#;-#;0} MHz";
     public string PowerLimitText => $"{PowerLimit} %";
-    public string TempLimitText => $"{TempLimit} °C";    public string VoltageOffsetText => $"{VoltageOffset:+#;-#;0} mV";
+    public string TempLimitText => $"{TempLimit} {Caps.TempLimitUnit}";    public string VoltageOffsetText => $"{VoltageOffset:+#;-#;0} mV";
     public string TargetVoltageText => $"{TargetVoltage} mV";
     /// <summary>What this card really tops out at — the curve's last point is a step below it.</summary>
     public int StockCeilingMv => _svc.StockCeilingMv;
@@ -649,10 +666,10 @@ public sealed class MainViewModel : ObservableObject
     /// would be no way back to an unpinned card once the range had been touched.
     /// </summary>
     public bool ClockLockIsOff =>
-        _lockLo <= Caps.ClockLockMinMhz && _lockHi >= Caps.ClockLockMaxMhz;
+        IntelTuning ? !IntelClockRangeEnabled : _lockLo <= Caps.ClockLockMinMhz && _lockHi >= Caps.ClockLockMaxMhz;
 
     public string ClockLockRangeText =>
-        $"{Caps.ClockLockMinMhz} … {Caps.ClockLockMaxMhz} MHz. Holds the graphics clock inside a window; both at the low end unpins it.";
+        $"{Caps.ClockLockMinMhz} … {Caps.ClockLockMaxMhz} MHz. Holds the graphics clock inside a window; Disable to restore driver defaults.";
     public string SysOffsetRangeText =>
         $"{Caps.SysOffsetMinMhz:+#;-#;0} \u2026 {Caps.SysOffsetMaxMhz:+#;-#;0} MHz. The SYS domain, from the same private family as the crossbar.";
     public string VideoOffsetRangeText =>
@@ -737,7 +754,7 @@ public sealed class MainViewModel : ObservableObject
             // this line should show the truth.
             try
             {
-                var a = _svc.Backend.ReadTuningState(_svc.GpuIndex);
+                var a = _svc.ReadTuningState();
                 // Voltage as an absolute cap, not the old "uv -90 mV" offset: the offset is always 0
                 // now that one slider drives both levers, so it told you nothing. Name the lever too —
                 // the private lock and the clock cap look different in a monitoring tool.
@@ -746,9 +763,11 @@ public sealed class MainViewModel : ObservableObject
                 {
                     volts = a.VoltageOffsetMv == 0 ? "stock" : $"{a.VoltageOffsetMv:+#;-#;0} mV";
                 }
+                else if (Caps.VoltageStyle == VoltageControlStyle.Percent)
+                    volts = $"limit {a.VoltageBoostPercent}%";
                 else
                 {
-                    int cap = _svc.Backend.ReadVoltageLockMv(_svc.GpuIndex);
+                    int cap = _svc.ReadVoltageLockMv();
                     volts = cap > 0
                         ? $"{cap} mV" + (_svc.VoltageLockMechanism is "none" or "n/a" or "" ? "" : $" ({_svc.VoltageLockMechanism})")
                         : a.VoltageBoostPercent > 0 ? $"boost +{a.VoltageBoostPercent}%" : "stock";
@@ -756,19 +775,19 @@ public sealed class MainViewModel : ObservableObject
 
                 // Memory is an absolute clock on AMD and an offset on NVIDIA; a temperature limit the
                 // driver owns is not worth a column at all.
-                string mem = Caps.MemoryClockIsAbsolute ? $"{a.MemoryOffsetMhz} MHz" : $"{a.MemoryOffsetMhz:+#;-#;0}";
-                string temp = Caps.CanSetTempLimit ? $" · temp {a.TempLimitC}°C" : "";
+                string mem = Caps.MemoryClockIsAbsolute ? $"{a.MemoryOffsetMhz} {Caps.MemoryClockUnit}" : $"{a.MemoryOffsetMhz:+#;-#;0}";
+                string temp = Caps.CanSetTempLimit ? $" · temp {a.TempLimitC}{Caps.TempLimitUnit}" : "";
                 string extras = "";
                 if (Caps.CanSetMemoryTiming && a.MemoryTimingLevel > 0 && a.MemoryTimingLevel < Caps.MemoryTimingOptions.Count)
                     extras += $" · {Caps.MemoryTimingOptions[a.MemoryTimingLevel].ToLowerInvariant()}";
                 if (Caps.CanSetZeroRpm && !a.ZeroRpm) extras += " · zero-rpm off";
 
                 return $"On GPU: volt {volts} · core {a.CoreOffsetMhz:+#;-#;0} · mem {mem} · " +
-                       $"power {a.PowerLimitPercent}%{temp} · fan {(a.FanManual ? a.FanPercent + "%" : "auto")}{extras}";
+                       $"power {a.PowerLimitPercent}%{temp} · fan {(a.DetectedFanMode == FanMode.Curve ? "curve" : a.FanManual ? a.FanPercent + "%" : "auto")}{extras}";
             }
             catch
             {
-                return $"Applied: core {p.CoreOffsetMhz:+#;-#;0} · mem {p.MemoryOffsetMhz:+#;-#;0} · power {p.PowerLimitPercent}% · temp {p.TempLimitC}°C · fan {p.FanMode}";
+                return $"Applied: core {p.CoreOffsetMhz:+#;-#;0} · mem {p.MemoryOffsetMhz:+#;-#;0} · power {p.PowerLimitPercent}% · temp {p.TempLimitC}{Caps.TempLimitUnit} · fan {p.FanMode}";
             }
         }
     }
@@ -824,6 +843,7 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        if (!CanLoadProfile(p)) return;
         p.ClampTo(Caps);
         LoadIntoEditor(p);
         SelectedProfile = slot.Name;
@@ -866,14 +886,16 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private static string DescribeProfile(TuningProfile p)
+    private string DescribeProfile(TuningProfile p)
     {
+        if (Caps.VoltageStyle == VoltageControlStyle.Percent && !string.IsNullOrEmpty(p.GpuName) && p.GpuName != Device.Name)
+            return $"Saved for {p.GpuName}. Save a profile for the current GPU before applying.";
         var bits = new List<string>
         {
             $"core {p.CoreOffsetMhz:+#;-#;0} MHz",
-            $"mem {p.MemoryOffsetMhz:+#;-#;0} MHz",
+            $"mem {p.MemoryOffsetMhz} {Caps.MemoryClockUnit}",
             $"power {p.PowerLimitPercent}%",
-            $"temp {p.TempLimitC} °C"
+            $"temp {p.TempLimitC} {Caps.TempLimitUnit}"
         };
         if (p.TargetVoltageMv > 0) bits.Insert(0, $"{p.TargetVoltageMv} mV");
         bits.Add(p.FanMode switch
@@ -960,40 +982,45 @@ public sealed class MainViewModel : ObservableObject
 
     public void LoadIntoEditor(TuningProfile p)
     {
-        CoreOffset = p.CoreOffsetMhz;
-        MemoryOffset = p.MemoryOffsetMhz;
-        PowerLimit = p.PowerLimitPercent;
-        TempLimit = p.TempLimitC;
-        VoltageBoost = p.VoltageBoostPercent;
-        VoltageOffset = p.VoltageOffsetMv;
-        VoltageRailMax = p.VoltageRailMaxMv > 0 ? p.VoltageRailMaxMv : StockNvvddMaxMv;
-        MsvddRailMax = p.MsvddRailMaxMv > 0 ? p.MsvddRailMaxMv : StockMsvddMaxMv;
-        VoltageRailFloor = p.VoltageRailFloorMv > 0 ? p.VoltageRailFloorMv : Caps.VoltageRailStockFloorMv;
-        MsvddRailFloor = p.MsvddRailFloorMv > 0 ? p.MsvddRailFloorMv : Caps.MsvddRailStockFloorMv;
-        XbarOffset = p.XbarOffsetMhz;
-        NvvddOcpAmps = p.NvvddOcpMilliamps > 0 ? p.NvvddOcpMilliamps / 1000 : Caps.NvvddOcpStockMilliamps / 1000;
-        MsvddOcpAmps = p.MsvddOcpMilliamps > 0 ? p.MsvddOcpMilliamps / 1000 : Caps.MsvddOcpStockMilliamps / 1000;
-        SysOffset = p.SysOffsetMhz;
-        // 0/0 in a profile is "unpinned", which the slider shows as the full range.
-        ClockLockMin = p.ClockLockMinMhz > 0 ? p.ClockLockMinMhz : Caps.ClockLockMinMhz;
-        ClockLockMax = p.ClockLockMaxMhz > 0 ? p.ClockLockMaxMhz : Caps.ClockLockMaxMhz;
-        VideoOffset = p.VideoOffsetMhz;
-        // These clocks no longer expose a gate in the UI. Keep only the genuinely gated XOC bits
-        // in editor state; BuildProfileFromEditor adds the main clocks back for every Apply.
-        XocArmed = p.XocArmed & ~MainClockLevers;
-        OnPropertyChanged(nameof(XocStatusText));   // live-ness may have changed even if the flags did not
-        // "No cap" is the top of what the card can reach, not the stock ceiling: with a boost applied
-        // the two differ, and seeding the lower one would turn "uncapped" into a cap at stock the
-        // moment this was built back into a profile.
-        TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : ReachableCeilingMv;
-        ZeroRpm = p.ZeroRpm;
-        MemoryTimingIndex = p.MemoryTimingLevel;
-        FanModeIndex = (int)p.FanMode;
-        FixedFan = p.FixedFanPercent;
-        PerFanPercents = (int[])p.FixedFanPercents.Clone();
-        EditorCurve = p.FanCurve.Clone();
-        OnPropertyChanged(nameof(EditorCurve));
-        RaiseTexts();
+        _loadingEditor = true;
+        try
+        {
+            CoreOffset = p.CoreOffsetMhz;
+            MemoryOffset = p.MemoryOffsetMhz;
+            PowerLimit = p.PowerLimitPercent;
+            TempLimit = p.TempLimitC;
+            VoltageBoost = p.VoltageBoostPercent;
+            VoltageOffset = p.VoltageOffsetMv;
+            VoltageRailMax = p.VoltageRailMaxMv > 0 ? p.VoltageRailMaxMv : StockNvvddMaxMv;
+            MsvddRailMax = p.MsvddRailMaxMv > 0 ? p.MsvddRailMaxMv : StockMsvddMaxMv;
+            VoltageRailFloor = p.VoltageRailFloorMv > 0 ? p.VoltageRailFloorMv : Caps.VoltageRailStockFloorMv;
+            MsvddRailFloor = p.MsvddRailFloorMv > 0 ? p.MsvddRailFloorMv : Caps.MsvddRailStockFloorMv;
+            XbarOffset = p.XbarOffsetMhz;
+            NvvddOcpAmps = p.NvvddOcpMilliamps > 0 ? p.NvvddOcpMilliamps / 1000 : Caps.NvvddOcpStockMilliamps / 1000;
+            MsvddOcpAmps = p.MsvddOcpMilliamps > 0 ? p.MsvddOcpMilliamps / 1000 : Caps.MsvddOcpStockMilliamps / 1000;
+            SysOffset = p.SysOffsetMhz;
+            // 0/0 in a profile is "unpinned", which the slider shows as the full range.
+            ClockLockMin = p.ClockLockMinMhz > 0 ? p.ClockLockMinMhz : Caps.ClockLockMinMhz;
+            ClockLockMax = p.ClockLockMaxMhz > 0 ? p.ClockLockMaxMhz : Caps.ClockLockMaxMhz;
+            VideoOffset = p.VideoOffsetMhz;
+            // These clocks no longer expose a gate in the UI. Keep only the genuinely gated XOC bits
+            // in editor state; BuildProfileFromEditor adds the main clocks back for every Apply.
+            XocArmed = p.XocArmed & ~MainClockLevers;
+            OnPropertyChanged(nameof(XocStatusText));   // live-ness may have changed even if the flags did not
+            // "No cap" is the top of what the card can reach, not the stock ceiling: with a boost applied
+            // the two differ, and seeding the lower one would turn "uncapped" into a cap at stock the
+            // moment this was built back into a profile.
+            TargetVoltage = p.TargetVoltageMv > 0 ? p.TargetVoltageMv : ReachableCeilingMv;
+            ZeroRpm = p.ZeroRpm;
+            MemoryTimingIndex = p.MemoryTimingLevel;
+            FanModeIndex = (int)p.FanMode;
+            FixedFan = p.FixedFanPercent;
+            PerFanPercents = (int[])p.FixedFanPercents.Clone();
+            EditorCurve = p.FanCurve.Clone();
+            OnPropertyChanged(nameof(EditorCurve));
+            RaiseTexts();
+        }
+        finally { _loadingEditor = false; }
     }
 
     private void Apply()
@@ -1098,7 +1125,7 @@ public sealed class MainViewModel : ObservableObject
     {
         try
         {
-            var live = _svc.Backend.ReadTuningState(_svc.GpuIndex);
+            var live = _svc.ReadTuningState();
             if (!_xocArmed.Has(XocLever.Nvvdd) && live.VoltageRailMaxMv > 0)
             {
                 int value = Math.Clamp(live.VoltageRailMaxMv, Caps.VoltageRailMinMv, Caps.VoltageRailMaxMv);
@@ -1148,11 +1175,20 @@ public sealed class MainViewModel : ObservableObject
         Status = $"Saved profile '{name}'" + StartupSaveNotice(name); StatusIsError = false;
     }
 
+    private bool CanLoadProfile(TuningProfile profile)
+    {
+        if (Caps.VoltageStyle != VoltageControlStyle.Percent || string.IsNullOrEmpty(profile.GpuName) || profile.GpuName == Device.Name) return true;
+        Status = $"Profile belongs to {profile.GpuName}. Save a new profile for this GPU; Intel tuning units differ.";
+        StatusIsError = true;
+        return false;
+    }
+
     private void LoadSelectedProfile()
     {
         if (SelectedProfile == null) return;
         var p = _store.Load(SelectedProfile);
         if (p == null) { Status = "Profile not found"; StatusIsError = true; RefreshProfiles(); return; }
+        if (!CanLoadProfile(p)) return;
         if (!string.IsNullOrEmpty(p.GpuName) && p.GpuName != Device.Name)
             Status = $"Note: profile was made for {p.GpuName}, values will be clamped to this GPU's ranges";
         else { Status = $"Loaded '{p.Name}' — press Apply to send to GPU"; StatusIsError = false; }
@@ -1196,6 +1232,7 @@ public sealed class MainViewModel : ObservableObject
                 else
                 {
                     var candidate = _store.Load(StartupProfile) ?? throw new InvalidOperationException("Profile not found");
+                    if (!CanLoadProfile(candidate)) throw new InvalidOperationException(Status);
                     var errors = App.TrialProfile(candidate);
                     if (errors.Count > 0 && !TuningService.OnlyNotes(errors))
                         throw new InvalidOperationException(string.Join("; ", errors));

@@ -1,4 +1,5 @@
 using GpuTuner.Core.Backends.Amd;
+using GpuTuner.Core.Backends.Intel;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
 
@@ -25,7 +26,7 @@ public static class BackendFactory
         var tried = new List<Attempt>();
         attempts = tried;
 
-        foreach (var make in new Func<IGpuBackend>[] { () => new NvApiBackend(), () => new AdlBackend() })
+        foreach (var make in new Func<IGpuBackend>[] { () => new NvApiBackend(), () => new AdlBackend(), () => new IntelBackend() })
         {
             IGpuBackend? backend = null;
             try

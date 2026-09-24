@@ -1,3 +1,4 @@
+using GpuTuner.Core.Backends.Intel;
 using GpuTuner.Core.Backends.Amd;
 using GpuTuner.Core.Backends.Mock;
 using GpuTuner.Core.Backends.Nvidia;
@@ -1147,7 +1148,9 @@ Check("2 INVALID_ARGUMENT does not retry", !Nvml.SessionMayBeStale(2));
         CodeName = "TEST-100",
         Revision = "A1",
     };
-    Check("graphics rows match Viewer field count", info.Rows.Count == 15);
+    Check("graphics rows include firmware and PCI address", info.Rows.Count == 17);
+    Check("graphics includes device firmware", info.BiosVersion == "98.00");
+    Check("graphics includes device PCI address", info.BusAddress == "PCI");
     Check("graphics rows start with GPU", info.Rows[0].Name == "GPU" && info.Rows[0].Value == "Test GPU");
     Check("graphics rows end with driver date", info.Rows[^1].Name == "Driver Date");
     Check("graphics rows alternate shading", info.Rows.Select((row, i) => row.IsBanded == (i % 2 == 1)).All(x => x));
@@ -1159,6 +1162,162 @@ Check("2 INVALID_ARGUMENT does not retry", !Nvml.SessionMayBeStale(2));
     Check("PCIe interface uses driver maximum link", GpuIdentity.PcieBusInterface(5, 16, 2, 16) == "5.0 x16");
     Check("PCIe interface omits an unavailable maximum", GpuIdentity.PcieBusInterface(0, 0, 4, 8) == "4.0 x8");
 }
+// Intel native data and write guards: malformed values must never reach firmware.
+{
+    var gpuProps = Igcl.Data(320, 3);
+    Igcl.Put(gpuProps, 68, 0xE211);
+    BitConverter.GetBytes((ushort)0x1849).CopyTo(gpuProps, 198);
+    Igcl.Put(gpuProps, 204, 20);
+    var memoryProps = Igcl.Data(32);
+    Igcl.Put(memoryProps, 8, 12); Igcl.Put(memoryProps, 24, 192);
+    var intelDevice = new GpuDevice(0, "Intel B60", "Intel", "0000:03:00.0", "", 24576, "23.1066.00.00");
+    var graphics = IntelBackend.DecodeGraphics(intelDevice, gpuProps, [memoryProps]);
+    Check("Intel graphics decodes subsystem vendor", graphics.BoardManufacturer == "ASRock");
+    Check("Intel graphics decodes native Xe core count", graphics.Cores == "20 Xe cores");
+    Check("Intel graphics retains revision zero", graphics.Revision == "00");
+    Check("Intel graphics decodes GDDR6 and memory width", graphics.MemoryType == "GDDR6" && graphics.BusWidth == "192 bit");
+    Check("Intel graphics identifies B60", graphics.CodeName == "Battlemage BMG-G21 WKSTN" && graphics.Technology == "5 nm (TSMC N5)");
+    Check("Intel graphics does not invent memory vendor or ROPs", graphics.MemoryVendor == "" && graphics.RopsTmus == "");
+    Igcl.Put(gpuProps, 68, 0xFFFF); Igcl.Put(gpuProps, 204, 0);
+    Igcl.Put(memoryProps, 8, 15); Igcl.Put(memoryProps, 24, -1);
+    graphics = IntelBackend.DecodeGraphics(intelDevice, gpuProps, [memoryProps]);
+    Check("Intel unknown chip keeps unavailable identity blank", graphics.CodeName == "" && graphics.Technology == "" && graphics.Cores == "");
+    Check("Intel unknown memory keeps unavailable properties blank", graphics.MemoryType == "" && graphics.BusWidth == "");
+    var sensor = new byte[24]; sensor[0] = 1;
+    Igcl.Put(sensor, 8, 9); BitConverter.GetBytes(12.5).CopyTo(sensor, 16);
+    Eq("Intel double telemetry ABI", 12.5, Igcl.Sensor(sensor, 0));
+    sensor[0] = 0; Check("Intel missing sensor is unavailable", double.IsNaN(Igcl.Sensor(sensor, 0)));
+    sensor[0] = 1; Igcl.Put(sensor, 8, 99); Check("Intel unknown sensor type is unavailable", double.IsNaN(Igcl.Sensor(sensor, 0)));
+    Check("Intel truncated sensor is unavailable", double.IsNaN(Igcl.Sensor(new byte[8], 0)));
+    Eq("Intel energy delta computes watts", 40, IntelBackend.Rate(120, 100, .5));
+    Check("Intel first sample has no fabricated power", double.IsNaN(IntelBackend.Rate(10, double.NaN, 1)));
+    Check("Intel counter reset is unavailable", double.IsNaN(IntelBackend.Rate(5, 10, 1)));
+    Check("Intel zero elapsed time is unavailable", double.IsNaN(IntelBackend.Rate(10, 5, 0)));
+    var control = new IntelBackend.Control(true, 12, 19, 22, .001, 19);
+    Eq("Intel fractional memory speed", 19.001, control.Validate(19.001));
+    void Reject(string label, Action operation) { try { operation(); Check(label, false); } catch (GpuTuner.Core.Backends.GpuBackendException) { Check(label, true); } }
+    Reject("Intel below range", () => control.Validate(18.9));
+    Reject("Intel above range", () => control.Validate(22.1));
+    Reject("Intel NaN request", () => control.Validate(double.NaN));
+    Reject("Intel fractional off-grid request", () => control.Validate(19.0005));
+    Reject("Intel unsupported control", () => (control with { Supported = false }).Validate(19));
+    var properties = Igcl.Data(440, 1); properties[8] = 1;
+    BitConverter.GetBytes(double.NaN).CopyTo(properties, 16);
+    Check("Intel malformed limits disabled", !IntelBackend.Control.Read(properties, 0).Supported);
+    var goodCurve = new FanCurve { Points = [new(25,30), new(70,50), new(100,100)] };
+    var native = IntelBackend.BuildFanTable(goodCurve, 10);
+    Check("Intel fan ABI size and count", native.Length == 908 && Igcl.Int(native, 0) == 908 && Igcl.Int(native, 8) == 3);
+    Check("Intel fan percent encoding", Igcl.Int(native, 20) == 25 && Igcl.Int(native, 32) == 30 && Igcl.Int(native, 36) == 1);
+    Check("Intel nested fan headers match driver", Igcl.Int(native, 12) == 0 && Igcl.Int(native, 24) == 0);
+    Reject("Intel descending fan duty blocked", () => IntelBackend.BuildFanTable(new FanCurve { Points = [new(25,31), new(35,30)] }, 10));
+    Reject("Intel duplicate temperatures blocked", () => IntelBackend.BuildFanTable(new FanCurve { Points = [new(25,30), new(25.1,40)] }, 10));
+    Reject("Intel invalid fan temperature blocked", () => IntelBackend.BuildFanTable(new FanCurve { Points = [new(24,30), new(35,40)] }, 10));
+    Reject("Intel nonfinite fan value blocked", () => IntelBackend.BuildFanTable(new FanCurve { Points = [new(25,double.NaN), new(35,40)] }, 10));
+    Reject("Intel excess fan points blocked", () => IntelBackend.BuildFanTable(goodCurve, 2));
+    var intelCaps = new GpuCapabilities {
+        VoltageStyle = VoltageControlStyle.Percent, CanSetVoltageBoost = true, CanEditVfCurve = true,
+        VoltageBoostDefaultPercent = 100,
+        CanSetCoreOffset = true, CoreOffsetMinMhz = -300, CoreOffsetMaxMhz = 1000, CoreOffsetStepMhz = 1,
+        CanSetMemoryOffset = true, MemoryClockIsAbsolute = true, MemoryClockUnit = "Mbps", MemoryClockDefaultMhz = 19000,
+        MemoryOffsetMinMhz = 19000, MemoryOffsetMaxMhz = 22000, TempLimitIsPercent = true,
+        CanSetFanSpeed = true, FanCurveIsHardware = true, FanCurvePoints = 10
+    };
+    Eq("Intel stock memory is 19 Gbps", 19000, TuningProfile.Stock(intelCaps).MemoryOffsetMhz);
+    Eq("Intel stock voltage uses driver default", 100, TuningProfile.Stock(intelCaps).VoltageBoostPercent);
+    Eq("NVIDIA stock voltage boost remains zero", 0, TuningProfile.Stock(new GpuCapabilities()).VoltageBoostPercent);
+    Check("Intel percent has no fabricated mV cap", !intelCaps.CanSetVoltage && intelCaps.TempLimitUnit == "%");
+    using var intelShape = new OffsetStyleBackend { OverrideCaps = intelCaps, CurrentCurve = goodCurve };
+    using var intelService = new TuningService(intelShape); intelService.Initialize();
+    var current = intelService.ReadCurrentAsProfile();
+    Check("Intel current profile preserves hardware curve mode", current.FanMode == FanMode.Curve);
+    Check("Intel current profile preserves curve points", current.FanCurve.Points.SequenceEqual(goodCurve.Points));
+    current.TargetVoltageMv = 1100; current.VoltageBoostPercent = 61;
+    intelService.Apply(current);
+    Check("Intel uses percentage voltage setter", intelShape.Calls.Contains("SetVoltageBoost") && intelShape.BoostPercent == 61);
+    Check("Intel never invokes NVIDIA cap/flatten", !intelShape.Calls.Contains("SetVoltageCurveOffset") && !intelShape.Calls.Contains("SetVoltageLock"));
+    intelShape.Calls.Clear(); current.GpuName = "NVIDIA GeForce RTX 4070";
+    Check("Intel rejects another GPU profile before writes", intelService.Apply(current).Count > 0 && intelShape.Calls.Count == 0);
+    intelService.ResetToDefaults();
+    Eq("Intel reset profile retains factory voltage limit", 100, intelService.AppliedProfile!.VoltageBoostPercent);
+    intelService.Apply(intelService.AppliedProfile!);
+    Eq("Applying after reset does not lower Intel voltage limit", 100, intelShape.BoostPercent);
+}
+// Intel identity ABI: max-link capability, ReBAR states and distinct ROM components.
+{
+    var pci = new byte[64];
+    BitConverter.GetBytes(3).CopyTo(pci, 20);
+    BitConverter.GetBytes(5).CopyTo(pci, 40);
+    BitConverter.GetBytes(8).CopyTo(pci, 44);
+    pci[56] = 1;
+    var identity = IntelBackend.DecodePci(pci);
+    Check("Intel PCIe maximum decoded", identity.Interface == "5.0 x8" && identity.Address == "0000:03:00.0");
+    Check("Intel supported but disabled ReBAR", identity.Rebar == "Disabled");
+    pci[57] = 1;
+    Check("Intel enabled ReBAR", IntelBackend.DecodePci(pci).Rebar == "Enabled");
+    pci[56] = 0;
+    Check("Intel unsupported ReBAR", IntelBackend.DecodePci(pci).Rebar == "Not supported");
+    var fw = new byte[156];
+    System.Text.Encoding.UTF8.GetBytes("OptionRomCode").CopyTo(fw, 5);
+    System.Text.Encoding.UTF8.GetBytes("23.1066.00.00").CopyTo(fw, 69);
+    Check("Intel VBIOS code version", IntelBackend.OptionRomVersion(fw) == "23.1066.00.00");
+    System.Text.Encoding.UTF8.GetBytes("OptionRomData").CopyTo(fw, 5);
+    Check("Intel ROM data is not VBIOS", IntelBackend.OptionRomVersion(fw) == "");
+}
+{
+    var range = IntelBackend.ClockRangeRequest(500, 2300, 400, 3000);
+    Check("Intel native range buffer", range.Length == 24 && BitConverter.ToInt32(range, 0) == 24 && BitConverter.ToDouble(range, 8) == 500 && BitConverter.ToDouble(range, 16) == 2300);
+    var reset = IntelBackend.ClockRangeRequest(0, 0, 400, 3000);
+    Check("Intel range reset uses factory sentinel", BitConverter.ToDouble(reset, 8) == -1 && BitConverter.ToDouble(reset, 16) == -1);
+    var partial = IntelBackend.ClockRangeRequest(0, 2200, 400, 3000);
+    Check("Intel omitted floor uses supported minimum", BitConverter.ToDouble(partial, 8) == 400);
+    bool RejectRange(int lo, int hi) { try { IntelBackend.ClockRangeRequest(lo, hi, 400, 3000); return false; } catch (GpuTuner.Core.Backends.GpuBackendException) { return true; } }
+    Check("Intel reversed range rejected", RejectRange(2500, 2400));
+    Check("Intel out-of-range limits rejected", RejectRange(399, 2400) && RejectRange(400, 3001));
+}
+// Native driver DLLs must not resolve from the elevated application's directory.
+{
+    var policy = (System.Runtime.InteropServices.DefaultDllImportSearchPathsAttribute?)Attribute.GetCustomAttribute(
+        typeof(TuningService).Assembly, typeof(System.Runtime.InteropServices.DefaultDllImportSearchPathsAttribute));
+    Check("core native imports only search System32", policy?.Paths == System.Runtime.InteropServices.DllImportSearchPath.System32);
+    var nativeQueries = typeof(NvAPIWrapper.GPU.PhysicalGPU).Assembly.GetType("NvAPIWrapper.Native.Helpers.DelegateFactory")!
+        .GetMethods(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+        .Where(m => m.Name is "NvAPI32_QueryInterface" or "NvAPI64_QueryInterface").ToArray();
+    Check("both NVAPI bindings only search System32", nativeQueries.Length == 2 && nativeQueries.All(m =>
+        ((System.Runtime.InteropServices.DefaultDllImportSearchPathsAttribute?)Attribute.GetCustomAttribute(m,
+            typeof(System.Runtime.InteropServices.DefaultDllImportSearchPathsAttribute)))?.Paths == System.Runtime.InteropServices.DllImportSearchPath.System32));
+}
+// A UI read or voltage-cap edit must wait while a telemetry call owns the driver.
+{
+    using var entered = new ManualResetEventSlim();
+    using var release = new ManualResetEventSlim();
+    using var callersReady = new CountdownEvent(5);
+    using var backend = new CountingBackend();
+    using var service = new TuningService(backend);
+    service.Initialize();
+    int overlaps = 0;
+    backend.BeforeTelemetry = () => { entered.Set(); if (!release.Wait(5000)) throw new TimeoutException("Test poll stalled"); };
+    backend.BeforeUiCall = () => { if (!release.IsSet) Interlocked.Increment(ref overlaps); };
+    service.StartPolling(10000);
+    Task[] requests = [];
+    try
+    {
+        Check("poll entered blocking driver", entered.Wait(5000));
+        Action[] actions = [() => service.ReadGraphicsInfo(), () => service.ReadTuningState(),
+            () => service.ReadVoltageLockMv(), () => service.SetVoltageLock(0), () => service.ReadCurrentAsProfile()];
+        requests = actions.Select(action => Task.Factory.StartNew(() => { callersReady.Signal(); action(); },
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+        Check("all UI callers started", callersReady.Wait(5000));
+        Check("UI calls wait while driver is polling", !Task.WaitAll(requests, 100) && Volatile.Read(ref overlaps) == 0);
+        bool refused = false;
+        try { service.StopPolling(TimeSpan.FromMilliseconds(50)); }
+        catch (GpuTuner.Core.Backends.GpuBackendException) { refused = true; }
+        Check("stalled polling cannot be silently abandoned", refused);
+    }
+    finally { release.Set(); }
+    Check("UI calls complete after poll releases driver", Task.WaitAll(requests, 5000));
+    Check("UI calls never overlap telemetry", overlaps == 0);
+    service.StopPolling();
+}
 Console.WriteLine($"{pass} passed, {fail} failed");
 return fail == 0 ? 0 : 1;
 
@@ -1168,14 +1327,16 @@ sealed class OffsetStyleBackend : GpuTuner.Core.Backends.IGpuBackend
     public List<string> Calls { get; } = new();
     public int VoltageOffsetMv, CoreOffsetMhz, MemoryMhz = 2518, PowerPercent;
     public bool ZeroRpm = true;
-    public int MemoryTiming;
+    public int MemoryTiming, BoostPercent;
+    public GpuCapabilities? OverrideCaps;
+    public FanCurve? CurrentCurve;
 
     public string BackendName => "Offset-style test GPU";
     public void Initialize() { }
     public IReadOnlyList<GpuDevice> Devices { get; } =
         new[] { new GpuDevice(0, "Test RDNA", "AMD", "PCI", "1.0", 16384, "") };
 
-    public GpuCapabilities GetCapabilities(int i) => new()
+    public GpuCapabilities GetCapabilities(int i) => OverrideCaps ?? new()
     {
         CanSetCoreOffset = true, CoreOffsetMinMhz = -500, CoreOffsetMaxMhz = 1000,
         CanSetMemoryOffset = true, MemoryOffsetMinMhz = 2518, MemoryOffsetMaxMhz = 3000,
@@ -1195,14 +1356,15 @@ sealed class OffsetStyleBackend : GpuTuner.Core.Backends.IGpuBackend
     public GpuTuningState ReadTuningState(int i) => new()
     {
         CoreOffsetMhz = CoreOffsetMhz, MemoryOffsetMhz = MemoryMhz, PowerLimitPercent = PowerPercent,
-        VoltageOffsetMv = VoltageOffsetMv, ZeroRpm = ZeroRpm, MemoryTimingLevel = MemoryTiming
+        VoltageOffsetMv = VoltageOffsetMv, ZeroRpm = ZeroRpm, MemoryTimingLevel = MemoryTiming,
+        VoltageBoostPercent = BoostPercent, DetectedFanMode = CurrentCurve != null ? FanMode.Curve : null, HardwareFanCurve = CurrentCurve
     };
 
     public void SetCoreOffset(int i, int mhz) { Calls.Add("SetCoreOffset"); CoreOffsetMhz = mhz; }
     public void SetMemoryOffset(int i, int mhz) { Calls.Add("SetMemoryOffset"); MemoryMhz = mhz; }
     public void SetPowerLimit(int i, int pct) { Calls.Add("SetPowerLimit"); PowerPercent = pct; }
     public void SetTempLimit(int i, int c) { Calls.Add("SetTempLimit"); }
-    public void SetVoltageBoost(int i, int pct) { Calls.Add("SetVoltageBoost"); }
+    public void SetVoltageBoost(int i, int pct) { Calls.Add("SetVoltageBoost"); BoostPercent = pct; }
     public void SetVoltageCurveOffset(int i, int mv, int extra = 0) { Calls.Add("SetVoltageCurveOffset"); VoltageOffsetMv = mv; }
     public void SetVoltageLock(int i, int mv) { Calls.Add("SetVoltageLock"); }
     public void SetZeroRpm(int i, bool on) { Calls.Add("SetZeroRpm"); ZeroRpm = on; }
@@ -1225,17 +1387,21 @@ sealed class CountingBackend : GpuTuner.Core.Backends.IGpuBackend
     public int FullReads;
     public int TempReads;
     public int LastFanPercent = -1;
+    public Action? BeforeTelemetry, BeforeUiCall;
 
     public void Reset() { FullReads = 0; TempReads = 0; }
 
-    public GpuTelemetry ReadTelemetry(int i) { FullReads++; return _inner.ReadTelemetry(i); }
+    public GpuTelemetry ReadTelemetry(int i) { BeforeTelemetry?.Invoke(); FullReads++; return _inner.ReadTelemetry(i); }
     public GpuTelemetry ReadTemperatureOnly(int i) { TempReads++; return new GpuTelemetry { TemperatureC = 55 }; }
 
     public string BackendName => "Counting";
     public void Initialize() => _inner.Initialize();
     public IReadOnlyList<GpuDevice> Devices => _inner.Devices;
     public GpuCapabilities GetCapabilities(int i) => _inner.GetCapabilities(i);
-    public GpuTuningState ReadTuningState(int i) => _inner.ReadTuningState(i);
+    public GpuTuningState ReadTuningState(int i) { BeforeUiCall?.Invoke(); return _inner.ReadTuningState(i); }
+    public GpuGraphicsInfo ReadGraphicsInfo(int i) { BeforeUiCall?.Invoke(); return GpuGraphicsInfo.FromDevice(Devices[i]); }
+    public int ReadVoltageLockMv(int i) { BeforeUiCall?.Invoke(); return _inner.ReadVoltageLockMv(i); }
+    public void SetVoltageLock(int i, int mv) { BeforeUiCall?.Invoke(); _inner.SetVoltageLock(i, mv); }
 
     public void SetCoreOffset(int i, int mhz) => _inner.SetCoreOffset(i, mhz);
     public void SetMemoryOffset(int i, int mhz) => _inner.SetMemoryOffset(i, mhz);

@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 Write-Host "=== Roch GPU setup ===" -ForegroundColor Green
 
@@ -16,15 +16,7 @@ if (-not $hasSdk) {
 
 # --- Step 2: build + test + publish
 Write-Host "`nBuilding..." -ForegroundColor Yellow
-dotnet build roch-gpu.sln -c Release
-if ($LASTEXITCODE -ne 0) { throw "Build failed - see the errors above." }
-
-dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build
-if ($LASTEXITCODE -ne 0) { throw "Tests failed - see the failures above." }
-
-dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -o dist
-if ($LASTEXITCODE -ne 0) { throw "Publish failed - is 'RochGPU.exe' still running? Close it (check the tray) and re-run." }
-if (-not (Test-Path "dist\RochGPU.exe")) { throw "'dist\RochGPU.exe' missing after publish." }
+& (Join-Path $PSScriptRoot "build.ps1")
 
 # --- Step 3: report what was detected, then launch
 Write-Host "`n=== Roch GPU info ===" -ForegroundColor Green

@@ -15,6 +15,9 @@ if ($LASTEXITCODE -ne 0) { throw "Tests failed - see the failures above." }
 dotnet run --project tests/GpuTuner.Telemetry.Tests -c Release
 if ($LASTEXITCODE -ne 0) { throw "Telemetry UI tests failed - see the failures above." }
 
+dotnet run --project tests/GpuTuner.App.Tests -c Release --no-build
+if ($LASTEXITCODE -ne 0) { throw "App regression tests failed - see the failures above." }
+
 # One publish, one file. The window and the command line are the same executable: run it with a verb
 # for the CLI, with nothing for the GUI. Self-contained, so no runtime has to be installed.
 dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -o dist

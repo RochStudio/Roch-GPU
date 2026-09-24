@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -122,7 +122,7 @@ public sealed class TelemetryTable
 
         Group("Clocks");
         Sensor("core", "GPU core", "MHz");
-        if (!caps.PowerLimitIsOffset) Sensor("coremeasured", "GPU core (measured)", "MHz");
+        if (!caps.PowerLimitIsOffset && caps.VoltageStyle != VoltageControlStyle.Percent) Sensor("coremeasured", "GPU core (measured)", "MHz");
         Sensor("mem", "Memory", "MHz");
         if (!double.IsNaN(first.FabricClockMhz)) Sensor("fclk", "Fabric (FCLK)", "MHz");
         if (!double.IsNaN(first.SocClockMhz)) Sensor("socclk", "SoC", "MHz");
@@ -142,7 +142,7 @@ public sealed class TelemetryTable
         Sensor("memload", "Memory controller", "%");
 
         Group("Power");
-        if (first.PowerWatts > 0) Sensor("watts", "Board draw", "W", 1);
+        if (first.PowerWatts > 0 || caps.VoltageStyle == VoltageControlStyle.Percent) Sensor("watts", "Board draw", "W", 1);
         if (!caps.PowerLimitIsOffset || double.IsFinite(first.PowerPercent))
             Sensor("tdp", "Total, % of TDP", "%", 1);
 
@@ -246,7 +246,7 @@ public sealed class TelemetryTable
         string group = unit switch
         {
             "°C" => "TEMPERATURES", "mV" or "V" => "VOLTAGES", "MHz" => "CLOCKS",
-            "W" => "POWER", "MB" => "MEMORY", "gen" or "lanes" or "GT/s" => "PCIe LINK",
+            "MB/s" or "GB/s" => "MEMORY BANDWIDTH", "W" => "POWER", "MB" => "MEMORY", "gen" or "lanes" or "GT/s" => "PCIe LINK",
             "%" => "LOAD", "A" => "RAIL CURRENT",
             _ => "LIMITERS"
         };

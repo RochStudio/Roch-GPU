@@ -56,7 +56,7 @@ public static class CommandLine
                     var telemetry = svc.Backend.ReadTelemetry(svc.GpuIndex);
                     Console.WriteLine(Fmt(telemetry));
                     foreach (var sensor in telemetry.SupplementalSensors)
-                        Console.WriteLine($"{sensor.Name}: {sensor.Value:0.###} {sensor.Unit}");
+                        Console.WriteLine($"{sensor.Name}: {Reading(sensor.Value, "0.###")} {sensor.Unit}");
                     return 0;
                 case "monitor": Start(); return Monitor(svc, store, opts);
                 case "apply": Start(); return Apply(svc, opts);
@@ -151,10 +151,11 @@ public static class CommandLine
         var c = svc.Capabilities;
         Console.WriteLine();
         Console.WriteLine($"Core offset   : {(c.CanSetCoreOffset ? $"{c.CoreOffsetMinMhz}..{c.CoreOffsetMaxMhz} MHz" : "not supported")}");
-        Console.WriteLine($"Memory offset : {(c.CanSetMemoryOffset ? $"{c.MemoryOffsetMinMhz}..{c.MemoryOffsetMaxMhz} MHz" : "not supported")}");
+        Console.WriteLine($"Memory tuning : {(c.CanSetMemoryOffset ? $"{c.MemoryOffsetMinMhz}..{c.MemoryOffsetMaxMhz} {c.MemoryClockUnit}" : "not supported")}");
         Console.WriteLine($"Power limit   : {(c.CanSetPowerLimit ? $"{c.PowerLimitMinPercent}..{c.PowerLimitMaxPercent} % (default {c.PowerLimitDefaultPercent})" : "not supported")}");
-        Console.WriteLine($"Temp limit    : {(c.CanSetTempLimit ? $"{c.TempLimitMinC}..{c.TempLimitMaxC} °C (default {c.TempLimitDefaultC})" : "not supported")}");
-        Console.WriteLine($"Voltage boost : {(c.CanSetVoltageBoost ? $"{c.VoltageBoostMinPercent}..{c.VoltageBoostMaxPercent} %" : "not supported")}");
+        Console.WriteLine($"Temp limit    : {(c.CanSetTempLimit ? $"{c.TempLimitMinC}..{c.TempLimitMaxC} {c.TempLimitUnit} (default {c.TempLimitDefaultC})" : "not supported")}");
+        string voltageLabel = c.VoltageStyle == VoltageControlStyle.Percent ? "Voltage limit" : "Voltage boost";
+        Console.WriteLine($"{voltageLabel} : {(c.CanSetVoltageBoost ? $"{c.VoltageBoostMinPercent}..{c.VoltageBoostMaxPercent} % (default {c.VoltageBoostDefaultPercent})" : "not supported")}");
         // Two different undervolt mechanisms reach the same slider: NVIDIA flattens the V/F curve,
         // AMD offsets the whole curve and has no editable one. Gating on CanSetVoltageCurve alone
         // reported "not supported" on a card that was actively undervolted (see the uv field below).
@@ -163,6 +164,7 @@ public static class CommandLine
             : c.CanSetVoltageCurve ? $"{c.VoltageOffsetMinMv}..0 mV (stock max {c.StockMaxVoltageMv} mV)"
             : $"{c.VoltageOffsetMinMv}..{c.VoltageOffsetMaxMv} mV (whole-curve offset)";
         Console.WriteLine($"Undervolt     : {undervolt}");
+        if (c.CanEditVfCurve) Console.WriteLine($"V/F curve     : editable, {c.VfCurveMinMhz}..{c.VfCurveMaxMhz} MHz, {c.VfCurveStepMhz} MHz steps");
         Console.WriteLine($"Core rail     : {(c.CanSetVoltageRail ? $"{c.VoltageRailMinMv}..{c.VoltageRailMaxMv} mV ceiling (now {c.VoltageRailStockMaxMv} mV), floor {c.VoltageRailFloorMinMv}..{c.VoltageRailFloorMaxMv} mV (stock {c.VoltageRailStockFloorMv} mV)" : "not supported")}");
         Console.WriteLine($"MSVDD rail    : {(c.CanSetMsvddRail ? $"{c.MsvddRailMinMv}..{c.MsvddRailMaxMv} mV ceiling (now {c.MsvddRailStockMaxMv} mV), floor {c.MsvddRailFloorMinMv}..{c.MsvddRailFloorMaxMv} mV (stock {c.MsvddRailStockFloorMv} mV)" : "not supported")}");
         Console.WriteLine($"Clock range   : {(c.CanLockClocks ? $"{c.ClockLockMinMhz}..{c.ClockLockMaxMhz} MHz lockable" : "not supported")}");
@@ -182,7 +184,7 @@ public static class CommandLine
             _ => s.FanManual ? $"{s.FanPercent}% manual" : "auto"
         };
         // 0 means the card reported no thermal policy at all, which is not the same as a limit of 0.
-        string tempLimit = s.TempLimitC > 0 ? $"{s.TempLimitC}°C" : "n/a";
+        string tempLimit = s.TempLimitC > 0 ? $"{s.TempLimitC}{c.TempLimitUnit}" : "n/a";
 
         // Measure the undervolt from the same ceiling an apply measures it from. The backend reports
         // it against the V/F table's top, which on a card that never reaches that top reads tens of
@@ -193,7 +195,7 @@ public static class CommandLine
             int lockMv = svc.Backend.ReadVoltageLockMv(svc.GpuIndex);
             uvMv = lockMv > 0 && svc.StockCeilingMv > 0 ? lockMv - svc.StockCeilingMv : 0;
         }
-        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz:+#;-#;0} MHz, power {s.PowerLimitPercent}%, temp {tempLimit}, vboost {s.VoltageBoostPercent}%, uv {uvMv} mV, rail {(s.VoltageRailMaxMv > 0 ? s.VoltageRailFloorMv + "-" + s.VoltageRailMaxMv + " mV" : "n/a")}, msvdd {(s.MsvddRailMaxMv > 0 ? s.MsvddRailFloorMv + "-" + s.MsvddRailMaxMv + " mV" : "n/a")}, xbar {s.XbarOffsetMhz:+#;-#;0} MHz, sys {s.SysOffsetMhz:+#;-#;0} MHz, video {s.VideoOffsetMhz:+#;-#;0} MHz, fan {fan}");
+        Console.WriteLine($"Current: core {s.CoreOffsetMhz:+#;-#;0} MHz, mem {s.MemoryOffsetMhz} {c.MemoryClockUnit}, power {s.PowerLimitPercent}%, temp {tempLimit}, vboost {s.VoltageBoostPercent}%, uv {uvMv} mV, rail {(s.VoltageRailMaxMv > 0 ? s.VoltageRailFloorMv + "-" + s.VoltageRailMaxMv + " mV" : "n/a")}, msvdd {(s.MsvddRailMaxMv > 0 ? s.MsvddRailFloorMv + "-" + s.MsvddRailMaxMv + " mV" : "n/a")}, xbar {s.XbarOffsetMhz:+#;-#;0} MHz, sys {s.SysOffsetMhz:+#;-#;0} MHz, video {s.VideoOffsetMhz:+#;-#;0} MHz, fan {fan}");
         var t = svc.Backend.ReadTelemetry(svc.GpuIndex);
         Console.WriteLine(Fmt(t));
         return 0;
@@ -353,7 +355,7 @@ public static class CommandLine
     {
         var p = store.Load(name);
         if (p == null) { Console.Error.WriteLine($"Profile '{name}' not found in {store.ProfilesDirectory}"); return 2; }
-        if (p.FanMode == FanMode.Curve)
+        if (p.FanMode == FanMode.Curve && !svc.Capabilities.FanCurveIsHardware)
             Console.Error.WriteLine("Note: fan curve mode needs a resident process; the CLI applies clocks/limits and leaves fans on auto. Use the GUI with --minimized for curves.");
         var errs = svc.Apply(p);
         return Report(errs);
@@ -390,7 +392,9 @@ public static class CommandLine
         $"{t.Timestamp.ToLocalTime():HH:mm:ss}  {t.CoreClockMhz,5:0} MHz core  {t.MemoryClockMhz,6:0} MHz mem  " +
         $"{t.TemperatureC,4:0.#}°C{(double.IsNaN(t.HotSpotC) ? "" : $" hs{t.HotSpotC:0}")}{(double.IsNaN(t.MemoryTemperatureC) ? "" : $" mem{t.MemoryTemperatureC:0}")}  " +
         $"{(double.IsNaN(t.VoltageMv) ? "   -" : $"{t.VoltageMv,4:0} mV")}  " +
-        $"{t.PowerPercent,5:0.#}% TDP  load {t.GpuLoadPercent,3:0}%  fan {t.FanPercent,3:0}% ({t.FanRpm:0} rpm)  {t.PerfState} {t.LimitReason}";
+        $"{Reading(t.PowerPercent, "0.#"),5}% TDP  load {Reading(t.GpuLoadPercent),3}%  fan {Reading(t.FanPercent),3}% ({Reading(t.FanRpm)} rpm)  {t.PerfState} {t.LimitReason}";
+
+    static string Reading(double value, string format = "0") => double.IsFinite(value) ? value.ToString(format) : "—";
 
     static Dictionary<string, string> Parse(IEnumerable<string> args)
     {

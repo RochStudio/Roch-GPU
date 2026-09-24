@@ -25,12 +25,16 @@ public sealed record GpuGraphicsInfo
     public string BusWidth { get; init; } = "";
     public string BusInterface { get; init; } = "";
     public string ResizableBar { get; init; } = "";
+    public string BiosVersion { get; init; } = "";
+    public string BusAddress { get; init; } = "";
     public string DriverVersion { get; init; } = "";
     public string DriverDate { get; init; } = "";
 
     public static GpuGraphicsInfo FromDevice(GpuDevice device) => new()
     {
         Gpu = device.Name,
+        BiosVersion = device.BiosVersion,
+        BusAddress = device.BusId,
         MemorySize = device.VramMegabytes > 0
             ? $"{device.VramMegabytes / 1024.0:0.##} GB"
             : "",
@@ -58,6 +62,8 @@ public sealed record GpuGraphicsInfo
                 ("Bus Width", BusWidth),
                 ("Bus Interface", BusInterface),
                 ("Resizable BAR", ResizableBar),
+                ("VBIOS", BiosVersion),
+                ("PCI Bus Address", BusAddress),
                 ("Driver Version", DriverVersion),
                 ("Driver Date", DriverDate),
             };
@@ -81,6 +87,8 @@ public static class GpuIdentity
             [0x1462] = "MSI",
             [0x148C] = "PowerColor",
             [0x1682] = "XFX",
+            [0x1849] = "ASRock",
+            [0x8086] = "Intel",
             [0x196E] = "PNY",
             [0x19DA] = "Zotac",
             [0x1B4C] = "KFA2",
@@ -140,6 +148,7 @@ internal static class WindowsDisplayIdentity
         {
             using var root = Registry.LocalMachine.OpenSubKey(DisplayClass);
             if (root == null) return "";
+            string fallbackDate = "";
             foreach (string childName in root.GetSubKeyNames())
             {
                 using var child = root.OpenSubKey(childName);
@@ -148,14 +157,23 @@ internal static class WindowsDisplayIdentity
                 string installedVersion = child.GetValue("DriverVersion") as string ?? "";
                 bool vendorMatch = vendor.Equals("NVIDIA", StringComparison.OrdinalIgnoreCase)
                     ? provider.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase)
-                    : provider.Contains("AMD", StringComparison.OrdinalIgnoreCase)
-                      || provider.Contains("Advanced Micro Devices", StringComparison.OrdinalIgnoreCase);
+                    : vendor.Equals("Intel", StringComparison.OrdinalIgnoreCase)
+                    ? provider.Contains("Intel", StringComparison.OrdinalIgnoreCase)
+                    : vendor.Equals("AMD", StringComparison.OrdinalIgnoreCase)
+                      && (provider.Contains("AMD", StringComparison.OrdinalIgnoreCase)
+                      || provider.Contains("Advanced Micro Devices", StringComparison.OrdinalIgnoreCase));
                 bool versionMatch = version.Length > 0 && installedVersion.Contains(
                     version, StringComparison.OrdinalIgnoreCase);
-                if (!vendorMatch && !versionMatch) continue;
+                if (!vendorMatch) continue;
                 string date = GpuIdentity.DriverDateText(child.GetValue("DriverDate")?.ToString());
-                if (date.Length > 0) return date;
+                if (date.Length == 0) continue;
+                if (versionMatch) return date;
+                if (fallbackDate.Length == 0) fallbackDate = date;
             }
+            // Intel may have an integrated GPU with a different driver installed. Never use its
+            // date for an Arc card when the requested version was not found.
+            return vendor.Equals("Intel", StringComparison.OrdinalIgnoreCase) && version.Length > 0
+                ? "" : fallbackDate;
         }
         catch { }
         return "";

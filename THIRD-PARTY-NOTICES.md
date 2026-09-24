@@ -1,4 +1,4 @@
-﻿# Third-party notices
+# Third-party notices
 
 Roch GPU itself is GPL-3.0-or-later (see `LICENSE`). It includes and depends on the following.
 
@@ -17,6 +17,7 @@ This copy has been **modified**. The changes are:
 1. Retargeted to `net10.0` (upstream targets an older framework).
 2. Added an `InternalsVisibleTo` attribute for `GpuTuner.Core`, so the tuning code can reach the
    internal structure definitions it needs for private NVAPI calls.
+3. Restricted NVAPI DLL discovery to Windows System32 to avoid loading a DLL from the app folder.
 
 The complete, modified source of the library is in this repository, and the released `RochGPU.exe`
 is a single-file self-contained publish — so `NvAPIWrapper.dll` is bundled inside the executable
@@ -54,3 +55,7 @@ small P/Invoke binding in `src/GpuTuner.Core/Backends/Nvidia/Nvml.cs`.
 No code from RadeonTuner is included here. It was read as a reference while working out how the
 Overdrive 8 API expects to be called — specifically that `lpNumberOfFeatures` is an in/out parameter.
 Credited with thanks.
+
+## Intel Graphics Control Library (IGCL)
+
+The Intel backend is an independently written binding to the public [IGCL API](https://github.com/intel/drivers.gpu.control-library). It loads `ControlLib.dll` from Windows System32. No Intel headers, driver binaries, or Arc Power code are redistributed.

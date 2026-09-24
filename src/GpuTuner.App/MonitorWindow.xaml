@@ -122,7 +122,7 @@
         <Grid Margin="0,0,0,16">
             <StackPanel>
                 <TextBlock Text="Telemetry" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"/>
-                <TextBlock Text="{Binding DeviceDisplayName}" FontSize="12" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}"/>
+                <TextBlock Text="{Binding TelemetryDeviceName}" FontSize="12" Margin="0,4,0,0" Foreground="{DynamicResource MutedBrush}"/>
             </StackPanel>
             <Border HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="5" Background="{DynamicResource PanelBrush}" Padding="10,6">
                 <TextBlock Text="LIVE · READ ONLY" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource MutedBrush}"/>

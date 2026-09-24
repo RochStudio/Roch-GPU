@@ -2,7 +2,13 @@
 
 # Roch GPU
 
-A Windows tuning and monitoring tool for NVIDIA and AMD GPUs. Adjust supported clocks, voltage, power, fans and memory timings, with live telemetry, five profile slots and light/dark modes. No HWiNFO dependency.
+A Windows tuning and monitoring tool for NVIDIA, AMD and Intel Arc GPUs. Adjust supported clocks, voltage, power, fans and memory timings, with live telemetry, five profile slots and light/dark modes. No HWiNFO dependency.
+
+## Intel Arc Pro B60 — 1.0.9
+
+Intel IGCL support adds core offsets, memory speed, voltage/power/temperature limits, editable V/F curves, fixed fan duty and hardware fan curves. Controls use driver-reported ranges. Memory tuning is shown in **Mbps** (19,000 Mbps = 19 Gbps); Intel's temperature limit is a **percentage**, not °C. Existing NVIDIA and AMD controls keep their units. Intel editor increments are 5% voltage, 15 MHz core offset, 100 Mbps memory speed, and 5% power/temperature limits. Loading existing settings preserves off-grid values.
+
+Verified on Arc Pro B60 24 GB / driver **32.0.101.9030** with small write/readback/restore tests, including fan modes and profile Apply. The original settings and curves were restored. This is functional verification, not a stress-stability result. See [Intel support and validation](docs/intel-arc-b60.md). Intel support is included in the 1.0.9 source. Build this checkout for 1.0.9; the published 1.0.8 executable predates these additions.
 
 ## Install
 
@@ -12,14 +18,19 @@ A Windows tuning and monitoring tool for NVIDIA and AMD GPUs. Adjust supported c
 
 Windows x64 and a compatible vendor graphics driver are required. The self-contained executable needs no separate .NET installation.
 
-## What's new in 1.0.8
+## What's new in 1.0.9
 
-- **XBAR and SYS clock offsets fixed on RTX 4070:** select the correct driver control layout for reads and writes, validate the getter, and verify offsets after writing. Both domains passed +15 → 0 → +15 MHz read-back tests on driver 591.86. The earlier read-only-Ada conclusion was incorrect; see [layout details](docs/xbar-sys-layout-fix.md).
-- **13 additional native NVIDIA sensor readings:** video-engine/bus load, available VRAM and usage, video clock, thermal limit, performance-limit flags, and current PCIe generation/speed/width. No HWiNFO dependency. See [sensor coverage and limitations](docs/rtx4070-telemetry.md).
-- **Clearer telemetry:** instantaneous GPU clock is labelled measured; XBAR/SYS monitoring does not require writable controls.
-- **Sun/moon theme toggle:** now beside Minimize, matching Roch Viewer.
+- **Intel Arc Pro B60 tuning:** voltage limit, core offset, memory speed, power/temperature limits, V/F editing, and fixed or hardware-curve fans through the installed Intel driver.
+- **Core clock range:** optional minimum/maximum limits, profile persistence, verified writes, and restoration of the driver's factory range.
+- **Fan settings stay selected:** applying power or clocks keeps fan changes made in the Fan window. Software fan-curve updates are serialized with fan-mode changes.
+- **Expanded Battlemage telemetry:** VR temperatures, memory voltage monitoring, GPU/memory power, memory bandwidth, VRAM usage, PCIe link and throttle indicators when reported. Memory voltage is read-only.
+- **Graphics details fixed:** ASRock board identity, Battlemage chip, Xe cores, GDDR6/bus width, VBIOS and PCI address; matching Intel driver date; scrollable details.
+- **Review fixes:** Intel stock profiles use the driver's voltage-limit default. UI reads and voltage-cap edits share the telemetry lock. A stalled poll cannot silently unload its driver library. Vendor DLL discovery is restricted to System32.
+- **Build checks:** both `build.ps1` and setup run core, telemetry and app regression suites before publishing.
 
-Release validation: 425 core checks and 28 telemetry checks passed. Hardware verification covers RTX 4070 / 591.86; it is not a stress-stability test or proof of support on every GPU.
+The supported Intel editor steps are **5% voltage, 15 MHz core, 100 Mbps memory, 5% power and 5% temperature**. Existing off-grid settings remain intact when loaded. Temperature percentage is not degrees Celsius.
+
+See [1.0.9 changes and validation](docs/releases/1.0.9.md). B60 functional tests verify requests/readback/restoration; they do not establish stress stability or support on every Arc model. Earlier NVIDIA fixes are documented in [1.0.8 notes](docs/releases/1.0.8.md).
 
 ## Driver compatibility
 
@@ -32,6 +43,7 @@ Compatibility depends on the GPU, board firmware and installed driver; an availa
 | GeForce RTX 5070 Ti — **616.92** | Power, core and memory offsets passed write/read-back/restore tests. Both NVVDD and MSVDD OCP rails passed a scoped hardware test; the updated app was subsequently confirmed working by its owner, including OCP. |
 | NVIDIA **616.56** | Original reported failure version. The modern OCP path is implemented, but this exact driver has **not been tested directly**. |
 | Other NVIDIA drivers / GPUs | Feature-dependent; not covered by the 616.92 test. Older drivers retain the legacy OCP path. R615+ changed-limit requests require validation of the modern OCP layout; unknown driver identity blocks changed OCP writes. |
+| Intel Arc Pro B60 — **32.0.101.9030** | Native tuning, hardware fan curves, V/F editing and core clock range passed scoped write/readback/restore checks. Latest identity and telemetry checks are read-only. Other Arc models are not hardware-validated. |
 | AMD | Uses ADL/ADLX rather than NVIDIA's OCP path. See [RX 9070 XT support](#rx-9070-xt-support) for verified features; this NVIDIA fix does not establish additional AMD driver compatibility. |
 
 ### NVIDIA OCP on newer drivers
@@ -44,7 +56,7 @@ After replacing the executable or updating the driver, fully exit the previous R
 
 ## Features
 
-- **NVIDIA and AMD in one app:** supported core/memory clocks, voltage controls and power limits, with controls adapted to the detected card.
+- **NVIDIA, AMD and Intel Arc in one app:** supported core/memory clocks, voltage controls and power limits, with controls adapted to the detected card.
 - **Live telemetry:** temperatures, voltages, clocks, utilization, power, fans, GPU memory and PCIe readings where available. Summary cards and current/minimum/maximum/average columns make changes easy to track.
 - **Hardware-read GPU identity:** the main header shows driver and vBIOS versions, VRAM type/vendor, maximum PCIe generation and lane width, and Resizable BAR state. The read-only **Graphics** window adds board, silicon, memory and installed-driver details.
 - **Native AMD monitoring:** ADL and ADLX read the installed AMD driver directly—no HWiNFO, shared-memory feed or extra monitoring driver.
@@ -82,7 +94,7 @@ Install the **.NET 10 SDK**, then run in PowerShell:
 .\build.ps1
 ```
 
-Open `dist\RochGPU.exe`. The current source version is **1.0.8**.
+Open `dist\RochGPU.exe`. The current source version is **1.0.9**. The build runs all three regression suites before publishing.
 
 > Overclocking can cause crashes, data loss or hardware damage. Test changes carefully. Controls and sensor readings depend on what your driver exposes.
 
@@ -91,6 +103,7 @@ Open `dist\RochGPU.exe`. The current source version is **1.0.8**.
 - **Soroush Falahati — [NvAPIWrapper](https://github.com/falahati/NvAPIWrapper):** the vendored NVAPI binding, modified and retargeted to .NET 10.
 - **dumbie — [RadeonTuner](https://github.com/dumbie/RadeonTuner):** the Overdrive 8 calling-convention reference that helped unblock the AMD backend; no RadeonTuner code is included.
 - **AMD [ADL](https://gpuopen-librariesandsdks.github.io/adl/) and [ADLX](https://gpuopen.com/manuals/adlx/):** public driver-interface documentation for AMD tuning and telemetry.
+- **Intel [Graphics Control Library (IGCL)](https://github.com/intel/drivers.gpu.control-library):** public interfaces used by the independent Intel backend; only the installed driver DLL is loaded. No Arc Power source or binaries are bundled.
 - **NVIDIA NVAPI and NVML:** vendor driver interfaces used for NVIDIA tuning and monitoring.
 
 Created by **Roch Studio / [@MateoPCTech](https://x.com/MateoPCTech)**. Licensed GPL-3.0-or-later; third-party components retain their own licenses. See [third-party notices](THIRD-PARTY-NOTICES.md).

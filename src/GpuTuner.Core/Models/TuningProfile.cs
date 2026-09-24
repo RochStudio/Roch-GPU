@@ -140,6 +140,7 @@ public sealed class TuningProfile
         Name = "Stock",
         GpuName = gpuName,
         CoreOffsetMhz = 0,
+        VoltageBoostPercent = caps.VoltageBoostDefaultPercent,
         PowerLimitPercent = caps.PowerLimitDefaultPercent,
         MemoryTimingLevel = caps.MemoryTimingDefaultLevel,
         TempLimitC = caps.TempLimitDefaultC,

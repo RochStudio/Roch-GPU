@@ -64,10 +64,12 @@ namespace NvAPIWrapper.Native.Helpers
                 : NvAPI32_QueryInterface(interfaceId);
         }
 
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport(@"nvapi", EntryPoint = @"nvapi_QueryInterface", CallingConvention = CallingConvention.Cdecl,
             PreserveSig = true)]
         private static extern IntPtr NvAPI32_QueryInterface(uint interfaceId);
 
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport(@"nvapi64", EntryPoint = @"nvapi_QueryInterface", CallingConvention = CallingConvention.Cdecl,
             PreserveSig = true)]
         private static extern IntPtr NvAPI64_QueryInterface(uint interfaceId);

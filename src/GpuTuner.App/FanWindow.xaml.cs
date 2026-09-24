@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -40,6 +40,7 @@ public partial class FanWindow : Window
         Theme.Register(this);
 
         BuildFanRows();
+        SoftwareCurveParameters.Visibility = _svc.Capabilities.FanCurveIsHardware ? Visibility.Collapsed : Visibility.Visible;
 
         CurveEditor.SetPoints(_vm.EditorCurve.Points);
         HystBox.Text = _vm.EditorCurve.HysteresisC.ToString("0.#");
@@ -299,7 +300,11 @@ public partial class FanWindow : Window
                 : "This app runs the curve and must stay open for it to hold.")
             : fixedMode
                 ? "Held whatever the temperature does. The card's own thermal protection still applies."
-                : "The driver controls fan speed. Press Apply to use Auto and the selected Zero RPM setting.";
+                : _vm.HasZeroRpm
+                    ? "The driver controls fan speed. Press Apply to use Auto and the selected Zero RPM setting."
+                    : "The driver controls fan speed. Press Apply to use Auto.";
+        if (curve && _svc.Capabilities.VoltageStyle == VoltageControlStyle.Percent)
+            ModeNote.Text += $" Use 2–{_svc.Capabilities.FanCurvePoints} points within 25–100°C, with fan speeds that stay level or increase.";
     }
 
     private void OnTelemetry(GpuTelemetry t) => Dispatcher.BeginInvoke(() =>
@@ -308,9 +313,10 @@ public partial class FanWindow : Window
         {
             double duty = i < t.FanPercents.Length ? t.FanPercents[i] : t.FanPercent;
             double rpm = i < t.FanRpms.Length ? t.FanRpms[i] : t.FanRpm;
-            _readouts[i].Text = rpm > 0
-                ? $"{duty:0} %   ·   {rpm:0} rpm"
-                : $"{duty:0} %";
+            string dutyText = double.IsFinite(duty) ? $"{duty:0} %" : "—";
+            _readouts[i].Text = double.IsFinite(rpm)
+                ? $"{dutyText}   ·   {rpm:0} rpm"
+                : dutyText;
         }
     });
 
@@ -347,20 +353,21 @@ public partial class FanWindow : Window
             ? Array.Empty<int>()
             : _sliders.Select(s => (int)Math.Round(s.Value)).ToArray();
 
-        var errs = _svc.SetFans(mode, (int)Math.Round(_sliders.Count > 0 ? _sliders[0].Value : 50),
+        int percent = (int)Math.Round(_sliders.Count > 0 ? _sliders[0].Value : 50);
+        var errs = _svc.SetFans(mode, percent,
                                 duties, _vm.EditorCurve, _vm.HasZeroRpm ? _vm.ZeroRpm : null);
         bool ok = errs.Count == 0 || TuningService.OnlyNotes(errs);
         Status.Text = errs.Count > 0 ? string.Join("  |  ", errs) : Describe(mode, duties);
         Status.Foreground = (System.Windows.Media.Brush)FindResource(ok ? "MutedBrush" : "DangerBrush");
 
         // Keep the main window's own fan controls telling the same story.
-        if (ok) _vm.SyncFansFromService(mode, duties);
+        if (ok) _vm.SyncFansFromService(mode, percent, duties);
 
         // And keep the saved profile telling it too. Without this the fans are the one setting you
         // can apply, watch work, reboot, and find gone - which is exactly what happened.
         if (ok)
         {
-            string saved = _vm.SaveFansToActiveSlot(mode, (int)Math.Round(_sliders.Count > 0 ? _sliders[0].Value : 50),
+            string saved = _vm.SaveFansToActiveSlot(mode, percent,
                                                     duties, _vm.EditorCurve);
             Status.Text += "  ·  " + saved;
         }

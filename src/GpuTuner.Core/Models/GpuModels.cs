@@ -16,6 +16,16 @@ public sealed record GpuDevice(
 /// <summary>What the backend allows us to change, plus the driver-imposed ranges.</summary>
 public sealed record GpuCapabilities
 {
+    public int CoreOffsetStepMhz { get; init; } = 15;
+    public string MemoryClockUnit { get; init; } = "MHz";
+    public bool TempLimitIsPercent { get; init; }
+    public string TempLimitUnit => TempLimitIsPercent ? "%" : "°C";
+    /// <summary>Independent per-point editing without NVIDIA's voltage-cap/flatten path.</summary>
+    public bool CanEditVfCurve { get; init; }
+    public bool CanReadHardwareFanCurve { get; init; }
+    public int VfCurveStepMhz { get; init; } = 5;
+    public int VfCurveMinMhz { get; init; }
+    public int VfCurveMaxMhz { get; init; } = 10000;
     public bool CanSetCoreOffset { get; init; }
     public bool CanSetMemoryOffset { get; init; }
     public bool CanSetPowerLimit { get; init; }
@@ -27,6 +37,8 @@ public sealed record GpuCapabilities
     /// <summary>Core voltage boost range in percent (0 = stock V/F curve, higher = more voltage headroom).</summary>
     public int VoltageBoostMinPercent { get; init; }
     public int VoltageBoostMaxPercent { get; init; } = 100;
+    /// <summary>Driver default: NVIDIA boost is normally 0%; Intel voltage-limit defaults differ.</summary>
+    public int VoltageBoostDefaultPercent { get; init; }
 
     /// <summary>True when the V/F curve can be edited — the only real undervolt path on NVIDIA.</summary>
     public bool CanSetVoltageCurve { get; init; }
@@ -193,7 +205,9 @@ public enum VoltageControlStyle
     /// <summary>Absolute target in mV (NVIDIA: cap or boost against the V/F curve).</summary>
     Absolute,
     /// <summary>Signed offset in mV applied to the whole curve (AMD).</summary>
-    Offset
+    Offset,
+    /// <summary>Intel's driver-defined voltage limit percentage.</summary>
+    Percent
 }
 
 /// <summary>Instantaneous sensor readout.</summary>
@@ -239,6 +253,7 @@ public sealed record SupplementalSensor(string Key, string Name, string Unit, do
 /// <summary>Current applied tuning as read back from the driver.</summary>
 public sealed record GpuTuningState
 {
+    public FanCurve? HardwareFanCurve { get; init; }
     public int CoreOffsetMhz { get; init; }
     public int MemoryOffsetMhz { get; init; }
     public int PowerLimitPercent { get; init; } = 100;
