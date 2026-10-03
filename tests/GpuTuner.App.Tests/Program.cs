@@ -4,6 +4,19 @@ using GpuTuner.Core.Models;
 using GpuTuner.Core.Services;
 using System.IO;
 
+if (args.Contains("--main-preview", StringComparer.Ordinal))
+{
+    Environment.ExitCode = MainPreview.Run(args);
+    return;
+}
+
+// This branch must return before the ordinary tests initialize App settings or view models.
+if (args.Contains("--graphics-preview", StringComparer.Ordinal))
+{
+    Environment.ExitCode = GraphicsPreview.Run(args);
+    return;
+}
+
 var folder = Path.Combine(Path.GetTempPath(), "RochGpuFanSyncTests-" + Guid.NewGuid().ToString("N"));
 int passed = 0;
 void Check(string name, bool ok)
@@ -13,9 +26,15 @@ void Check(string name, bool ok)
 }
 try
 {
+    var store = new ProfileStore(folder);
+    Check("fresh settings open in light mode", !store.LoadSettings().DarkMode);
+    store.SaveSettings(new AppSettings { DarkMode = true });
+    Check("saved dark preference survives loading", store.LoadSettings().DarkMode);
+    store.SaveSettings(new AppSettings { DarkMode = false });
+    Check("saved light preference survives loading", !store.LoadSettings().DarkMode);
     using var service = new TuningService(new MockBackend());
     service.Initialize();
-    var vm = new MainViewModel(service, new ProfileStore(folder));
+    var vm = new MainViewModel(service, store);
     // Start with a different old value, exactly as when the fan window owns its own slider.
     vm.FixedFan = 35;
     var errors = service.SetFans(FanMode.Fixed, 65, [], vm.EditorCurve);

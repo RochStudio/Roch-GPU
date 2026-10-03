@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
+using GpuTuner.App.Controls;
 using GpuTuner.App.Native;
 using GpuTuner.App.ViewModels;
 using GpuTuner.Core.Models;
@@ -22,7 +23,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// The app icon at whatever size the shell wants for the notification area. The .ico carries a
-    /// hand-tuned 16px frame — no grid, no selected point, just the curve — so it is worth asking for
+    /// hand-tuned 16px frame - no grid, no selected point, just the curve - so it is worth asking for
     /// the small size and letting the icon pick that frame, rather than letting NotifyIcon downscale
     /// the 256px one into mush. Returns null if the resource is missing, so the caller can fall back.
     /// </summary>
@@ -168,13 +169,14 @@ public partial class MainWindow : Window
     {
         bool dark = Theme.Toggle();
         UpdateThemeButton();
+        _vm.RefreshThemeBrushes();
         App.Settings.DarkMode = dark;
         App.Store.SaveSettings(App.Settings);
     }
 
     private void UpdateThemeButton()
     {
-        ThemeButton.Content = Theme.IsDark ? "☀" : "☾";
+        ThemeButton.Content = Theme.IsDark ? "\u2600" : ThemeGlyph.CreateDarkTargetMoon();
         string action = Theme.IsDark ? "Switch to light mode" : "Switch to dark mode";
         ThemeButton.ToolTip = action;
         System.Windows.Automation.AutomationProperties.SetName(ThemeButton, action);

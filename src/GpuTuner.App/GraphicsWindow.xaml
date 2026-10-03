@@ -12,7 +12,7 @@
             <Setter Property="Margin" Value="8,3"/>
         </Style>
         <Style x:Key="InfoValue" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource BrandBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="Margin" Value="8,3"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
@@ -27,21 +27,21 @@
 
         <Grid Margin="4,0,4,10">
             <StackPanel>
-                <TextBlock Text="Graphics" FontSize="22" FontWeight="SemiBold"
+                <TextBlock Text="Graphics" FontSize="12" FontWeight="Bold"
                            Foreground="{DynamicResource TextBrush}"/>
                 <TextBlock Text="Static hardware and driver information"
                            Style="{StaticResource Muted}" Margin="0,3,0,0"/>
             </StackPanel>
             <Border HorizontalAlignment="Right" VerticalAlignment="Top" CornerRadius="5"
                     Background="{DynamicResource PanelBrush}" Padding="10,6">
-                <TextBlock Text="READ ONLY" FontSize="10" FontWeight="SemiBold"
-                           Foreground="{DynamicResource MutedBrush}"/>
+                <TextBlock Text="READ ONLY" FontSize="12" FontWeight="Bold"
+                           Foreground="{DynamicResource TextBrush}"/>
             </Border>
         </Grid>
 
         <Border Grid.Row="1" Background="Transparent" Margin="0,0,0,3">
             <TextBlock Text="GRAPHICS" Foreground="{DynamicResource BrandBrush}"
-                       FontWeight="SemiBold" Margin="8,4"/>
+                       FontWeight="Bold" Margin="8,4"/>
         </Border>
 
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"

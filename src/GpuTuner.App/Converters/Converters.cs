@@ -75,3 +75,19 @@ public sealed class XocGateLabelConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>Split an existing information line for label/value colors without changing its text.</summary>
+public sealed class InformationLinePartConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        string text = value as string ?? "";
+        int separator = text.IndexOf(": ", StringComparison.Ordinal);
+        bool label = parameter is string part && part == "Label";
+        if (separator < 0) return label ? "" : text;
+        return label ? text[..(separator + 2)] : text[(separator + 2)..];
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}

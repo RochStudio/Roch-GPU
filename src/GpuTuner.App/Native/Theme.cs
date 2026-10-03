@@ -8,16 +8,8 @@ namespace GpuTuner.App.Native;
 /// <summary>
 /// Light and dark, switched live.
 ///
-/// The colours are Roch Viewer's, which carries each one as a (light, dark) pair; this is the same
-/// table read the same way. Its own switch is a single button showing the mode you are in, on the
-/// reasoning that a Light/Dark pair spends half its width naming the mode you are not in — so this
-/// is one button too.
-///
-/// Switching works by setting Color on the brush objects already in the resource dictionary rather
-/// than swapping dictionaries. Every control in every open window holds a reference to those same
-/// brushes, so assigning a colour repaints all of them at once, with no re-binding and no XAML
-/// churn — the whole app, including windows that are already on screen. It only works while the
-/// brushes are unfrozen, which is why none of them is declared with PresentationOptions:Freeze.
+/// Shared Roch Viewer palette. Replacing the brush resources updates DynamicResource references
+/// in every open window; custom-drawn controls follow the Changed event.
 /// </summary>
 public static class Theme
 {
@@ -27,23 +19,21 @@ public static class Theme
     /// <summary>Key, then the colour in light mode and in dark mode.</summary>
     private static readonly (string Key, string Light, string Dark)[] Palette =
     {
-        ("BgBrush",          "#FFF1F5F9", "#FF101010"),
-        ("PanelBrush",       "#FFFFFFFF", "#FF161616"),
-        ("PanelAltBrush",    "#FFF8FAFC", "#FF1A1A1A"),
-        ("BorderBrush",      "#FFCBD5E1", "#FF0A0A0A"),
-        ("SectionBorderBrush", "#FFCBD5E1", "#FF2A2A2A"),
-        ("TextBrush",        "#FF0F172A", "#FFFFFFFF"),
-        ("MutedBrush",       "#FF475569", "#FFB0B0B0"),
-        ("HeaderBrush",      "#FFE2E8F0", "#FF1C1C1C"),
-        ("HighlightBrush",   "#FFE8EEF5", "#FF171717"),
-        // The brand red is saturated in light and lifted in dark: the dark one on a light ground is
-        // too pale to read, and the light one on near-black is too dark. Roch Viewer splits it for
-        // the same reason.
-        ("BrandBrush",       "#FFB91C1C", "#FFFF4D4D"),
-        ("BrandHoverBrush",  "#FFDC2626", "#FFFF8080"),
-        ("TitleHoverBrush",  "#FFC5D2E0", "#FF343434"),
+        ("BgBrush",          "#FFFFFFFF", "#FF000000"),
+        ("PanelBrush",       "#FFFFFFFF", "#FF000000"),
+        ("PanelAltBrush",    "#FFFFFFFF", "#FF000000"),
+        ("BorderBrush",      "#FFD0D0D0", "#FF383838"),
+        ("SectionBorderBrush", "#FFD0D0D0", "#FF383838"),
+        ("TextBrush",        "#FF000000", "#FFFFFFFF"),
+        ("MutedBrush",       "#FF62666D", "#FFA0A0A0"),
+        ("HeaderBrush",      "#FFFFFFFF", "#FF000000"),
+        ("HighlightBrush",   "#FFFFFFFF", "#FF000000"),
+        ("BrandBrush",       "#FFD0343A", "#FFD0343A"),
+        ("BrandHoverBrush",  "#FFE0383E", "#FFE0383E"),
+        ("SelectedBrush",    "#FFD0343A", "#FFD0343A"),
+        ("TitleHoverBrush",  "#FFE6E6E6", "#FF222222"),
         ("CloseHoverBrush",  "#FFC42B1C", "#FFC42B1C"),
-        ("AccentBrush",      "#FFB91C1C", "#FFD32F2F"),
+        ("AccentBrush",      "#FFB91C1C", "#FFFF5A5F"),
         ("AccentDimBrush",   "#FFE7B9B9", "#FF6E1717"),
         ("WarnBrush",        "#FFB45309", "#FFFF7A7A"),
         ("DangerBrush",      "#FFDC2626", "#FFE53935"),
@@ -51,7 +41,7 @@ public static class Theme
 
     private static readonly List<Window> Windows = new();
 
-    public static bool IsDark { get; private set; } = true;
+    public static bool IsDark { get; private set; }
 
     /// <summary>Paint everything for the given mode. Safe to call before any window exists.</summary>
     public static void Apply(bool dark)

@@ -12,5 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/GpuTuner.App/GpuTuner.App.csproj" />
     <None Include="../../src/GpuTuner.App/App.xaml" Link="AppResources.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/GpuTuner.App/MainWindow.xaml" Link="MainWindowSource.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/GpuTuner.App/Native/Theme.cs" Link="ThemeSource.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

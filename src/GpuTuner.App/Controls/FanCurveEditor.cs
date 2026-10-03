@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using GpuTuner.App.Native;
 using GpuTuner.Core.Models;
 
 namespace GpuTuner.App.Controls;
@@ -92,19 +93,24 @@ public sealed class FanCurveEditor : FrameworkElement
 
     public bool IsReadOnly { get; set; }
 
-    private static readonly Brush GridBrush = Freeze(new SolidColorBrush(Color.FromArgb(38, 255, 255, 255)));
-    private static readonly Brush LabelBrush = Freeze(new SolidColorBrush(Color.FromArgb(170, 255, 255, 255)));
-    private static readonly Brush CurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x5D, 0xD0, 0xC7)));
-    private static readonly Brush PointFill = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x16, 0x1A)));
+    private static Brush GridBrush => ResourceBrush("BorderBrush");
+    private static Brush LabelBrush => ResourceBrush("TextBrush");
+    private static Brush CurveBrush => ResourceBrush("AccentBrush");
+    private static Brush PointFill => ResourceBrush("PanelBrush");
     private static readonly Brush LiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x4B)));
-    private static readonly Typeface Face = new("Segoe UI");
+    private static readonly Typeface Face = new("Consolas");
     private static Brush Freeze(Brush b) { b.Freeze(); return b; }
+    private static Brush ResourceBrush(string key) => Application.Current?.TryFindResource(key) as Brush ?? Brushes.Black;
 
     public FanCurveEditor()
     {
         Focusable = true;
         Cursor = Cursors.Cross;
+        Loaded += (_, _) => Theme.Changed += Theme_Changed;
+        Unloaded += (_, _) => Theme.Changed -= Theme_Changed;
     }
+
+    private void Theme_Changed(object? sender, EventArgs e) => InvalidateVisual();
 
     // ---- coordinate mapping
     private double PlotW => Math.Max(1, ActualWidth - PadL - PadR);
@@ -130,7 +136,7 @@ public sealed class FanCurveEditor : FrameworkElement
         {
             double y = Math.Round(ToScreen(new FanPoint(0, f)).Y) + 0.5;
             dc.DrawLine(gridPen, new Point(PadL, y), new Point(w - PadR, y));
-            var ft = new FormattedText($"{f}%", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, LabelBrush, ppd);
+            var ft = new FormattedText($"{f}%", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, LabelBrush, ppd);
             dc.DrawText(ft, new Point(PadL - ft.Width - 5, y - ft.Height / 2));
         }
         // vertical grid (temp)
@@ -140,7 +146,7 @@ public sealed class FanCurveEditor : FrameworkElement
             dc.DrawLine(gridPen, new Point(x, PadT), new Point(x, h - PadB));
             if (t % 20 == 0)
             {
-                var ft = new FormattedText($"{t}°", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, LabelBrush, ppd);
+                var ft = new FormattedText($"{t}°", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, LabelBrush, ppd);
                 dc.DrawText(ft, new Point(x - ft.Width / 2, h - PadB + 4));
             }
         }
@@ -170,7 +176,7 @@ public sealed class FanCurveEditor : FrameworkElement
             if (i == _dragIndex)
             {
                 var ft = new FormattedText($"{pts[i].TemperatureC:0}°C → {pts[i].FanPercent:0}%", CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight, Face, 11, LabelBrush, ppd);
+                    FlowDirection.LeftToRight, Face, 12, LabelBrush, ppd);
                 dc.DrawText(ft, new Point(Math.Min(s.X + 8, w - ft.Width - 4), Math.Max(PadT, s.Y - 18)));
             }
         }

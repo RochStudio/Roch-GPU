@@ -4,43 +4,30 @@
              xmlns:c="clr-namespace:GpuTuner.App.Controls"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-        <SolidColorBrush x:Key="SectionBorderBrush" Color="#FF2A2A2A"/>
-        <!-- Palette: black · grey · red · white -->
-        <!-- Surfaces are Roch Viewer's dark palette, value for value, so the two tools in the family
-             sit on the same ground. Its borders are DARKER than the panels they edge (#0A0A0A under
-             #161616) rather than lighter: the seam recedes instead of drawing a box. -->
-        <SolidColorBrush x:Key="BgBrush" Color="#FF101010"/>
-        <SolidColorBrush x:Key="PanelBrush" Color="#FF161616"/>
-        <SolidColorBrush x:Key="PanelAltBrush" Color="#FF1A1A1A"/>
-        <SolidColorBrush x:Key="BorderBrush" Color="#FF0A0A0A"/>
-        <SolidColorBrush x:Key="TextBrush" Color="#FFFFFFFF"/>
-        <SolidColorBrush x:Key="MutedBrush" Color="#FFB0B0B0"/>
-        <!-- The title strip sits a shade above the body, as it does there. -->
-        <SolidColorBrush x:Key="HeaderBrush" Color="#FF1C1C1C"/>
-        <!-- The telemetry band, one step off the panel rather than a shade of its own: Roch Viewer
-             tints alternate rows #171717 against a #161616 table, which reads as texture and not as
-             stripes. -->
-        <SolidColorBrush x:Key="HighlightBrush" Color="#FF171717"/>
-        <!-- Brand red for text: links and live values. Not a fill - the buttons keep their own red. -->
-        <SolidColorBrush x:Key="BrandBrush" Color="#FFFF4D4D"/>
-        <SolidColorBrush x:Key="BrandHoverBrush" Color="#FFFF8080"/>
+        <!-- Shared Viewer light palette; Theme.Apply restores the user's saved light/dark choice. -->
+        <SolidColorBrush x:Key="SectionBorderBrush" Color="#FFD0D0D0"/>
+        <SolidColorBrush x:Key="BgBrush" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="PanelBrush" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="PanelAltBrush" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="#FFD0D0D0"/>
+        <SolidColorBrush x:Key="TextBrush" Color="#FF000000"/>
+        <SolidColorBrush x:Key="MutedBrush" Color="#FF62666D"/>
+        <SolidColorBrush x:Key="HeaderBrush" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="HighlightBrush" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="BrandBrush" Color="#FFD0343A"/>
+        <SolidColorBrush x:Key="BrandHoverBrush" Color="#FFE0383E"/>
+        <SolidColorBrush x:Key="SelectedBrush" Color="#FFD0343A"/>
         <SolidColorBrush x:Key="CloseHoverBrush" Color="#FFC42B1C"/>
-        <SolidColorBrush x:Key="TitleHoverBrush" Color="#FF343434"/>
-        <SolidColorBrush x:Key="AccentBrush" Color="#FFD32F2F"/>
-        <SolidColorBrush x:Key="AccentDimBrush" Color="#FF6E1717"/>
-        <SolidColorBrush x:Key="WarnBrush" Color="#FFFF7A7A"/>
-        <SolidColorBrush x:Key="DangerBrush" Color="#FFE53935"/>
+        <SolidColorBrush x:Key="TitleHoverBrush" Color="#FFE6E6E6"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#FFB91C1C"/>
+        <SolidColorBrush x:Key="AccentDimBrush" Color="#FFE7B9B9"/>
+        <SolidColorBrush x:Key="WarnBrush" Color="#FFB45309"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#FFDC2626"/>
 
         <Style TargetType="Window">
             <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
-            <!-- Consolas, the font Roch Viewer uses throughout. Monospace earns its place in a tool
-                 like this: the telemetry columns line up and a value stops shifting sideways as its
-                 digits change.
-                 Its "size 12" is 12 POINTS, which Tk resolves to 16 device pixels; WPF's FontSize is
-                 already in pixels, so a literal 12 here came out three quarters the size. The body
-                 stays at 12px because this window is 386 wide where Roch Viewer's is nearly twice
-                 that - the title matches at the real 16. -->
+            <!-- Viewer body typography: 12 device-independent pixels at 96 DPI. -->
             <Setter Property="FontFamily" Value="Consolas"/>
             <Setter Property="FontSize" Value="12"/>
             <!-- Tk antialiases greyscale. Left on ClearType, white-on-near-black picks up visible
@@ -51,18 +38,18 @@
         </Style>
         <!-- No implicit TextBlock foreground: text inherits Window.Foreground, so button/combobox templates keep their own colours. -->
         <Style x:Key="Muted" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
-            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
         </Style>
         <Style x:Key="SectionTitle" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
         <Style x:Key="BigValue" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="22"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
         </Style>
         <!-- Flat sections: spacing and section titles carry the structure, not boxes. -->
         <Style x:Key="Panel" TargetType="Border">
@@ -87,10 +74,12 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrandHoverBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.4"/>
+                                <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -98,10 +87,10 @@
             </Setter>
         </Style>
         <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
             <Setter Property="Foreground" Value="#FFFFFFFF"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SelectedBrush}"/>
         </Style>
         <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/>
@@ -116,18 +105,92 @@
                 <!-- The default template only greys its thumb; on this palette that still reads as
                      live, so dim the whole track the way the nudge buttons do. -->
                 <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.35"/>
+                    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <Border x:Name="box" Width="16" Height="16" VerticalAlignment="Center"
+                                    BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                                    Background="{DynamicResource BgBrush}">
+                                <Grid>
+                                    <Path x:Name="check" Data="M 3,7 L 6,10 L 12,3" Stroke="White" StrokeThickness="2" Visibility="Collapsed"/>
+                                    <Path x:Name="mixed" Data="M 3,7 L 11,7" Stroke="White" StrokeThickness="2" Visibility="Collapsed"/>
+                                </Grid>
+                            </Border>
+                            <ContentPresenter Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="box" Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                <Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource SelectedBrush}"/>
+                                <Setter TargetName="check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="{x:Null}">
+                                <Setter TargetName="box" Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                <Setter TargetName="mixed" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource BrandHoverBrush}"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                                <Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource MutedBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="ComboBox">
             <Setter Property="MinHeight" Value="26"/>
-            <!-- default ComboBox template uses light system chrome + white popup, so keep its text dark -->
-            <Setter Property="Foreground" Value="#FF15171B"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                        <Setter Property="Background" Value="{DynamicResource BgBrush}"/>
+                        <Setter Property="Padding" Value="6,4"/>
+                        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border></ControlTemplate></Setter.Value></Setter>
+                        <Style.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="{DynamicResource BrandHoverBrush}"/><Setter Property="Foreground" Value="White"/></Trigger>
+                            <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource SelectedBrush}"/><Setter Property="Foreground" Value="White"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/></Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="frame" Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"><TextBlock Text="&#x25BE;" FontFamily="Segoe UI Symbol" FontSize="12" Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/></Border></ControlTemplate></ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="selection" Margin="6,3,24,3" IsHitTestVisible="False" VerticalAlignment="Center"
+                                              Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"/>
+                            <TextBox x:Name="PART_EditableTextBox" Margin="6,3,24,3" Visibility="Hidden" Background="{DynamicResource BgBrush}" Foreground="{TemplateBinding Foreground}" BorderThickness="0"/>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="None">
+                                <Border Background="{DynamicResource BgBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <ScrollViewer CanContentScroll="True"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEditable" Value="True"><Setter TargetName="selection" Property="Visibility" Value="Hidden"/><Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="ListBox">
             <Setter Property="Background" Value="{DynamicResource PanelAltBrush}"/>
@@ -140,11 +203,17 @@
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Padding" Value="4,3"/>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
         <!-- One Afterburner-style control row: name on the left, typeable value on the right, slider under. -->
         <Style x:Key="RowLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
         <!-- Compact slider: the whole left column has to fit without scrolling. -->
@@ -159,14 +228,14 @@
             <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
             <Setter Property="Width" Value="60"/>
             <Setter Property="HorizontalContentAlignment" Value="Right"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Padding" Value="3,1"/>
             <!-- Click selects the whole number, Enter commits it and moves the slider. -->
             <Setter Property="c:ValueBoxBehavior.SelectOnFocus" Value="True"/>
             <Style.Triggers>
                 <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.35"/>
+                    <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -175,7 +244,7 @@
             <Setter Property="Height" Value="17"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="FontSize" Value="9"/>
-            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Background" Value="{DynamicResource PanelAltBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -192,14 +261,15 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BrandHoverBrush}"/>
                                 <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="b" Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.35"/>
+                                <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

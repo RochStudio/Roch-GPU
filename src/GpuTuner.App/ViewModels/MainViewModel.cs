@@ -12,6 +12,13 @@ namespace GpuTuner.App.ViewModels;
 
 public sealed class MainViewModel : ObservableObject
 {
+    /// <summary>Re-evaluate resource-based status colors after the UI palette changes.</summary>
+    public void RefreshThemeBrushes()
+    {
+        OnPropertyChanged(nameof(StatusIsError));
+        OnPropertyChanged(nameof(LimitIsActive));
+    }
+
     private readonly TuningService _svc;
     private readonly ProfileStore _store;
     private readonly GpuGraphicsInfo _graphicsInfo;
@@ -131,7 +138,7 @@ public sealed class MainViewModel : ObservableObject
     public static string TitleText { get; } = "Roch GPU " +
         (typeof(MainViewModel).Assembly
             .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion.Split('+')[0] ?? "");
+            ?.InformationalVersion.Split('+', '-')[0] ?? "");
 
     public GpuCapabilities Caps { get; }
     public GpuDevice Device { get; }

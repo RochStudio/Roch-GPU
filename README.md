@@ -8,7 +8,7 @@ A Windows tuning and monitoring tool for NVIDIA, AMD and Intel Arc GPUs. Adjust 
 
 Intel IGCL support adds core offsets, memory speed, voltage/power/temperature limits, editable V/F curves, fixed fan duty and hardware fan curves. Controls use driver-reported ranges. Memory tuning is shown in **Mbps** (19,000 Mbps = 19 Gbps); Intel's temperature limit is a **percentage**, not °C. Existing NVIDIA and AMD controls keep their units. Intel editor increments are 5% voltage, 15 MHz core offset, 100 Mbps memory speed, and 5% power/temperature limits. Loading existing settings preserves off-grid values.
 
-Verified on Arc Pro B60 24 GB / driver **32.0.101.9030** with small write/readback/restore tests, including fan modes and profile Apply. The original settings and curves were restored. This is functional verification, not a stress-stability result. See [Intel support and validation](docs/intel-arc-b60.md). Intel support is included in the 1.0.9 source. Build this checkout for 1.0.9; the published 1.0.8 executable predates these additions.
+Verified on Arc Pro B60 24 GB / driver **32.0.101.9030** with small write/readback/restore tests, including fan modes and profile Apply. The original settings and curves were restored. This is functional verification, not a stress-stability result. See [Intel support and validation](docs/intel-arc-b60.md). Intel support introduced in the 1.0.9 source is included in 1.1.0. Build this checkout or download the matching 1.1.0 executable from [Releases](https://github.com/RochStudio/Roch-GPU/releases).
 
 ## Install
 
@@ -94,7 +94,7 @@ Install the **.NET 10 SDK**, then run in PowerShell:
 .\build.ps1
 ```
 
-Open `dist\RochGPU.exe`. The current source version is **1.0.9**. The build runs all three regression suites before publishing.
+Open `dist\RochGPU.exe`. The current source version is **1.1.0**. The build runs all three regression suites before publishing.
 
 > Overclocking can cause crashes, data loss or hardware damage. Test changes carefully. Controls and sensor readings depend on what your driver exposes.
 

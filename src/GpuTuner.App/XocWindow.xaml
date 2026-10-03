@@ -21,7 +21,7 @@
             <Setter Property="Height" Value="21"/>
             <Setter Property="MinWidth" Value="64"/>
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="FontSize" Value="10.5"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="Margin" Value="6,0,0,0"/>
         </Style>
     </Window.Resources>
@@ -40,7 +40,7 @@
 
         <!-- One warning for the window rather than a paragraph per lever. -->
         <Border DockPanel.Dock="Bottom" Style="{StaticResource Panel}" Padding="10,7" Margin="0,8,0,0">
-            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource WarnBrush}" FontSize="11.5">
+            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource WarnBrush}" FontSize="12">
                 <Run FontWeight="Bold" Text="These can damage hardware, not just crash it."/>
                 <Run Text="Nothing here is sanity-checked by the driver, and raising an OCP limit takes away the card's own protection. Arm one at a time and test between each. Nothing here survives a reboot."/>
             </TextBlock>

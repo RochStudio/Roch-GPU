@@ -155,19 +155,19 @@ public sealed class VfCurveEditor : FrameworkElement
 
     // This control draws directly into a DrawingContext, so WPF's DynamicResource brushes cannot
     // style its lines and labels for us. Keep explicit high-contrast palettes for both modes.
-    private static readonly Brush DarkGridBrush = Freeze(new SolidColorBrush(Color.FromArgb(34, 255, 255, 255)));
-    private static readonly Brush LightGridBrush = Freeze(new SolidColorBrush(Color.FromArgb(58, 71, 85, 105)));
-    private static readonly Brush DarkLabelBrush = Freeze(new SolidColorBrush(Color.FromArgb(210, 255, 255, 255)));
-    private static readonly Brush LightLabelBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x47, 0x55, 0x69)));
-    private static readonly Brush DarkStockBrush = Freeze(new SolidColorBrush(Color.FromArgb(105, 200, 210, 225)));
-    private static readonly Brush LightStockBrush = Freeze(new SolidColorBrush(Color.FromArgb(205, 100, 116, 139)));
+    private static readonly Brush DarkGridBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x38, 0x38, 0x38)));
+    private static readonly Brush LightGridBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0)));
+    private static readonly Brush DarkLabelBrush = Freeze(new SolidColorBrush(Colors.White));
+    private static readonly Brush LightLabelBrush = Freeze(new SolidColorBrush(Colors.Black));
+    private static readonly Brush DarkStockBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0)));
+    private static readonly Brush LightStockBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x62, 0x66, 0x6D)));
     /// <summary>The edited curve: its line and its points are one object, so they are one colour.</summary>
-    private static readonly Brush DarkCurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x3C, 0x3C)));
+    private static readonly Brush DarkCurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x5A, 0x5F)));
     private static readonly Brush LightCurveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C)));
-    private static readonly Brush DarkPointFill = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x16, 0x1A)));
+    private static readonly Brush DarkPointFill = Freeze(new SolidColorBrush(Colors.Black));
     private static readonly Brush LightPointFill = Freeze(new SolidColorBrush(Colors.White));
     private static readonly Brush DarkSelectBrush = Freeze(new SolidColorBrush(Colors.White));
-    private static readonly Brush LightSelectBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x0F, 0x17, 0x2A)));
+    private static readonly Brush LightSelectBrush = Freeze(new SolidColorBrush(Colors.Black));
     private static readonly Brush DarkLiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x4B)));
     private static readonly Brush LightLiveBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xB4, 0x53, 0x09)));
     // The cap marker is white rather than red: red now belongs to the curve points, and two different
@@ -179,7 +179,7 @@ public sealed class VfCurveEditor : FrameworkElement
     private static readonly Brush DarkUnreachableBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x18, 0x7F, 0xB0, 0xE8)));
     private static readonly Brush LightUnreachableBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x18, 0x25, 0x63, 0xEB)));
     private static readonly Brush DarkCapBrush = Freeze(new SolidColorBrush(Colors.White));
-    private static readonly Brush LightCapBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x0F, 0x17, 0x2A)));
+    private static readonly Brush LightCapBrush = Freeze(new SolidColorBrush(Colors.Black));
     private static readonly Brush DarkCapShade = Freeze(new SolidColorBrush(Color.FromArgb(26, 255, 255, 255)));
     private static readonly Brush LightCapShade = Freeze(new SolidColorBrush(Color.FromArgb(20, 15, 23, 42)));
 
@@ -194,7 +194,7 @@ public sealed class VfCurveEditor : FrameworkElement
     private static Brush UnreachableBrush => Theme.IsDark ? DarkUnreachableBrush : LightUnreachableBrush;
     private static Brush CapBrush => Theme.IsDark ? DarkCapBrush : LightCapBrush;
     private static Brush CapShade => Theme.IsDark ? DarkCapShade : LightCapShade;
-    private static readonly Typeface Face = new("Segoe UI");
+    private static readonly Typeface Face = new("Consolas");
     private static Brush Freeze(Brush b) { b.Freeze(); return b; }
 
     public VfCurveEditor()
@@ -284,7 +284,7 @@ public sealed class VfCurveEditor : FrameworkElement
         {
             double y = Math.Round(ToScreen(vMin, f).Y) + 0.5;
             dc.DrawLine(gridPen, new Point(PadL, y), new Point(w - PadR, y));
-            var ft = new FormattedText(f.ToString(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, LabelBrush, ppd);
+            var ft = new FormattedText(f.ToString(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, LabelBrush, ppd);
             dc.DrawText(ft, new Point(PadL - ft.Width - 6, y - ft.Height / 2));
         }
 
@@ -299,16 +299,16 @@ public sealed class VfCurveEditor : FrameworkElement
             double x = Math.Round(ToScreen(v, fMin).X) + 0.5;
             dc.DrawLine(gridPen, new Point(x, PadT), new Point(x, h - PadB));
             if (vi % labelEvery != 0) continue;
-            var ft = new FormattedText(v.ToString(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 10, LabelBrush, ppd);
+            var ft = new FormattedText(v.ToString(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, LabelBrush, ppd);
             dc.DrawText(ft, new Point(x - ft.Width / 2, h - PadB + 5));
         }
 
         // Axis titles, centred on their axis. The units used to be dropped into the margins beside
         // the outermost tick label, where "mV" landed on top of the last voltage number.
-        var xTitle = new FormattedText("Voltage (mV)", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, LabelBrush, ppd);
+        var xTitle = new FormattedText("Voltage (mV)", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, LabelBrush, ppd);
         dc.DrawText(xTitle, new Point(PadL + (PlotW - xTitle.Width) / 2, h - PadB + 22));
 
-        var yTitle = new FormattedText("Core clock (MHz)", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, LabelBrush, ppd);
+        var yTitle = new FormattedText("Core clock (MHz)", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, LabelBrush, ppd);
         double yMid = PadT + PlotH / 2;
         dc.PushTransform(new RotateTransform(-90, 15, yMid));
         dc.DrawText(yTitle, new Point(15 - yTitle.Width / 2, yMid - yTitle.Height / 2));
@@ -381,7 +381,7 @@ public sealed class VfCurveEditor : FrameworkElement
             var s = ToScreen(p.VoltageMv, p.LiveMhz);
             int delta = p.LiveMhz - p.StockMhz;
             var ft = new FormattedText($"{p.VoltageMv} mV → {p.LiveMhz} MHz  ({delta:+#;-#;0})",
-                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11.5, LabelBrush, ppd);
+                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, LabelBrush, ppd);
             dc.DrawText(ft, new Point(Math.Min(s.X + 10, w - ft.Width - 4), Math.Max(PadT, s.Y - 20)));
         }
 
@@ -413,7 +413,7 @@ public sealed class VfCurveEditor : FrameworkElement
                 var cft = new FormattedText(
                     $"capped {_capMv} mV → {atCap.LiveMhz} MHz" +
                     (ceilingIsTheCap ? " — points above are unreachable" : ""),
-                    CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, CapBrush, ppd);
+                    CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, CapBrush, ppd);
                 dc.DrawText(cft, new Point(Math.Min(capX + 6, w - PadR - cft.Width - 2), PadT + 4));
             }
         }
@@ -440,7 +440,7 @@ public sealed class VfCurveEditor : FrameworkElement
                 ? $"boost ceiling {_ceilingMv} mV — table ends at {lastPointMv}"
                 : $"card tops out at {_ceilingMv} mV — points above are unreachable";
             var t = new FormattedText(label,
-                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 11, CeilingBrush, ppd);
+                CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Face, 12, CeilingBrush, ppd);
             // Label to the left of its line when there isn't room on the right.
             double tx = cx + 6 + t.Width < w - PadR ? cx + 6 : cx - 6 - t.Width;
             dc.DrawText(t, new Point(tx, PadT + 20));

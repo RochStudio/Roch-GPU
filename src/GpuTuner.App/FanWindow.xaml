@@ -55,7 +55,7 @@
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="FIXED SPEED" Style="{StaticResource SectionTitle}" Margin="0"/>
                         <CheckBox x:Name="LinkFans" Grid.Column="1" Content="Move together" IsChecked="True"
-                                  Click="LinkFans_Click" Foreground="{DynamicResource MutedBrush}"
+                               Click="LinkFans_Click" Foreground="{DynamicResource TextBrush}"
                                   ToolTip="One slider drives them all. Untick to set each fan on its own."/>
                     </Grid>
                     <TextBlock x:Name="FixedNote" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,2,0,6"/>
