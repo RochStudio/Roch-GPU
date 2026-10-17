@@ -4,7 +4,7 @@ Handoff file for the GUI port. Part 1 = app shell, theme, tray, view model, main
 Graphics windows. Part 2 = Monitor, Fan and V/F Curve windows. Both parts are done.
 
 Stack: eframe/egui **0.37** with the **glow** renderer (`default-features = false`, features
-`glow`, `default_fonts`, `clipboard`), `tray-icon` 0.26, `image` 0.25 (png only, already pulled in by
+`glow`, `clipboard`; no `default_fonts`, see Theme API), `tray-icon` 0.26, `image` 0.25 (png only, already pulled in by
 eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no `update`).
 
 ## Running / testing
@@ -85,7 +85,9 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 section_border text muted header highlight brand brand_hover selected title_hover close_hover
 accent accent_dim warn danger`. `accent` = red GPU-information values and value boxes (v1.1.0).
 Font: Consolas 12 (`theme::regular(BODY)`, bold = `theme::bold(BODY)` → consolab.ttf) from
-`%WINDIR%\Fonts`, Segoe UI Symbol then egui defaults as fallbacks. The theme is switched by
+`%WINDIR%\Fonts`, Segoe UI Symbol as the fallback (egui's own fonts are not compiled in, so a new
+glyph must exist in Consolas or Segoe UI Symbol). The theme is switched by
+
 `theme::apply(ctx, dark)`; `RochApp` persists it in `AppSettings::dark_mode`. Custom-drawn
 controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
 
