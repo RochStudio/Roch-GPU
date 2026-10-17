@@ -137,6 +137,19 @@ point hint moved into helpers so the dump reads the code the window draws), `277
 
 ## Known deviations (not fixed)
 
+* **Software temperature limit (new feature, added after the audit; not in v1.1.0)** — on a card
+  whose driver offers no settable temperature limit but can lock its graphics clock (every RTX 50
+  so far: no NVAPI thermal policy, NVML's target temperature unsupported), the main window shows
+  "Temperature Limit (°C, software)" where v1.1.0 showed nothing, and `info` prints an extra line,
+  `Soft temp limit: 50..89 °C (software, app must be running)` on the 5070 Ti (the top is one
+  below NVML's slowdown threshold, 90 °C). While the app runs, `TuningService` caps the core clock
+  through the NVML clock lock when the GPU passes the limit (`services/soft_thermal.rs`). Profiles
+  gain `SoftThermalLimitC` (0 = off): additive, older profiles load with it off and v1.1.0 ignores
+  it. `apply --soft-temp N` and `--mock rtx50` (a simulated card without a hardware limit) are
+  new too. A card with its own temperature limit shows and prints exactly what v1.1.0 did, so the
+  audit's comparisons are unchanged there; on the 5070 Ti the `info` output and the main-window
+  slider list now differ from v1.1.0 by this one row.
+
 * **Offset slider ranges (deliberate, requested after the audit)** — v1.1.0 narrowed the core,
   memory, XBAR, SYS and video offsets to "practical" windows (core −150…+750, memory −250…+4000,
   the private domains −150…+750). The Rust build offers the driver's full reported ranges — on the

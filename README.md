@@ -14,6 +14,7 @@ This is a Rust rewrite of [Roch GPU 1.1.0](https://github.com/RochStudio/Roch-GP
 - **The NVAPI layer is reimplemented** directly against `nvapi64.dll` rather than through the vendored NvAPIWrapper library.
 - **Full driver ranges.** Core, memory, XBAR, SYS and video offsets offer the whole range the driver reports (e.g. −1000…+1000 MHz core on an RTX 5070 Ti), with both ends reachable; v1.1.0 narrowed them to a "practical" window.
 - **`--mock` skips the UAC prompt** (the simulated GPU writes nothing). Real launches of the window still elevate themselves.
+- **Software temperature limit** (new; not in v1.1.0). RTX 50 drivers offer no settable temperature limit (no NVAPI thermal policy, and NVML refuses the target temperature), so the hardware Temperature Limit row is hidden there. In its place the window shows **Temperature Limit (°C, software)**: while Roch GPU runs (window or tray), it caps the core clock through the same NVML clock lock as the XOC Clock Range whenever the GPU reaches the limit, a 15–45 MHz step a second, and lets the clock climb back once the card is 3 °C below it. It never caps below half the card's maximum clock or the user's own Clock Range floor, never lifts the user's Clock Range ceiling, and hands the clock back (to that range, or to the driver) on exit, Reset or an Apply without it. The window is 50 °C up to one below the driver's slowdown threshold (89 °C on a 5070 Ti); the driver's own slowdown still applies. Saved in profiles as `SoftThermalLimitC` (0 = off), which the C# build ignores.
 
 ## Install / run
 
@@ -26,12 +27,14 @@ The same executable is the command line:
 .\RochGPU.exe sensors         # one telemetry sample, including extra sensors
 .\RochGPU.exe monitor         # live readout
 .\RochGPU.exe apply --core 120 --mem 1000 --power 110
+.\RochGPU.exe apply --soft-temp 83   # RTX 50: software temperature limit (enforced while the app runs)
 .\RochGPU.exe apply-profile "Slot 1"
 .\RochGPU.exe list-profiles
 .\RochGPU.exe reset
 .\RochGPU.exe diag            # raw driver dump for bug reports (also writes roch-gpu-diag.txt)
 .\RochGPU.exe startup --status
 .\RochGPU.exe info --mock     # any verb against a simulated GPU
+.\RochGPU.exe info --mock rtx50   # ...one without a hardware temperature limit
 ```
 
 ## Build
@@ -48,7 +51,7 @@ It runs the tests and clippy, then builds `dist\RochGPU.exe`. Startup and window
 
 | Crate | Contents |
 |---|---|
-| `crates/roch-core` | Models, the `GpuBackend` trait, `TuningService` (apply ordering, XOC levers, fan curves, polling), profile store, recovery journal, startup task, mock GPU |
+| `crates/roch-core` | Models, the `GpuBackend` trait, `TuningService` (apply ordering, XOC levers, fan curves, the software temperature limit, polling), profile store, recovery journal, startup task, mock GPU |
 | `crates/roch-nvidia` | NVAPI + NVML: public and private calls, V/F curve, rails, OCP (legacy and R615+), clock domains, diagnostics |
 | `crates/roch-amd` | ADL (Overdrive 8) tuning and ADLX telemetry |
 | `crates/roch-intel` | IGCL tuning and telemetry for Arc |
@@ -58,9 +61,9 @@ Each vendor crate loads its driver DLL from System32 only, and builds and tests 
 
 ## Verification status
 
-- **Tests:** 182 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, the recovery journal, the CLI, the view model and the editors. None of them touch a driver.
+- **Tests:** 225 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver.
 - **NVIDIA:** on an RTX 5070 Ti with driver 616.92, read-only output matches the C# 1.1.0 build. That covers `info`, `sensors` and `domains`, and the full `diag` dump is byte-identical apart from live readings.
-- **Write paths:** the code that writes to the GPU (apply, reset, fans, V/F curve, XOC levers) is a faithful port, but it has **not yet been validated on hardware** in the Rust build. Test carefully before relying on it.
+- **Write paths:** the code that writes to the GPU (apply, reset, fans, V/F curve, XOC levers) is a faithful port, but it has **not yet been validated on hardware** in the Rust build. Test carefully before relying on it. The same goes for the software temperature limit: its controller is tested only against the simulated GPU, and its read side (`info` reports `Soft temp limit: 50..89 °C` on the 5070 Ti) is the only part run on the card.
 - **AMD and Intel:** ported with their unit tests, but not yet run on an AMD or Arc card.
 
 See the C# repository's notes for the hardware validation history of the original. They are copied in [`docs/`](docs/), including [driver compatibility](docs/r615-compatibility.md), [Intel Arc B60](docs/intel-arc-b60.md) and [profile recovery](docs/profile-recovery.md).
