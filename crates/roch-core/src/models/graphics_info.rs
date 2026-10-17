@@ -94,10 +94,10 @@ pub fn format_gb(gb: f64) -> String {
     format!("{} GB", trim_decimals(gb, 2))
 }
 
-/// Format with at most `digits` decimals and no trailing zeros (.NET "0.##").
+/// Format with at most `digits` decimals and no trailing zeros (.NET "0.##"), rounding the way
+/// .NET's custom formats do (see [`crate::util::dotnet_custom`]).
 pub fn trim_decimals(value: f64, digits: usize) -> String {
-    let s = format!("{value:.digits$}");
-    if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s }
+    crate::util::dotnet_custom(value, 0, digits)
 }
 
 /// Small shared decoders for identifiers read by the vendor backends.
@@ -250,6 +250,8 @@ mod tests {
         assert_eq!(GpuIdentity::pcie_bus_interface(0, 0, 0, 0), "");
         assert_eq!(format_gb(12282.0 / 1024.0), "11.99 GB");
         assert_eq!(format_gb(16.0), "16 GB");
+        // An exact tie rounds away from zero, as .NET's "0.##" does (12416 MB).
+        assert_eq!(format_gb(12.125), "12.13 GB");
     }
 
     #[test]

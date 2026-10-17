@@ -258,9 +258,13 @@ impl RochApp {
             && !self.shared.service.background_mode()
         {
             if let Some(tray) = &mut self.tray {
+                // C# custom "0" formats: exact ties round away from zero.
+                let n = |v: f64| roch_core::util::dotnet_custom(v, 0, 0);
                 tray.set_tooltip(&format!(
-                    "Roch GPU — {:.0}°C, {:.0} MHz, fan {:.0}%",
-                    t.temperature_c, t.core_clock_mhz, t.fan_percent
+                    "Roch GPU — {}°C, {} MHz, fan {}%",
+                    n(t.temperature_c),
+                    n(t.core_clock_mhz),
+                    n(t.fan_percent)
                 ));
             }
             self.vm.set_telemetry(Some((*t).clone()));

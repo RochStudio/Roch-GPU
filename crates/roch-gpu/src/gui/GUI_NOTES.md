@@ -179,9 +179,13 @@ flatten, Reload, Reset, Apply with read-back, Intel step/range/core-offset sync)
 
 Part 2 deviations: Monitor's extra-clock reads and Curve's per-sample cap/ceiling reads run on the
 poll thread, and the curve read/writes off the UI thread (WPF: all on the UI thread); the hardware
-fan-curve point limit is enforced in the editor (WPF left it to the backend's error); `F<n>` number
-formatting uses Rust's round-half-even on exact ties (.NET rounds those away from zero) — only
-visible on exactly representable ties such as 0.125 at two decimals.
+fan-curve point limit is enforced in the editor (WPF left it to the backend's error).
+
+Number formatting (pinned against .NET 10 by the v1.1.0 audit, `docs/rust-port-audit.md`): .NET's
+standard `F<n>` rounds the exact binary value half to even, exactly as Rust's `{:.n}` does, so the
+telemetry table uses `{:.n}`. .NET's *custom* formats (`0`, `0.0`, `0.#`, `0.##`: Monitor cards, fan
+captions and point boxes, tray tooltip, VRAM size) take the value to 15 significant digits and round
+half away from zero; those go through `roch_core::util::dotnet_custom`.
 
 Not done: exe resource icon. Not exercised against real hardware: the NVIDIA voltage-lock flatten
 path and the cap drawing (mock is not NVIDIA; the logic is unit-tested).

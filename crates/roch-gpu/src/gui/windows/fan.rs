@@ -18,6 +18,7 @@ use eframe::egui::{
     ViewportClass, ViewportId, pos2, vec2,
 };
 use roch_core::models::clock_step;
+use roch_core::util::dotnet_custom;
 use roch_core::{FanCurve, FanMode, FanPoint, GpuCapabilities, GpuTelemetry, VoltageControlStyle, only_notes};
 
 use super::{ChildChrome, Placement, WinCtx, content_frame};
@@ -357,10 +358,10 @@ impl FanWindow {
             let focus = ui.memory(|m| (m.has_focus(tid), m.has_focus(fid)));
             let pt = self.editor.points()[i];
             if !focus.0 {
-                self.point_rows[i].0 = format!("{:.0}", pt.temperature_c);
+                self.point_rows[i].0 = dotnet_custom(pt.temperature_c, 0, 0);
             }
             if !focus.1 {
-                self.point_rows[i].1 = format!("{:.0}", pt.fan_percent);
+                self.point_rows[i].1 = dotnet_custom(pt.fan_percent, 0, 0);
             }
             ui.add_space(1.0);
             let mut commit = false;
@@ -406,8 +407,8 @@ impl FanWindow {
             vm.mark_curve_dirty();
         }
         if let (Some(pt), Some(row)) = (self.editor.points().get(i), self.point_rows.get_mut(i)) {
-            row.0 = format!("{:.0}", pt.temperature_c);
-            row.1 = format!("{:.0}", pt.fan_percent);
+            row.0 = dotnet_custom(pt.temperature_c, 0, 0);
+            row.1 = dotnet_custom(pt.fan_percent, 0, 0);
         }
     }
 
@@ -501,10 +502,10 @@ fn hardware_point_limit(caps: &GpuCapabilities) -> Option<usize> {
     (caps.fan_curve_is_hardware && caps.fan_curve_points >= 2).then_some(caps.fan_curve_points as usize)
 }
 
-/// The per-fan caption: "45 %   ·   1200 rpm".
+/// The per-fan caption: "45 %   ·   1200 rpm" (C# custom "0": exact ties round away from zero).
 fn readout(duty: f64, rpm: f64) -> String {
-    let duty_text = if duty.is_finite() { format!("{duty:.0} %") } else { "—".into() };
-    if rpm.is_finite() { format!("{duty_text}   ·   {rpm:.0} rpm") } else { duty_text }
+    let duty_text = if duty.is_finite() { format!("{} %", dotnet_custom(duty, 0, 0)) } else { "—".into() };
+    if rpm.is_finite() { format!("{duty_text}   ·   {} rpm", dotnet_custom(rpm, 0, 0)) } else { duty_text }
 }
 
 /// The line under the mode buttons.
@@ -604,7 +605,7 @@ fn paint_fan_curve(ui: &Ui, rect: Rect, g: &FanGeom, e: &FanEditor, p: &Palette)
         let fill = if live { p.accent } else { p.panel };
         painter.circle(at(x, y), if live { 6.0 } else { 5.0 }, fill, Stroke::new(2.0, p.accent));
         if Some(i) == e.dragging() {
-            let label = format!("{:.0}°C → {:.0}%", q.temperature_c, q.fan_percent);
+            let label = format!("{}°C → {}%", dotnet_custom(q.temperature_c, 0, 0), dotnet_custom(q.fan_percent, 0, 0));
             let galley = painter.layout_no_wrap(label, font.clone(), p.text);
             let tx = (x + 8.0).min(w - f64::from(galley.size().x) - 4.0);
             let ty = PAD_T.max(y - 18.0);
@@ -621,6 +622,7 @@ mod tests {
     fn texts() {
         assert_eq!(readout(45.0, 1200.0), "45 %   ·   1200 rpm");
         assert_eq!(readout(f64::NAN, f64::NAN), "—");
+        assert_eq!(readout(31.5, 1010.5), "32 %   ·   1011 rpm", "ties round away from zero, as .NET's \"0\"");
         assert_eq!(describe(FanMode::Fixed, &[60, 75], 60, false), "Set: fan 1 60%, fan 2 75%");
         assert_eq!(describe(FanMode::Fixed, &[], 65, false), "All fans at 65%.");
         assert_eq!(describe(FanMode::Curve, &[], 65, true), "Curve saved to the driver.");
