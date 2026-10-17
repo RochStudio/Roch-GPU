@@ -90,6 +90,7 @@ impl FanEditor {
     pub fn dragging(&self) -> Option<usize> {
         self.drag
     }
+    #[cfg(test)]
     pub fn max_points(&self) -> Option<usize> {
         self.max_points
     }
