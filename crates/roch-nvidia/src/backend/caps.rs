@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-use roch_core::models::clock_step;
 use roch_core::util::{clamp_i32, round_even_i32};
 use roch_core::{GpuCapabilities, Result};
 
@@ -169,40 +168,28 @@ impl NvidiaBackend {
         let nvvdd = rails.get(&private::RAIL_NVVDD).copied().unwrap_or_default();
         let msvdd = rails.get(&private::RAIL_MSVDD).copied().unwrap_or_default();
 
-        // Crossbar. Its own family reports the range; narrowed to the practical window.
+        // Crossbar. Its own family reports the range, offered in full.
         let (mut can_xbar, mut xbar_min, mut xbar_max) = (false, 0, 0);
         let xi = private::read_xbar_info(g);
         if xi.supported {
             can_xbar = true;
-            (xbar_min, xbar_max) = clock_step::narrow(
-                xi.min_offset_mhz,
-                xi.max_offset_mhz,
-                clock_step::XBAR_OFFSET_PRACTICAL_MIN_MHZ,
-                clock_step::XBAR_OFFSET_PRACTICAL_MAX_MHZ,
-            );
+            (xbar_min, xbar_max) = (xi.min_offset_mhz, xi.max_offset_mhz);
         }
 
         // SYS and video sit in the same info list as the crossbar, in their own slots. A slot that
-        // reports a range is one the driver will discuss; the narrowing is the crossbar's, because
-        // the ±1000 is the delta field's width rather than a claim about the domain.
+        // reports a range is one the driver will discuss, and its range is offered in full.
         let (mut can_sys, mut can_video) = (false, false);
         let (mut sys_min, mut sys_max, mut vid_min, mut vid_max) = (0, 0, 0, 0);
         for d in private::read_domain_entries(g) {
             if !d.has_range {
                 continue;
             }
-            let narrowed = clock_step::narrow(
-                d.min_mhz,
-                d.max_mhz,
-                clock_step::XBAR_OFFSET_PRACTICAL_MIN_MHZ,
-                clock_step::XBAR_OFFSET_PRACTICAL_MAX_MHZ,
-            );
             if d.index == private::SLOT_SYS {
                 can_sys = true;
-                (sys_min, sys_max) = narrowed;
+                (sys_min, sys_max) = (d.min_mhz, d.max_mhz);
             } else if d.index == private::SLOT_VIDEO {
                 can_video = true;
-                (vid_min, vid_max) = narrowed;
+                (vid_min, vid_max) = (d.min_mhz, d.max_mhz);
             }
         }
 
@@ -222,19 +209,6 @@ impl NvidiaBackend {
         let max_lock = crate::nvml::max_graphics_clock_mhz(nvml_index);
         let min_lock = crate::nvml::min_graphics_clock_mhz(nvml_index);
 
-        let core_range = clock_step::narrow(
-            core_min,
-            core_max,
-            clock_step::CORE_OFFSET_PRACTICAL_MIN_MHZ,
-            clock_step::CORE_OFFSET_PRACTICAL_MAX_MHZ,
-        );
-        let mem_range = clock_step::narrow(
-            mem_min,
-            mem_max,
-            clock_step::MEMORY_OFFSET_PRACTICAL_MIN_MHZ,
-            clock_step::MEMORY_OFFSET_PRACTICAL_MAX_MHZ,
-        );
-
         let caps = GpuCapabilities {
             can_set_core_offset: can_core,
             can_set_memory_offset: can_mem,
@@ -250,11 +224,13 @@ impl NvidiaBackend {
             voltage_offset_max_mv: 0,
             min_voltage_mv: 850,
             max_voltage_mv: if stock_max_mv > 0 { stock_max_mv + VOLTAGE_BOOST_HEADROOM_MV } else { 0 },
-            // Driver-reported travel, narrowed to what is actually tunable — see clock_step.
-            core_offset_min_mhz: core_range.0,
-            core_offset_max_mhz: core_range.1,
-            memory_offset_min_mhz: mem_range.0,
-            memory_offset_max_mhz: mem_range.1,
+            // The driver's full reported travel (PStates20, P0). Earlier builds narrowed these to a
+            // "practical" window; the whole range is offered now, and where a card fails inside it
+            // is for the person tuning it to find.
+            core_offset_min_mhz: core_min,
+            core_offset_max_mhz: core_max,
+            memory_offset_min_mhz: mem_min,
+            memory_offset_max_mhz: mem_max,
             power_limit_min_percent: p_min,
             power_limit_max_percent: p_max,
             power_limit_default_percent: p_def,

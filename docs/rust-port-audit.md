@@ -137,6 +137,13 @@ point hint moved into helpers so the dump reads the code the window draws), `277
 
 ## Known deviations (not fixed)
 
+* **Offset slider ranges (deliberate, requested after the audit)** — v1.1.0 narrowed the core,
+  memory, XBAR, SYS and video offsets to "practical" windows (core −150…+750, memory −250…+4000,
+  the private domains −150…+750). The Rust build offers the driver's full reported ranges — on the
+  RTX 5070 Ti core −1000…+1000, memory −1000…+3000, XBAR/SYS/video −1000…+1000 MHz — and the
+  driver's own limits are reachable even off the 15/25 MHz grid. `info` therefore prints those
+  wider ranges, and the slider ranges in the window differ from v1.1.0 accordingly.
+
 * **Fan curve point limit on hardware curves (Intel/AMD)** — behaviour only: the editor refuses
   to add points past `fan_curve_points` where v1.1.0 let the driver reject them. The hint text
   itself now matches v1.1.0 ("N points  ·  Enter to apply"); it previously read "N of M points"

@@ -161,29 +161,16 @@ fn profile_store_round_trip() {
 #[test]
 fn clock_step_ranges_and_grids() {
     use clock_step::*;
-    assert_eq!(
-        narrow(-1000, 1000, CORE_OFFSET_PRACTICAL_MIN_MHZ, CORE_OFFSET_PRACTICAL_MAX_MHZ),
-        (-150, 750),
-        "core narrowed"
-    );
-    const { assert!(CORE_OFFSET_PRACTICAL_MIN_MHZ % CORE_MHZ == 0 && CORE_OFFSET_PRACTICAL_MAX_MHZ % CORE_MHZ == 0) };
-    const { assert!(XBAR_OFFSET_PRACTICAL_MIN_MHZ % CORE_MHZ == 0 && XBAR_OFFSET_PRACTICAL_MAX_MHZ % CORE_MHZ == 0) };
     const { assert!(100 % VOLTAGE_BOOST_PERCENT == 0) };
     assert_eq!(snap_within(63, VOLTAGE_BOOST_PERCENT, 0, 100), 65);
     assert_eq!(snap_within(100, VOLTAGE_BOOST_PERCENT, 0, 100), 100);
     assert_eq!(snap_within(0, VOLTAGE_BOOST_PERCENT, 0, 100), 0);
-    assert_eq!(
-        narrow(-1000, 4000, MEMORY_OFFSET_PRACTICAL_MIN_MHZ, MEMORY_OFFSET_PRACTICAL_MAX_MHZ),
-        (-250, 4000),
-        "memory narrowed"
-    );
-    assert_eq!(narrow(-100, 200, -300, 750), (-100, 200), "narrower driver range wins");
-    assert_eq!(narrow(-1000, 200, -300, 750), (-300, 200), "one-sided narrowing");
-    assert_eq!(snap_within(CORE_OFFSET_PRACTICAL_MIN_MHZ, CORE_MHZ, -300, 750), CORE_OFFSET_PRACTICAL_MIN_MHZ);
-    assert_eq!(snap_within(CORE_OFFSET_PRACTICAL_MAX_MHZ, CORE_MHZ, -300, 750), CORE_OFFSET_PRACTICAL_MAX_MHZ);
-    assert_eq!(snap_within(MEMORY_OFFSET_PRACTICAL_MIN_MHZ, MEMORY_MHZ, -250, 4000), MEMORY_OFFSET_PRACTICAL_MIN_MHZ);
-    assert_eq!(snap_within(MEMORY_OFFSET_PRACTICAL_MAX_MHZ, MEMORY_MHZ, -250, 4000), MEMORY_OFFSET_PRACTICAL_MAX_MHZ);
-    assert_eq!(narrow(2000, 3000, -300, 750), (2000, 3000), "disjoint range left alone");
+    // The full driver ranges a 5070 Ti reports: both ends reachable on their grids.
+    assert_eq!(snap_within(-1000, CORE_MHZ, -1000, 1000), -1000);
+    assert_eq!(snap_within(1000, CORE_MHZ, -1000, 1000), 1000);
+    assert_eq!(snap_within(-1000, MEMORY_MHZ, -1000, 3000), -1000);
+    assert_eq!(snap_within(3000, MEMORY_MHZ, -1000, 3000), 3000);
+    assert_eq!(snap_within(310, CORE_MHZ, -1000, 1000), 315, "interior values keep the grid");
 
     let s = CORE_MHZ;
     assert_eq!(s, 15);
@@ -194,9 +181,10 @@ fn clock_step_ranges_and_grids() {
     assert_eq!(snap(-7, s), 0);
     assert_eq!(snap(-8, s), -15);
     assert_eq!(snap(137, 1), 137);
-    assert_eq!(snap_within(998, s, -1000, 1000), 990);
-    assert_eq!(snap_within(-998, s, -1000, 1000), -990);
-    assert_eq!(snap_within(-5000, s, -1000, 1000), -990);
+    assert_eq!(snap_within(998, s, -1000, 1000), 1000, "nearer to the limit than to 990");
+    assert_eq!(snap_within(-998, s, -1000, 1000), -1000);
+    assert_eq!(snap_within(-5000, s, -1000, 1000), -1000, "out of range lands on the driver's limit");
+    assert_eq!(snap_within(992, s, -1000, 1000), 990);
     assert_eq!(snap_within(137, s, -1000, 1000), 135);
     assert_eq!(snap_within(0, s, -1000, 1000), 0);
     assert_eq!(snap_within(990, s, -1000, 990), 990);
@@ -211,7 +199,8 @@ fn clock_step_ranges_and_grids() {
     assert_eq!(snap_within(-815, m, -1000, 4000), -825);
     assert_eq!(snap_within(3999, m, -1000, 4000), 4000);
     assert_eq!(snap_within(-999, m, -1000, 4000), -1000);
-    assert_eq!(snap_within(990, m, -990, 990), 975, "off-grid max steps back");
+    assert_eq!(snap_within(990, m, -990, 990), 990, "an off-grid driver limit is still reachable");
+    assert_eq!(snap_within(980, m, -990, 990), 975, "inside the range the grid still applies");
     assert_eq!(snap_within(2518, 1, 0, 4000), 2518, "absolute clock is never snapped");
 }
 

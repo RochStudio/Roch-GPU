@@ -42,6 +42,7 @@ type GetU32Fn = unsafe extern "C" fn(Device, *mut u32) -> i32;
 type GetClockFn = unsafe extern "C" fn(Device, i32, *mut u32) -> i32;
 type GetMinMaxPStateFn = unsafe extern "C" fn(Device, i32, i32, *mut u32, *mut u32) -> i32;
 type GetMemoryFn = unsafe extern "C" fn(Device, *mut NvmlMemory) -> i32;
+type GetThresholdFn = unsafe extern "C" fn(Device, i32, *mut u32) -> i32;
 
 /// Every entry point, each resolved independently: the C# DllImports bound lazily, so a missing
 /// one only failed the call that needed it.
@@ -63,6 +64,7 @@ struct Api {
     get_max_pcie_gen: Option<GetU32Fn>,
     get_curr_pcie_width: Option<GetU32Fn>,
     get_max_pcie_width: Option<GetU32Fn>,
+    get_temperature_threshold: Option<GetThresholdFn>,
 }
 
 static API: OnceLock<Result<Api, String>> = OnceLock::new();
@@ -91,6 +93,7 @@ fn api() -> Result<&'static Api, &'static String> {
                 get_max_pcie_gen: sym(&lib, "nvmlDeviceGetMaxPcieLinkGeneration"),
                 get_curr_pcie_width: sym(&lib, "nvmlDeviceGetCurrPcieLinkWidth"),
                 get_max_pcie_width: sym(&lib, "nvmlDeviceGetMaxPcieLinkWidth"),
+                get_temperature_threshold: sym(&lib, "nvmlDeviceGetTemperatureThreshold"),
                 _lib: lib,
             })
         }
@@ -287,6 +290,30 @@ pub fn reset_graphics_clocks(gpu_index: i32) -> Option<String> {
         // SAFETY: device handle from GetHandleByIndex.
         Ok(unsafe { f(dev) })
     })
+}
+
+/// `nvmlTemperatureThresholds_t`. The acoustic trio is the GPU target temperature (`nvidia-smi
+/// -gtt`): the temperature the boost algorithm holds the card at by shedding clocks, and the only
+/// one NVML lets an administrator move. A GeForce RTX 5070 Ti (616.92) reports none of the acoustic
+/// trio — only shutdown 93, slowdown 90 and GPU max 88 °C — so no thermal limit is offered there.
+pub const THRESHOLD_SHUTDOWN: i32 = 0;
+pub const THRESHOLD_SLOWDOWN: i32 = 1;
+pub const THRESHOLD_MEM_MAX: i32 = 2;
+pub const THRESHOLD_GPU_MAX: i32 = 3;
+pub const THRESHOLD_ACOUSTIC_MIN: i32 = 4;
+pub const THRESHOLD_ACOUSTIC_CURR: i32 = 5;
+pub const THRESHOLD_ACOUSTIC_MAX: i32 = 6;
+pub const THRESHOLD_GPS_CURR: i32 = 7;
+
+/// One temperature threshold in °C, or `None` when the card does not report it.
+pub fn temperature_threshold_c(gpu_index: i32, threshold: i32) -> Option<i32> {
+    let mut c = 0u32;
+    let ok = read(gpu_index, |a, dev| {
+        let f = a.get_temperature_threshold.ok_or_else(|| missing("nvmlDeviceGetTemperatureThreshold"))?;
+        // SAFETY: plain enum value and a valid out-pointer.
+        Ok(unsafe { f(dev, threshold, &mut c) })
+    });
+    ok.then_some(c as i32)
 }
 
 /// Board power draw in watts, or NaN when NVML cannot say.

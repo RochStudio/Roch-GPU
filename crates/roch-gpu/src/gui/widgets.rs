@@ -103,14 +103,23 @@ pub fn title_button(ui: &mut Ui, glyph: &str, width: f32, close: bool, font_size
     resp
 }
 
-/// The filled crescent of `ThemeGlyph` (light mode's "switch to dark" button) in an 18×18 box:
-/// the path is a circle centred at (8,9), r=8, with a second r=8 circle through the two tips
-/// (centred at x=20.25) cut out of it. Painted as the outer disc, then the cut in `behind`.
+/// The filled crescent of `ThemeGlyph` (light mode's "switch to dark" button) in an 18×18 box.
+///
+/// The WPF path `M14.125,1.324 A8,8 0 1 0 14.125,16.676 A8,8 0 0 1 14.125,1.324 Z` is two r=8
+/// arcs through the tips (14.125, 1.324) and (14.125, 16.676). A circle of radius 8 through both
+/// tips has its centre 2.253 either side of x=14.125: the large arc belongs to the circle centred
+/// at x=11.872 (the moon's body) and the small inner arc to the one centred at x=16.378 (the cut).
+/// That leaves a crescent about 4.5 px thick at its widest. Painted as the body, then the cut in
+/// `behind`, clipped to the glyph box.
 pub fn paint_moon(ui: &Ui, center: egui::Pos2, color: Color32, behind: Color32) {
+    const TIP_X: f32 = 14.125;
+    const HALF_CHORD: f32 = 7.676_073;
+    const R: f32 = 8.0;
+    let offset = (R * R - HALF_CHORD * HALF_CHORD).sqrt();
     let origin = center - vec2(9.0, 9.0);
     let painter = ui.painter_at(Rect::from_min_size(origin, vec2(18.0, 18.0)));
-    painter.circle_filled(origin + vec2(8.0, 9.0), 8.0, color);
-    painter.circle_filled(origin + vec2(20.25, 9.0), 8.0, behind);
+    painter.circle_filled(origin + vec2(TIP_X - offset, 9.0), R, color);
+    painter.circle_filled(origin + vec2(TIP_X + offset, 9.0), R, behind);
 }
 
 /// Text in the muted style, optionally coloured.
