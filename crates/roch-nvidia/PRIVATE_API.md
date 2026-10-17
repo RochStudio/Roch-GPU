@@ -57,9 +57,11 @@ Conventions carried over from the C#:
 | structs (`ClockFrequencies`, `PStates20InfoV1/V2`, `ClockBoostLockV2`, `VfpCurveV1`, `ClockBoostTableV1`, `FanCoolers*V1`, ...) | `Native/GPU/Structures/*` (size-asserted) |
 | `pstate_name`, `clock_domain_name`, `clock_domain_defined`, `lock_mode_name`, `thermal_controller_name`, `thermal_target_name`, `cooler_policy_name`, `performance_limit_name`, `memory_type_name`, `flags_name` | enum `.ToString()` / `Enum.IsDefined` |
 
-Not ported (wrapper aggregation logic, only the raw calls above exist): `CoolerInformation.Coolers`,
-`CoolerInformation.SetCoolerSettings` and `RestoreCoolerSettingsToDefault` (the wrapper's choice between
-the FanCoolers and legacy cooler families), `PerformanceControl.*` objects. Rebuild those in the backend.
+The wrapper's aggregation objects are rebuilt in `wrapper.rs`: `coolers` (`CoolerInformation.Coolers`:
+legacy cooler family, else client fan coolers), `set_cooler_settings` / `restore_coolers_to_default`
+(`SetCoolerSettings` / `RestoreCoolerSettingsToDefault`), `utilization_domains` (`UsageInformation`),
+`pcm_percent` / `thermal_info_c` (the `PerformanceControl` views' unit conversions). The backend itself
+is `backend/` — see `BACKEND_NOTES.md`.
 
 ## nvml.rs — `Nvml` (process-global session, nvml.dll from System32)
 

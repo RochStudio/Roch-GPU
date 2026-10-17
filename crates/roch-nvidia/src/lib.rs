@@ -1,78 +1,20 @@
-//! NVIDIA (NVAPI) backend. Stub until the port lands: initialisation fails, so the factory moves on.
+//! NVIDIA backend: [`NvidiaBackend`] (port of `NvApiBackend.cs`) on NVAPI, with NVML for board
+//! watts and clock locks.
 //!
-//! The layers under it are ported: [`nvapi`] (the NvAPIWrapper subset), [`private`] (the private
-//! NVAPI families), [`nvml`], and the pure helpers [`vf_curve`], [`ocp`] and [`domain_offset`].
-//! See `PRIVATE_API.md` for how they map onto the C#.
+//! The layers under it: [`nvapi`] (the NvAPIWrapper subset), [`wrapper`] (the wrapper's
+//! aggregation objects rebuilt on the raw calls), [`private`] (the private NVAPI families),
+//! [`nvml`], [`supplemental`], and the pure helpers [`vf_curve`], [`ocp`] and [`domain_offset`].
+//! See `PRIVATE_API.md` for how they map onto the C#, and `BACKEND_NOTES.md` for the port's status.
 
+mod backend;
 pub(crate) mod buf;
 pub mod domain_offset;
 pub mod nvapi;
 pub mod nvml;
 pub mod ocp;
 pub mod private;
+pub mod supplemental;
 pub mod vf_curve;
+pub mod wrapper;
 
-use roch_core::{GpuBackend, GpuCapabilities, GpuDevice, GpuError, GpuTelemetry, GpuTuningState, Result};
-
-#[derive(Default)]
-pub struct NvidiaBackend {
-    devices: Vec<GpuDevice>,
-}
-
-impl NvidiaBackend {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-fn not_ported<T>() -> Result<T> {
-    Err(GpuError::new("NVIDIA (NVAPI) backend is not ported yet"))
-}
-
-impl GpuBackend for NvidiaBackend {
-    fn backend_name(&self) -> String {
-        "NVIDIA (NVAPI)".into()
-    }
-    fn initialize(&mut self) -> Result<()> {
-        not_ported()
-    }
-    fn devices(&self) -> &[GpuDevice] {
-        &self.devices
-    }
-    fn capabilities(&mut self, _gpu: usize) -> Result<GpuCapabilities> {
-        not_ported()
-    }
-    fn read_telemetry(&mut self, _gpu: usize) -> Result<GpuTelemetry> {
-        not_ported()
-    }
-    fn read_tuning_state(&mut self, _gpu: usize) -> Result<GpuTuningState> {
-        not_ported()
-    }
-    fn set_core_offset(&mut self, _gpu: usize, _offset_mhz: i32) -> Result<()> {
-        not_ported()
-    }
-    fn set_memory_offset(&mut self, _gpu: usize, _offset_mhz: i32) -> Result<()> {
-        not_ported()
-    }
-    fn set_power_limit(&mut self, _gpu: usize, _percent: i32) -> Result<()> {
-        not_ported()
-    }
-    fn set_temp_limit(&mut self, _gpu: usize, _celsius: i32) -> Result<()> {
-        not_ported()
-    }
-    fn set_voltage_boost(&mut self, _gpu: usize, _percent: i32) -> Result<()> {
-        not_ported()
-    }
-    fn set_voltage_curve_offset(&mut self, _gpu: usize, _offset_mv: i32, _extra_clock_mhz: i32) -> Result<()> {
-        not_ported()
-    }
-    fn set_fan_speed(&mut self, _gpu: usize, _fan_index: i32, _percent: i32) -> Result<()> {
-        not_ported()
-    }
-    fn set_fan_auto(&mut self, _gpu: usize) -> Result<()> {
-        not_ported()
-    }
-    fn reset_to_defaults(&mut self, _gpu: usize) -> Result<()> {
-        not_ported()
-    }
-}
+pub use backend::{ClockDomain, NvidiaBackend, domain_name, power_rail_name};
