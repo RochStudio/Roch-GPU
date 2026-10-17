@@ -1,0 +1,38 @@
+[package]
+name = "roch-gpu"
+description = "Roch GPU: tuning and monitoring for NVIDIA, AMD and Intel Arc GPUs."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "RochGPU"
+path = "src/main.rs"
+
+[dependencies]
+roch-core.workspace = true
+roch-nvidia.workspace = true
+roch-amd.workspace = true
+roch-intel.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "clipboard"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+tray-icon = "0.26"
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+workspace = true
+features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[build-dependencies]
+winresource = "0.1"

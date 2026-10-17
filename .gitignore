@@ -1,22 +1,17 @@
 # build output
-bin/
-obj/
+/target/
 dist/
-distcli/
 
 # IDE / editor
 .vs/
+.vscode/
 .idea/
-*.user
-*.suo
 *.swp
 
-# local runtime artefacts — the names the tool writes today. A stale list here is why a machine's
-# own diagnostic dump ended up committed at the repo root; the kept sample lives in docs/.
+# local runtime artefacts the tool writes; the kept sample lives in docs/.
 *.log
 roch-gpu-diag.txt
 roch-gpu-info.txt
 
 # Local validation tools and machine-specific test output
-.test-sdk/
 test-results/

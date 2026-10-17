@@ -1,0 +1,13 @@
+[package]
+name = "roch-amd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+roch-core.workspace = true
+libloading.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg.workspace = true
+windows-sys = { workspace = true, features = ["Win32_System_Com"] }

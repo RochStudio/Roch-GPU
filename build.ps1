@@ -1,29 +1,22 @@
-# Roch GPU - build, test, and publish the single executable into .\dist
-# Requires the .NET 10 SDK on Windows: winget install Microsoft.DotNet.SDK.10
+# Roch GPU - test, lint and build the single executable into .\dist
+# Requires the Rust toolchain (x86_64-pc-windows-msvc): https://rustup.rs
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-# $ErrorActionPreference does not apply to native commands: dotnet failing sets $LASTEXITCODE and
-# nothing else. Without these checks a failed build would sail on and publish the previous binary,
-# reporting success while shipping stale output.
-dotnet build roch-gpu.sln -c Release
-if ($LASTEXITCODE -ne 0) { throw "Build failed - see the errors above." }
-
-dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build
+# $ErrorActionPreference does not apply to native commands: a failing cargo only sets
+# $LASTEXITCODE. Without these checks a failed build would publish the previous binary.
+cargo test --workspace --release
 if ($LASTEXITCODE -ne 0) { throw "Tests failed - see the failures above." }
 
-dotnet run --project tests/GpuTuner.Telemetry.Tests -c Release
-if ($LASTEXITCODE -ne 0) { throw "Telemetry UI tests failed - see the failures above." }
+cargo clippy --workspace --all-targets --release -- -D warnings
+if ($LASTEXITCODE -ne 0) { throw "Clippy reported problems - see above." }
 
-dotnet run --project tests/GpuTuner.App.Tests -c Release --no-build
-if ($LASTEXITCODE -ne 0) { throw "App regression tests failed - see the failures above." }
+cargo build --release -p roch-gpu
+if ($LASTEXITCODE -ne 0) { throw "Build failed - is 'RochGPU.exe' still running? Close it (check the tray) and re-run." }
 
-# One publish, one file. The window and the command line are the same executable: run it with a verb
-# for the CLI, with nothing for the GUI. Self-contained, so no runtime has to be installed.
-dotnet publish src/GpuTuner.App/GpuTuner.App.csproj -c Release -o dist
-if ($LASTEXITCODE -ne 0) { throw "Publish failed - is 'RochGPU.exe' still running? Close it (check the tray) and re-run." }
-
-if (-not (Test-Path "dist\RochGPU.exe")) { throw "'dist\RochGPU.exe' missing after publish." }
+New-Item -ItemType Directory -Force dist | Out-Null
+Copy-Item target\release\RochGPU.exe dist\RochGPU.exe -Force
+if (-not (Test-Path "dist\RochGPU.exe")) { throw "'dist\RochGPU.exe' missing after build." }
 $mb = [math]::Round((Get-Item "dist\RochGPU.exe").Length / 1MB, 1)
 
 Write-Host "`nDone. dist\RochGPU.exe ($mb MB)"

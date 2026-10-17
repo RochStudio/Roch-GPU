@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -10,59 +10,36 @@ permissions:
   contents: read
 
 jobs:
-  # The engine and its tests are plain net10.0 with no NuGet dependencies and no GPU calls, so they
-  # run anywhere. Linux is the cheap, fast gate that catches the common breakage.
+  # Windows only: the backends are Win32 FFI and the GUI is a Windows app. Tests touch no driver.
   build-and-test:
-    name: Build and test (ubuntu)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
-
-      # GpuTuner.App is WPF. It only compiles off Windows because the csproj sets
-      # EnableWindowsTargeting; if that is ever dropped, this step is what notices.
-      - name: Build
-        run: dotnet build roch-gpu.sln -c Release --nologo
-
-      # The runner is a dependency-free console app: exit code 0 and "N passed, 0 failed".
-      - name: Test
-        run: dotnet run --project tests/GpuTuner.Core.Tests -c Release --no-build --nologo
-
-  # Windows runs core, telemetry and app regression tests, then publishes the combined GUI/CLI.
-  publish-windows:
-    name: Publish (windows)
+    name: Build, test and package (windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-dotnet@v6
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          dotnet-version: '10.0.x'
+          components: clippy, rustfmt
 
-      - name: Build, test and publish
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Test, lint and build
         shell: pwsh
         run: ./build.ps1
 
-      - name: Check the executable landed
-        shell: pwsh
-        run: |
-          if (-not (Test-Path 'dist/RochGPU.exe')) { throw "'dist/RochGPU.exe' missing after publish" }
-          Get-ChildItem dist/*.exe | Select-Object Name, Length
-
-      # The CLI's --mock backend touches no driver, so the published binary can be smoke-tested on a
-      # runner with no GPU at all.
+      # The --mock backend touches no driver, so the binary can be smoke-tested without a GPU.
       - name: Smoke-test the CLI against the mock GPU
         shell: pwsh
         run: |
           $out = & './dist/RochGPU.exe' info --mock 2>&1 | Out-String
           Write-Host $out
-          if ($LASTEXITCODE -ne 0) { throw "'RochGPU.exe' info --mock exited $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "'RochGPU.exe info --mock' exited $LASTEXITCODE" }
           if ($out -notmatch 'Simulated') { throw "mock backend did not report a simulated GPU" }
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: roch-gpu-dist
           path: dist/
