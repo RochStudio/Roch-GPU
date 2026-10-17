@@ -93,13 +93,13 @@ Every call each harness makes in `real` mode was traced before running it:
 | Service ceilings, armed/supported levers, `ReadCurrentAsProfile` | match |
 | Main-window header, labels, values, value boxes, captions, tooltips, slots, status, summary | match |
 | Slider ranges and steps (main + XOC), XOC texts and gate labels | match |
-| Fan window opening state | match on NVIDIA; point hint differs on hardware curves (deviation) |
+| Fan window opening state | match (point hint **fixed** after the merge, see below) |
 | Curve window texts, axes, flatten preview | match |
 | Telemetry table, fixed samples (values, rounding, groups, banding) | match |
 | Telemetry table, real card layout | **fixed** (domain rows were out of order) |
 | Monitor summary cards, fan captions, tray tooltip, VRAM/memory size | **fixed** (tie rounding) |
 | Mock actions (Apply, levers, slots, Reset) | match |
-| Intel/AMD capability variants | match except the fan point hint (deviation) |
+| Intel/AMD capability variants | match |
 | .NET number-format probes (304) | match (after the fix) |
 | CLI `info` / `sensors` / `domains` / `diag` | match apart from live readings (`diag` line endings: known deviation) |
 
@@ -131,13 +131,16 @@ Every call each harness makes in `real` mode was traced before running it:
 Harness commits: `d85d4b4` (dump + accessors; the fan window's fixed-speed note, row label and
 point hint moved into helpers so the dump reads the code the window draws), `2775a82` (variants).
 
+3. **Fan point hint wording** — after merging with the performance branch. The hint now reads
+   exactly as `FanWindow.xaml.cs:165` ("N points  ·  Enter to apply") on every card; the mock,
+   Intel and AMD variants all match when the harness is re-run on the merged branch.
+
 ## Known deviations (not fixed)
 
-* **Fan curve point limit on hardware curves (Intel/AMD)** — documented in `GUI_NOTES.md`: the
-  editor refuses points past `fan_curve_points` and the hint reads "N of M points  ·  Enter to
-  apply" (v1.1.0: "N points  ·  Enter to apply"). Not visible on NVIDIA. Edge seen in the AMD
-  variant: a saved curve with more points than the card's table reads "6 of 5 points"; worth a
-  look if the hint is kept.
+* **Fan curve point limit on hardware curves (Intel/AMD)** — behaviour only: the editor refuses
+  to add points past `fan_curve_points` where v1.1.0 let the driver reject them. The hint text
+  itself now matches v1.1.0 ("N points  ·  Enter to apply"); it previously read "N of M points"
+  and showed "6 of 5 points" for a saved curve longer than the card's table.
 * **Simulated GPU telemetry** — the Rust mock uses its own xorshift PRNG where the C# used
   `new Random(42)`, so the mock's random-walk readings differ (all mock structure matches).
 * **Number culture** — C# formatted telemetry numbers, fan boxes and the VRAM text with the current

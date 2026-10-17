@@ -147,7 +147,7 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
   zero_rpm)`; on success `sync_fans_from_service` + `save_fans_to_active_slot`; the status comes back
   through an `Arc<Mutex<Option<(String, bool)>>>`. Per-fan captions from `on_telemetry`. Hardware
   curves (`fan_curve_is_hardware`) hide Hysteresis/Min step, and the editor refuses to add points
-  past `fan_curve_points` (hint reads "N of M points"). The software curve is stepped by the
+  past `fan_curve_points` (the hint keeps v1.1.0's "N points" wording). The software curve is stepped by the
   service's poll (also in background mode), not by this window.
 * **Curve** — "Voltage / Frequency curve", 960×620, min 700×460. Reads via `Tap` (curve on open /
   Reload / Intel Remove flatten; live V, clock, cap, ceiling per sample). Writes are `queue_custom`

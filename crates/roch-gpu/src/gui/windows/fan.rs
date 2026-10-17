@@ -338,7 +338,7 @@ impl FanWindow {
         ui.horizontal(|ui| {
             section_title(ui, "POINTS");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let hint = point_hint(n, self.editor.max_points());
+                let hint = point_hint(n);
                 ui.label(RichText::new(hint).font(theme::regular(BODY)).color(p.text));
             });
         });
@@ -508,12 +508,11 @@ fn fan_label(i: usize, count: usize) -> String {
     if count > 1 { format!("Fan {}", i + 1) } else { "Fan speed".into() }
 }
 
-/// The hint beside POINTS.
-fn point_hint(n: usize, max: Option<usize>) -> String {
-    match max {
-        Some(m) => format!("{n} of {m} points  ·  Enter to apply"),
-        None => format!("{n} points  ·  Enter to apply"),
-    }
+/// The hint beside POINTS, worded exactly as v1.1.0 (`FanWindow.xaml.cs`). A hardware curve's
+/// point limit is enforced by the editor refusing extra points, not spelled out here: a saved
+/// curve can hold more points than the card takes, and "6 of 5 points" read as a contradiction.
+fn point_hint(n: usize) -> String {
+    format!("{n} points  ·  Enter to apply")
 }
 
 /// The window as it opens, as `key = value` pairs, for the comparison with the C# build
@@ -546,7 +545,7 @@ pub(crate) fn audit_initial(vm: &MainViewModel, sample: &GpuTelemetry) -> Vec<(S
             format!("{} {} °C {} %", i + 1, dotnet_custom(pt.temperature_c, 0, 0), dotnet_custom(pt.fan_percent, 0, 0)),
         );
     }
-    put("point_hint".into(), point_hint(pts.len(), w.editor.max_points()));
+    put("point_hint".into(), point_hint(pts.len()));
     put("mode".into(), w.mode.to_string());
     for m in 0..3 {
         put(format!("mode_note.{m}"), mode_note(m, caps, vm.has_zero_rpm()));
