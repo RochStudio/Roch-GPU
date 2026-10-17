@@ -1,4 +1,16 @@
 //! NVIDIA (NVAPI) backend. Stub until the port lands: initialisation fails, so the factory moves on.
+//!
+//! The layers under it are ported: [`nvapi`] (the NvAPIWrapper subset), [`private`] (the private
+//! NVAPI families), [`nvml`], and the pure helpers [`vf_curve`], [`ocp`] and [`domain_offset`].
+//! See `PRIVATE_API.md` for how they map onto the C#.
+
+pub(crate) mod buf;
+pub mod domain_offset;
+pub mod nvapi;
+pub mod nvml;
+pub mod ocp;
+pub mod private;
+pub mod vf_curve;
 
 use roch_core::{GpuBackend, GpuCapabilities, GpuDevice, GpuError, GpuTelemetry, GpuTuningState, Result};
 
