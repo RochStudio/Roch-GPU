@@ -8,7 +8,7 @@ This is a Rust rewrite of [Roch GPU 1.1.0](https://github.com/RochStudio/Roch-GP
 
 ## What changed from the C# build
 
-- **One native 8–9 MB executable** instead of a ~70 MB self-contained .NET publish; no runtime to unpack at start.
+- **One native ~6 MB executable** instead of a ~70 MB self-contained .NET publish; no runtime to unpack at start.
 - **GUI in egui** (eframe, OpenGL) instead of WPF. Same windows: main, V/F Curve, XOC, Fan, Telemetry, Graphics, plus the tray icon.
 - **Driver writes run on a worker thread**, so Apply/Reset no longer block the window.
 - **The NVAPI layer is reimplemented** directly against `nvapi64.dll` rather than through the vendored NvAPIWrapper library.
@@ -41,7 +41,7 @@ Install Rust (stable, `x86_64-pc-windows-msvc`) and run in PowerShell:
 .\build.ps1
 ```
 
-It runs the tests and clippy, then builds `dist\RochGPU.exe`. For development, `cargo run -p roch-gpu -- --mock` opens the window against the simulated GPU.
+It runs the tests and clippy, then builds `dist\RochGPU.exe`. Startup and window timings can be traced with `ROCH_TRACE=1`; see [`crates/roch-gpu/PERF.md`](crates/roch-gpu/PERF.md). For development, `cargo run -p roch-gpu -- --mock` opens the window against the simulated GPU.
 
 ## Layout
 
