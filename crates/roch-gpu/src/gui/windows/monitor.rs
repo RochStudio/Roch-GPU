@@ -65,6 +65,13 @@ fn summary(value: f64, unit: &str, decimals: usize) -> String {
     if value.is_finite() { format!("{} {unit}", dotnet_custom(value, decimals, decimals)) } else { "—".into() }
 }
 
+/// The three summary cards for one sample, for the comparison with the C# build
+/// (`crate::audit_dump`).
+#[cfg(test)]
+pub(crate) fn audit_summaries(t: &GpuTelemetry) -> [String; 3] {
+    [summary(t.temperature_c, "°C", 1), summary(t.core_clock_mhz, "MHz", 0), summary(t.power_watts, "W", 1)]
+}
+
 /// `TimeSpan.ToString(@"hh\:mm\:ss")`.
 fn hms(secs: u64) -> String {
     format!("{:02}:{:02}:{:02}", (secs / 3600) % 24, (secs / 60) % 60, secs % 60)

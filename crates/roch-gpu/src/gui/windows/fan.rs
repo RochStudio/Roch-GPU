@@ -218,18 +218,13 @@ impl FanWindow {
         });
         let count = self.sliders.len();
         ui.add_space(2.0);
-        let note = if count > 1 {
-            format!("This card reports {count} fans, each addressed separately by the driver.")
-        } else {
-            "This card reports one fan.".into()
-        };
-        wrapped(ui, &note, p.text);
+        wrapped(ui, &fixed_note(count), p.text);
         ui.add_space(6.0);
 
         for i in 0..count {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                let name = if count > 1 { format!("Fan {}", i + 1) } else { "Fan speed".into() };
+                let name = fan_label(i, count);
                 ui.label(RichText::new(name).font(theme::bold(BODY)).color(p.text));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(RichText::new(&self.readouts[i]).font(theme::regular(BODY)).color(p.text));
@@ -343,10 +338,7 @@ impl FanWindow {
         ui.horizontal(|ui| {
             section_title(ui, "POINTS");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let hint = match self.editor.max_points() {
-                    Some(m) => format!("{n} of {m} points  ·  Enter to apply"),
-                    None => format!("{n} points  ·  Enter to apply"),
-                };
+                let hint = point_hint(n, self.editor.max_points());
                 ui.label(RichText::new(hint).font(theme::regular(BODY)).color(p.text));
             });
         });
@@ -500,6 +492,71 @@ impl FanWindow {
 /// A driver-run curve holds at most `fan_curve_points` points (Intel's table size, AMD's five).
 fn hardware_point_limit(caps: &GpuCapabilities) -> Option<usize> {
     (caps.fan_curve_is_hardware && caps.fan_curve_points >= 2).then_some(caps.fan_curve_points as usize)
+}
+
+/// The line under FIXED SPEED.
+fn fixed_note(count: usize) -> String {
+    if count > 1 {
+        format!("This card reports {count} fans, each addressed separately by the driver.")
+    } else {
+        "This card reports one fan.".into()
+    }
+}
+
+/// One fixed-speed row's title.
+fn fan_label(i: usize, count: usize) -> String {
+    if count > 1 { format!("Fan {}", i + 1) } else { "Fan speed".into() }
+}
+
+/// The hint beside POINTS.
+fn point_hint(n: usize, max: Option<usize>) -> String {
+    match max {
+        Some(m) => format!("{n} of {m} points  ·  Enter to apply"),
+        None => format!("{n} points  ·  Enter to apply"),
+    }
+}
+
+/// The window as it opens, as `key = value` pairs, for the comparison with the C# build
+/// (`crate::audit_dump`).
+#[cfg(test)]
+pub(crate) fn audit_initial(vm: &MainViewModel, sample: &GpuTelemetry) -> Vec<(String, String)> {
+    let mut w = FanWindow::default();
+    w.load(vm);
+    let caps = &vm.caps;
+    let count = w.sliders.len();
+    let mut out = Vec::new();
+    let mut put = |k: String, v: String| out.push((format!("fanwin.{k}"), v));
+    put("fixed_note".into(), fixed_note(count));
+    put("slider.min".into(), w.slider_range.0.to_string());
+    put("slider.max".into(), w.slider_range.1.to_string());
+    put("slider.step".into(), STEP.to_string());
+    for i in 0..count {
+        put(format!("fan.{i}.label"), fan_label(i, count));
+        put(format!("fan.{i}.value"), w.sliders[i].to_string());
+        put(format!("fan.{i}.readout"), w.readouts[i].clone());
+    }
+    put("link".into(), w.link.to_string());
+    put("software_curve_parameters_visible".into(), (!caps.fan_curve_is_hardware).to_string());
+    put("hysteresis".into(), w.hysteresis.clone());
+    put("min_step".into(), w.min_step.clone());
+    let pts = w.editor.points();
+    for (i, pt) in pts.iter().enumerate() {
+        put(
+            format!("point.{i}"),
+            format!("{} {} °C {} %", i + 1, dotnet_custom(pt.temperature_c, 0, 0), dotnet_custom(pt.fan_percent, 0, 0)),
+        );
+    }
+    put("point_hint".into(), point_hint(pts.len(), w.editor.max_points()));
+    put("mode".into(), w.mode.to_string());
+    for m in 0..3 {
+        put(format!("mode_note.{m}"), mode_note(m, caps, vm.has_zero_rpm()));
+    }
+    put("zero_rpm_visible".into(), vm.has_zero_rpm().to_string());
+    w.on_telemetry(sample);
+    for (i, r) in w.readouts.iter().enumerate() {
+        put(format!("sample_a.readout.{i}"), r.clone());
+    }
+    out
 }
 
 /// The per-fan caption: "45 %   ·   1200 rpm" (C# custom "0": exact ties round away from zero).
