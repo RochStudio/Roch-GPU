@@ -1128,16 +1128,17 @@ impl TuningService {
             let mut guard = lock(&self.inner.driver);
             let drv = &mut *guard;
             let mut st = self.state();
-            // The thermal limit belongs to the card it was applied to: give that card its clock back.
-            if let Some(old) = drv.thermal.gpu {
-                thermal_release_and_stop(drv, &st, old, "switching GPU", &mut logs);
-            }
-            st.thermal_status = drv.thermal.status();
             st.devices = drv.backend.devices().to_vec();
             st.backend_name = drv.backend.backend_name();
             if index >= st.devices.len() {
                 return Err(GpuError::new(format!("No GPU at index {index} ({} found).", st.devices.len())));
             }
+            // The thermal limit belongs to the card it was applied to: give that card its clock back
+            // (with the old card's capabilities still in place to say what its range was).
+            if let Some(old) = drv.thermal.gpu {
+                thermal_release_and_stop(drv, &st, old, "switching GPU", &mut logs);
+            }
+            st.thermal_status = drv.thermal.status();
             self.inner.gpu_index.store(index, Ordering::SeqCst);
             st.caps = drv.backend.capabilities(index)?;
             self.inner.history.clear();

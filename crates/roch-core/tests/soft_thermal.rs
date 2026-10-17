@@ -478,3 +478,14 @@ fn clamp_is_noted() {
     );
     assert_eq!(svc.soft_thermal_status().limit_c, 89);
 }
+
+#[test]
+fn a_refused_gpu_switch_keeps_the_limit_running() {
+    let (svc, p) = rig();
+    svc.apply(&limit(60));
+    until_holding(&svc, &p);
+    let held = p.range();
+    assert!(svc.select_gpu(5).is_err());
+    assert!(svc.soft_thermal_status().active, "nothing switched, nothing released");
+    assert_eq!(p.range(), held);
+}
