@@ -146,6 +146,14 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
+/// Wake the window for something another thread just delivered (a sample, a job's result): one
+/// frame, `delay` from now. `Context::request_repaint` asks egui for two, the second a settling
+/// pass for layout that reacts to input, which fresh readings are not; and with immediate
+/// viewports, every root frame also repaints each open child window.
+pub fn wake(ctx: &egui::Context, delay: std::time::Duration) {
+    ctx.request_repaint_after(delay.max(std::time::Duration::from_millis(1)));
+}
+
 /// The "no supported GPU" prompt: start the simulated GPU instead?
 fn offer_mock(message: &str) -> bool {
     native::message_box(

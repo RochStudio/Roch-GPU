@@ -72,6 +72,11 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
   never block the UI thread; `tap.spawn(|svc| ..)` does a one-off read on its own thread;
   `tap.sender()` lets a `queue_custom` job post results back. `tap.drain()` each frame. Dropping it
   removes the listener.
+* Repaints: data arriving from another thread (samples, tap results, worker outcomes) wakes the UI
+  with `gui::wake` — one frame — not `request_repaint`, which egui turns into two. Every root frame
+  also repaints every open child viewport, so an idle window must not request frames; the app's
+  sample wake waits 30 ms so a tap's result lands in the same frame. Leaving background mode
+  wakes the poll thread for an immediate sample (`set_background_mode(false)`).
 * Hide to tray: title-bar −, or any minimise. Closes all child windows, remembering Monitor/Fan and
   reopening them on restore (deviation: WPF left owned windows alone). eframe runs no `ui()` while
   hidden, only `logic()`, which is where tray commands, show requests, telemetry and job results are

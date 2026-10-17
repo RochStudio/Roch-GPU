@@ -110,8 +110,14 @@ impl MonitorWindow {
     pub fn show(&mut self, ctx: &Context, w: &mut WinCtx) -> bool {
         self.ensure_tap(ctx, w);
         let samples = self.tap.as_ref().map(Tap::drain).unwrap_or_default();
+        let rows_before = self.table.as_ref().map_or(0, |t| t.rows().len());
         for (t, extra) in &samples {
             self.render(w, t, extra);
+        }
+        if self.table.as_ref().map_or(0, |t| t.rows().len()) != rows_before {
+            // New rows: the scroll area sizes its bar from the previous frame's content, so let
+            // it settle now rather than at the next sample (samples wake one frame each).
+            ctx.request_repaint();
         }
         let builder = self
             .chrome

@@ -27,6 +27,9 @@ use super::windows::monitor::MonitorWindow;
 use super::windows::xoc::XocWindow;
 use super::windows::{ChildChrome, WinCtx};
 
+/// How long a sample waits for the open windows' own per-sample reads before it is drawn.
+const SAMPLE_COALESCE: Duration = Duration::from_millis(30);
+
 /// Runs view-model jobs one at a time, in order, off the UI thread.
 struct Worker {
     jobs: Sender<Job>,
@@ -43,7 +46,7 @@ impl Worker {
                 if tx.send(outcome).is_err() {
                     break;
                 }
-                ctx.request_repaint();
+                super::wake(&ctx, Duration::ZERO);
             }
         });
         Worker { jobs, done }
@@ -110,9 +113,11 @@ impl RochApp {
         crate::trace!("app: fonts + theme");
 
         let events = shared.service.subscribe();
-        // Wake the UI for each sample; the sample itself travels through `events`.
+        // Wake the UI for each sample; the sample itself travels through `events`. The short
+        // delay lets a window's own per-sample read (a `Tap`, which wakes on its own as soon as
+        // it is done) land in the same frame instead of a second one.
         let wake = ctx.clone();
-        shared.service.add_telemetry_listener(move |_| wake.request_repaint());
+        shared.service.add_telemetry_listener(move |_| super::wake(&wake, SAMPLE_COALESCE));
         // The monitor starts closed, so the poll starts in the background (no driver call unless a
         // fan curve needs a temperature).
         shared.service.set_background_mode(true);
