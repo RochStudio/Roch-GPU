@@ -1,6 +1,18 @@
 [package]
 name = "roch-gpu"
-version = "0.1.0"
-edition = "2024"
+description = "Roch GPU: tuning and monitoring for NVIDIA, AMD and Intel Arc GPUs."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "RochGPU"
+path = "src/main.rs"
 
 [dependencies]
+roch-core.workspace = true
+roch-nvidia.workspace = true
+roch-amd.workspace = true
+roch-intel.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
