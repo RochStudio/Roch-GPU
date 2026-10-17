@@ -20,8 +20,8 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 * `cargo test -p roch-gpu` — view-model tests in `gui/tests.rs` (mock backend, temp store, fake
   logon task), plus unit tests in `format.rs`, `assets.rs`, `startup.rs`, `windows/graphics.rs`,
   `telemetry_table.rs`, `fan_editor.rs`, `vf_editor.rs`, `windows/fan.rs`, `windows/monitor.rs`.
-* Part 2 visual check helpers (PowerShell: launch with scratch APPDATA, click, drag, keys, window
-  screenshot via `CopyFromScreen`) lived in the agent scratchpad; kill only the `target/gui` exe.
+* Visual checks: launch with `--mock` and `APPDATA` pointed at a scratch folder (so real profiles and
+  settings are untouched), then screenshot the window (e.g. PowerShell `CopyFromScreen`).
 
 ## Module map (`src/gui/`)
 
