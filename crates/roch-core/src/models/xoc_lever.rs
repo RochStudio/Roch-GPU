@@ -168,6 +168,6 @@ mod tests {
         let back: XocLever = serde_json::from_str("3").unwrap();
         assert_eq!(back, set);
         assert!(XocLever::ALL.has(XocLever::MSVDD_OCP));
-        assert_eq!(XocLever::ALL.with(XocLever::XBAR, false).has(XocLever::XBAR), false);
+        assert!(!XocLever::ALL.with(XocLever::XBAR, false).has(XocLever::XBAR));
     }
 }

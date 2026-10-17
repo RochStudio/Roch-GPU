@@ -157,4 +157,10 @@ pub trait GpuBackend: Send {
     fn as_mock(&mut self) -> Option<&mut crate::mock::MockBackend> {
         None
     }
+
+    /// Downcast hook for vendor-specific extras (the CLI's NVIDIA `domains` verb). A backend that
+    /// offers such extras returns `Some(self)`; the default offers none.
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        None
+    }
 }

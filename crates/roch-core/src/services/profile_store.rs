@@ -235,8 +235,7 @@ mod tests {
         let dir = temp_dir("settings");
         let store = ProfileStore::new(Some(dir.clone())).unwrap();
         assert_eq!(store.load_settings(), AppSettings::default());
-        let mut s = AppSettings::default();
-        s.dark_mode = true;
+        let mut s = AppSettings { dark_mode: true, ..Default::default() };
         s.nvvdd_default_max_by_gpu.insert("gpu".into(), 1035);
         store.save_settings(&s).unwrap();
         assert_eq!(store.load_settings(), s);

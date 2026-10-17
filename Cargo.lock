@@ -249,6 +249,8 @@ version = "1.1.0"
 dependencies = [
  "libloading",
  "roch-core",
+ "windows-sys",
+ "winreg",
 ]
 
 [[package]]
@@ -273,6 +275,7 @@ dependencies = [
  "roch-intel",
  "roch-nvidia",
  "serde_json",
+ "windows-sys",
 ]
 
 [[package]]
