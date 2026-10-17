@@ -410,3 +410,145 @@ fn windows_can_queue_their_own_driver_jobs() {
     assert!(!vm.busy());
     assert!(vm.is_fixed_fan() && vm.get(Field::FixedFan) == 55);
 }
+
+// ------------------------------------------------------------------ software temperature limit
+
+/// The fixture on an RTX 50-style simulated card: no hardware temperature limit.
+fn rtx50_fixture() -> Fixture {
+    let dir = TempDir::new();
+    let store = Arc::new(ProfileStore::new(Some(dir.0.clone())).unwrap());
+    let service = Arc::new(TuningService::new(Box::new(MockBackend::without_hardware_temp_limit())));
+    service.initialize(0).unwrap();
+    let startup = Arc::new(FakeStartup::default());
+    let shared = Shared::new(service, store, AppSettings::default(), startup.clone());
+    let recovery = shared.open_recovery().unwrap();
+    shared.set_recovery(Some(recovery));
+    Fixture { _dir: dir, shared, startup }
+}
+
+/// A hot reading for the controller, with the clock the card is running.
+fn hot(f: &Fixture) {
+    let t = roch_core::GpuTelemetry { temperature_c: 88.0, core_clock_mhz: 2610.0, ..Default::default() };
+    f.shared.service.step_soft_thermal(&t);
+}
+
+#[test]
+fn soft_temp_row_replaces_a_missing_hardware_limit() {
+    let f = fixture();
+    let vm1 = vm(&f);
+    assert!(vm1.has_temp_limit() && !vm1.has_soft_temp_limit(), "a card with its own limit keeps it");
+    assert_eq!(vm1.build_profile_from_editor("x").soft_thermal_limit_c, 0);
+
+    let f = rtx50_fixture();
+    let vm = vm(&f);
+    assert!(!vm.has_temp_limit() && vm.has_soft_temp_limit());
+    assert_eq!(vm.soft_temp_label(), "Temperature Limit (°C, software)");
+    let tip = vm.range_text(Field::SoftTempLimit);
+    assert!(tip.starts_with("Off, or 50 … 89 °C."), "{tip}");
+    for words in ["only while Roch GPU is running", "from the tray", "caps the core clock", "slowdown"] {
+        assert!(tip.contains(words), "tooltip says {words:?}: {tip}");
+    }
+    // Nothing applied yet: Off, at the slider's left end.
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "Off");
+    assert_eq!(vm.slider_range(Field::SoftTempLimit), (49, 89));
+    assert_eq!(vm.step(Field::SoftTempLimit), 1);
+    assert_eq!(vm.build_profile_from_editor("x").soft_thermal_limit_c, 0);
+}
+
+#[test]
+fn soft_temp_value_box_and_nudges() {
+    let f = rtx50_fixture();
+    let mut vm = vm(&f);
+    let typed = |vm: &mut MainViewModel, text: &str| {
+        vm.commit_input(Field::SoftTempLimit, text);
+        (vm.input_text(Field::SoftTempLimit), vm.build_profile_from_editor("x").soft_thermal_limit_c)
+    };
+    assert_eq!(typed(&mut vm, "83"), ("83".into(), 83));
+    assert!(vm.pending_changes());
+    assert_eq!(typed(&mut vm, "0"), ("Off".into(), 0));
+    assert_eq!(typed(&mut vm, "75"), ("75".into(), 75));
+    assert_eq!(typed(&mut vm, "off"), ("Off".into(), 0));
+    assert_eq!(typed(&mut vm, "30"), ("50".into(), 50), "a number below the window is its bottom, not Off");
+    assert_eq!(typed(&mut vm, "99"), ("89".into(), 89), "never above slowdown - 1");
+    assert_eq!(typed(&mut vm, "abc"), ("89".into(), 89), "garbage leaves it alone");
+    vm.commit_input(Field::SoftTempLimit, "Off");
+    vm.nudge(Field::SoftTempLimit, 1);
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "50", "one step right of Off is the bottom of the window");
+    vm.nudge(Field::SoftTempLimit, -1);
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "Off");
+    vm.nudge_spec("softtemp:1");
+    assert_eq!(vm.get(Field::SoftTempLimit), 50);
+}
+
+#[test]
+fn soft_temp_applies_shows_live_state_and_saves_in_slots() {
+    let f = rtx50_fixture();
+    let mut vm = vm(&f);
+    vm.commit_input(Field::SoftTempLimit, "70");
+    vm.apply();
+    vm.run_jobs_inline();
+    assert!(!vm.status_is_error, "{}", vm.status);
+    let s = f.shared.service.soft_thermal_status();
+    assert!(s.enabled && s.limit_c == 70 && !s.active, "{s:?}");
+    assert!(vm.applied_summary().contains("temp 70°C (software)"), "{}", vm.applied_summary());
+    assert_eq!(vm.limit_reason_text(), "Limiter — open the monitor to sample");
+
+    // The card passes the limit: the limiter line says what is holding it, even with no sample.
+    hot(&f);
+    let s = f.shared.service.soft_thermal_status();
+    assert!(s.active, "{s:?}");
+    assert_eq!(vm.limit_reason_text(), format!("Thermal limit active: capped at {} MHz", s.ceiling_mhz));
+    assert!(vm.limit_is_active());
+
+    // Saved in a slot like everything else, and loaded back from it.
+    vm.set_save_armed(true);
+    vm.on_slot_clicked(1);
+    let saved = f.shared.store.load("Slot 1").unwrap().unwrap();
+    assert_eq!(saved.soft_thermal_limit_c, 70);
+    assert!(vm.slots()[0].summary.contains("soft temp 70 °C"), "{}", vm.slots()[0].summary);
+
+    // Reset turns it off, hands the clock back and shows Off.
+    vm.reset();
+    vm.run_jobs_inline();
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "Off");
+    assert!(!f.shared.service.soft_thermal_status().enabled);
+    assert_eq!(f.shared.service.read_tuning_state().unwrap().locked_clock_max_mhz, 0);
+    assert!(!vm.limit_is_active());
+
+    vm.on_slot_clicked(1);
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "70");
+    vm.run_jobs_inline();
+    assert!(f.shared.service.soft_thermal_status().enabled);
+
+    // A new window (the app restarted from the tray, say) seeds the row from what is running.
+    let again = MainViewModel::new(f.shared.clone());
+    assert_eq!(again.input_text(Field::SoftTempLimit), "70");
+}
+
+#[test]
+fn soft_temp_and_an_armed_clock_range_agree() {
+    let f = rtx50_fixture();
+    let mut vm = vm(&f);
+    vm.set(Field::ClockLockMin, 1500);
+    vm.set(Field::ClockLockMax, 2700);
+    vm.commit_input(Field::SoftTempLimit, "70");
+    vm.set_lever(XocLever::CLOCK_RANGE, true);
+    vm.run_jobs_inline();
+    assert!(vm.is_armed(XocLever::CLOCK_RANGE), "{}", vm.status);
+    vm.apply();
+    vm.run_jobs_inline();
+    assert_eq!(vm.soft_thermal_clock_range_note(), None, "nothing to say while the clock is free");
+    hot(&f);
+    let note = vm.soft_thermal_clock_range_note().expect("a note while holding");
+    assert!(note.starts_with("The software temperature limit (70 °C) is holding the clock at or below "), "{note}");
+    // The sliders keep the user's range; the card has the capped one inside it.
+    assert_eq!((vm.get(Field::ClockLockMin), vm.get(Field::ClockLockMax)), (1500, 2700));
+    let live = f.shared.service.read_tuning_state().unwrap();
+    assert_eq!(live.locked_clock_min_mhz, 1500);
+    assert!(live.locked_clock_max_mhz < 2700, "{live:?}");
+    assert_eq!(vm.xoc_status_text(), "Live on the card: clock range.");
+    // Exit: the user's own range comes back.
+    f.shared.service.release_soft_thermal_limit();
+    let live = f.shared.service.read_tuning_state().unwrap();
+    assert_eq!((live.locked_clock_min_mhz, live.locked_clock_max_mhz), (1500, 2700));
+}
