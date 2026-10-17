@@ -247,9 +247,6 @@ impl RochApp {
         let mut latest = None;
         for e in self.events.try_iter() {
             if let ServiceEvent::Telemetry(t) = e {
-                if let Some(m) = &mut self.monitor {
-                    m.on_telemetry(&t);
-                }
                 if let Some(f) = &mut self.fan {
                     f.on_telemetry(&t);
                 }

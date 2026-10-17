@@ -1,7 +1,7 @@
 # GUI port notes (WPF `GpuTuner.App` → eframe/egui)
 
-Handoff file for the GUI port. Part 1 (this) = app shell, theme, tray, view model, main window,
-XOC and Graphics windows. Part 2 = Monitor, Fan and V/F Curve windows (currently stubs).
+Handoff file for the GUI port. Part 1 = app shell, theme, tray, view model, main window, XOC and
+Graphics windows. Part 2 = Monitor, Fan and V/F Curve windows. Both parts are done.
 
 Stack: eframe/egui **0.37** with the **glow** renderer (`default-features = false`, features
 `glow`, `default_fonts`, `clipboard`), `tray-icon` 0.26, `image` 0.25 (png only, already pulled in by
@@ -18,7 +18,10 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
   logon task: the checkbox reflects the *real* Task Scheduler entry (`schtasks /Query`), and
   toggling re-registers/unregisters it (faithful WPF behaviour).
 * `cargo test -p roch-gpu` — view-model tests in `gui/tests.rs` (mock backend, temp store, fake
-  logon task), plus unit tests in `format.rs`, `assets.rs`, `startup.rs`, `windows/graphics.rs`.
+  logon task), plus unit tests in `format.rs`, `assets.rs`, `startup.rs`, `windows/graphics.rs`,
+  `telemetry_table.rs`, `fan_editor.rs`, `vf_editor.rs`, `windows/fan.rs`, `windows/monitor.rs`.
+* Part 2 visual check helpers (PowerShell: launch with scratch APPDATA, click, drag, keys, window
+  screenshot via `CopyFromScreen`) lived in the agent scratchpad; kill only the `target/gui` exe.
 
 ## Module map (`src/gui/`)
 
@@ -32,9 +35,12 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 | `windows/main_window.rs` | `MainWindow.xaml` | draws the root viewport, returns `MainAction`s |
 | `windows/xoc.rs` | `XocWindow` | done |
 | `windows/graphics.rs` | `GraphicsWindow` | done |
-| `windows/monitor.rs` | `MonitorWindow`, `TelemetryTable` | **stub** |
-| `windows/fan.rs` | `FanWindow`, `FanCurveEditor` | **stub** |
-| `windows/curve.rs` | `CurveWindow`, `VfCurveEditor` | **stub** |
+| `windows/monitor.rs` | `MonitorWindow.xaml(.cs)` | summary cards, sensor table, Open at launch switch, Reset statistics |
+| `windows/fan.rs` | `FanWindow.xaml(.cs)` | modes, per-fan sliders, Zero RPM, curve editor painting + pointer handling, point rows, Apply |
+| `windows/curve.rs` | `CurveWindow.xaml(.cs)` | toolbar (flatten / remove / reload / reset / apply), V/F editor painting + pointer/keys |
+| `telemetry_table.rs` | `ViewModels/TelemetryTable.cs` | rows, grouping, late discovery, formatting — UI-free, tests ported from `GpuTuner.Telemetry.Tests` |
+| `fan_editor.rs` | `Controls/FanCurveEditor.cs` (logic half) | point math, hit-testing, drag/add/remove, typed edits — UI-free, tested |
+| `vf_editor.rs` | `Controls/VfCurveEditor.cs` (logic half) | axes, hit-testing, snapping, Ctrl/Shift drags, cap/ceiling, keys, status texts — UI-free, tested |
 | `windows/mod.rs` | — | `WinCtx`, `ChildChrome`, `child_builder`, `Placement`, `content_frame` |
 | `theme.rs` | `Native/Theme.cs`, `App.xaml` brushes | `Palette::{LIGHT,DARK}`, `pal(ctx)`, `apply(ctx, dark)`, `install_fonts`, `bold()/regular()`, `BODY`=12 |
 | `widgets.rs` | `App.xaml` styles, `RangeSlider`, `ValueBoxBehavior`, `ThemeGlyph` | `button(ButtonKind)`, `title_button`, `paint_moon`, `layout_slider`/`tight_slider`/`nudged_slider`, `nudge_button` (hold-repeat 400/60 ms), `range_slider`, `value_box`, `checkbox`, `info_line`, `layout_panel`, `label` |
@@ -57,7 +63,15 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 * Clicking a window's button again focuses it (`T::focus()`); Telemetry toggles (focus, or close
   when already focused), as in WPF.
 * Placement: `Placement::RightOfOwner` (Monitor, Graphics: `Left = main.Right + 8`), `CenterOwner`
-  (XOC, Fan, Curve).
+  (XOC, Fan, Curve). Build the viewport with `self.chrome.builder(title, size, icon, placement,
+  main_rect)`: the position is worked out once, on open (part 2 fix — recomputing it from the main
+  window every frame dragged every child along whenever the main window grew a line).
+* `windows::Tap<T>`: a window's own telemetry subscription. `Tap::listen(svc, ctx, |svc, t| ..)`
+  runs the closure **on the polling thread** right after each foreground sample (outside the driver
+  lock), so per-sample driver reads (Monitor: `measure_extra_clocks`; Curve: voltage lock + ceiling)
+  never block the UI thread; `tap.spawn(|svc| ..)` does a one-off read on its own thread;
+  `tap.sender()` lets a `queue_custom` job post results back. `tap.drain()` each frame. Dropping it
+  removes the listener.
 * Hide to tray: title-bar −, or any minimise. Closes all child windows, remembering Monitor/Fan and
   reopening them on restore (deviation: WPF left owned windows alone). eframe runs no `ui()` while
   hidden, only `logic()`, which is where tray commands, show requests, telemetry and job results are
@@ -92,7 +106,7 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
   `applied_summary`, `status`/`status_is_error` (pub fields), `report(msg, is_error)`.
 * Voltage: `stock_ceiling_mv`, `reachable_ceiling_mv`, `boost_ceiling_mv` (service-backed);
   `Field::TargetVoltage` is the cap the curve editor owns (0/"no cap" when ≥ reachable).
-* Fans (for part 2): `fan_mode_index/set_fan_mode_index` (0 Auto, 1 Fixed, 2 Curve),
+* Fans: `fan_mode_index/set_fan_mode_index` (0 Auto, 1 Fixed, 2 Curve),
   `is_fixed_fan/is_curve_fan`, `per_fan_percents`, `editor_curve/editor_curve_mut`,
   `mark_curve_dirty`, `zero_rpm/set_zero_rpm`, `sync_fans_from_service(mode, %, per_fan)`,
   `save_fans_to_active_slot(mode, %, per_fan, &curve) -> String`, `active_slot_name`.
@@ -112,24 +126,32 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
   into a window's own state, capture an `Arc<Mutex<..>>` the window also holds, or use
   `vm.report()`.
 
-## What part 2 must fill in
+## Part 2 windows
 
-1. **`windows/monitor.rs`** — port `MonitorWindow.xaml(.cs)` + `ViewModels/TelemetryTable.cs`.
-   Samples arrive via `MonitorWindow::on_telemetry(&GpuTelemetry)` (called by `RochApp::pump` for
-   every foreground sample, before drawing); history is `shared.service.history()`. Keep `id()`,
-   `focus()`, `show()` signatures. Title "Roch GPU — Telemetry", 800×900, min 740×480.
-2. **`windows/fan.rs`** — port `FanWindow` + `Controls/FanCurveEditor.cs` (a custom-painted curve
-   editor). Fan state is in the view model (see above); write through `vm.queue_custom` with
-   `shared.service.set_fans(mode, %, per_fan, &curve, zero_rpm)`, then `sync_fans_from_service` and
-   `save_fans_to_active_slot`. Samples via `FanWindow::on_telemetry`. Title "Fan Control", width 560
-   (min 460), height to content (`ChildChrome::fit`).
-3. **`windows/curve.rs`** — port `CurveWindow` + `Controls/VfCurveEditor.cs`. It edits
-   `Field::TargetVoltage` / `Field::CoreOffset` and calls `read_vf_curve`, `set_vf_curve_targets`,
-   `set_voltage_lock`, `read_tuning_state` (put writes on `queue_custom`). Title "Voltage / Frequency
-   curve", 960×620, min 700×460.
-4. Port the remaining WPF test checks for those windows (TelemetryTable etc.) into unit tests.
+* **Monitor** — title "Roch GPU — Telemetry", 800×900, min 740×480. Owns a `Tap` (sample +
+  `measure_extra_clocks`); on open it also renders `service.latest()` (a one-off read; older
+  timestamps are dropped). The table is built from the first sample (`TelemetryTable::new(first,
+  caps, extra_keys)`), then `add(t, extra)` per sample. Banding/hover use `highlight`/`panel`,
+  which v1.1.0's palette makes equal to the background (so, as in v1.1.0, no visible bands). The
+  scrollbar is the WPF grip: 9 px, muted at 30/65/80%. "Open at launch" writes
+  `AppSettings::auto_open_monitor` at once. `RochApp::pump` no longer forwards samples to it.
+* **Fan** — "Fan Control", width 560 (min 460), height to content. Radio mode is local until Apply
+  (as WPF). Apply = one `queue_custom("Applying fans…")`: `set_fans(mode, %, per_fan, &curve,
+  zero_rpm)`; on success `sync_fans_from_service` + `save_fans_to_active_slot`; the status comes back
+  through an `Arc<Mutex<Option<(String, bool)>>>`. Per-fan captions from `on_telemetry`. Hardware
+  curves (`fan_curve_is_hardware`) hide Hysteresis/Min step, and the editor refuses to add points
+  past `fan_curve_points` (hint reads "N of M points"). The software curve is stepped by the
+  service's poll (also in background mode), not by this window.
+* **Curve** — "Voltage / Frequency curve", 960×620, min 700×460. Reads via `Tap` (curve on open /
+  Reload / Intel Remove flatten; live V, clock, cap, ceiling per sample). Writes are `queue_custom`
+  jobs whose UI half sets `Field::TargetVoltage` (flatten / remove, NVIDIA = `backend_name` starts
+  with "NVIDIA", as C# `Backend is NvApiBackend`) or `Field::CoreOffset` (Intel `can_edit_vf_curve`
+  after Apply/Reset) and posts `CurveMsg`s through `tap.sender()`. Keyboard: the plot takes focus on
+  click and locks the arrow keys (`EventFilter`).
+* Double-clicks in both editors are detected on the second *press* (0.3 s, 6 px), as WPF's
+  `ClickCount == 2`, not egui's release-based `double_clicked()`.
 
-## Done / not done (part 1)
+## Done / not done
 
 Done: startup flow (flags, detection, no-GPU prompt, recovery, logon apply, `--exit`), single
 instance (`claim` + show-request listener), hide-to-tray + tray menu + tooltip, close-with-fan
@@ -145,4 +167,21 @@ on hide-to-tray (Monitor/Fan reopen on restore); dialogs are egui modals instead
 keeps focus (same as WPF); no exe-embedded icon resource (window/tray icons are set at runtime —
 adding one needs a `build.rs` with a resource compiler).
 
-Not done: Monitor/Fan/Curve windows (part 2); exe resource icon.
+Part 2 done: Monitor (cards, table, switch, reset), Fan (Auto/Fixed/Curve, linked/per-fan
+sliders with nudges, Zero RPM, curve editor with drag/add/remove, point rows with Enter/focus-out
+commit and read-back, Default curve, hysteresis/min step, Apply + slot save), Curve (drag, Ctrl
+flatten, Shift tail, double-click/right-click reset, arrow keys with Shift/Ctrl, cap/ceiling/
+unreachable/extrapolation/live markers, flatten via lock on NVIDIA or per point elsewhere, Remove
+flatten, Reload, Reset, Apply with read-back, Intel step/range/core-offset sync). Unit tests:
+`telemetry_table.rs` (all of `GpuTuner.Telemetry.Tests` + NVIDIA rails/domains), `fan_editor.rs`,
+`vf_editor.rs`, `windows/fan.rs`, `windows/monitor.rs`. The App-test fan-sync checks were already in
+`tests.rs` (part 1).
+
+Part 2 deviations: Monitor's extra-clock reads and Curve's per-sample cap/ceiling reads run on the
+poll thread, and the curve read/writes off the UI thread (WPF: all on the UI thread); the hardware
+fan-curve point limit is enforced in the editor (WPF left it to the backend's error); `F<n>` number
+formatting uses Rust's round-half-even on exact ties (.NET rounds those away from zero) — only
+visible on exactly representable ties such as 0.125 at two decimals.
+
+Not done: exe resource icon. Not exercised against real hardware: the NVIDIA voltage-lock flatten
+path and the cap drawing (mock is not NVIDIA; the logic is unit-tested).

@@ -7,7 +7,7 @@
 use eframe::egui::{self, Align, Context, Layout, RichText, Ui, ViewportClass, ViewportId, vec2};
 use roch_core::XocLever;
 
-use super::{ChildChrome, Placement, WinCtx, child_builder, content_frame};
+use super::{ChildChrome, Placement, WinCtx, content_frame};
 use crate::gui::theme::{self, BODY, pal};
 use crate::gui::view_model::{Field, MainViewModel};
 use crate::gui::widgets::{self, ButtonKind};
@@ -30,7 +30,9 @@ impl XocWindow {
     }
 
     pub fn show(&mut self, ctx: &Context, w: &mut WinCtx) -> bool {
-        let builder = child_builder("XOC", vec2(WIDTH, 767.0), w.icon, Placement::CenterOwner, w.main_rect)
+        let builder = self
+            .chrome
+            .builder("XOC", vec2(WIDTH, 767.0), w.icon, Placement::CenterOwner, w.main_rect)
             .with_resizable(false)
             .with_minimize_button(false)
             .with_maximize_button(false);

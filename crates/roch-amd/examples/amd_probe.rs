@@ -1,6 +1,6 @@
 //! Read-only probe: initialise the AMD backend and print what it found. Never writes.
 //!
-//! `cargo run -p roch-amd --example probe`
+//! `cargo run -p roch-amd --example amd_probe`
 
 use roch_amd::AmdBackend;
 use roch_core::GpuBackend;

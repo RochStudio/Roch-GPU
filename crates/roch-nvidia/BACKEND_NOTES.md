@@ -7,7 +7,7 @@ Port of `src/GpuTuner.Core/Backends/Nvidia/NvApiBackend.cs` + `NvidiaSupplementa
 ## Status: complete
 
 Every member of `NvApiBackend` is ported. Verified read-only against an RTX 5070 Ti (driver 616.92)
-with `cargo run -p roch-nvidia --example probe`: capabilities, tuning state and the diagnostics dump
+with `cargo run -p roch-nvidia --example nvidia_probe`: capabilities, tuning state and the diagnostics dump
 match the reference C# build (`RochGPU.exe info` / `sensors` / `diag`) field for field; the only diff
 lines in `diag` are live sensor readings. Setters are ported but were never executed (no writes on
 the dev machine).

@@ -1,6 +1,6 @@
 //! Read-only probe: initialise IGCL and print what it reports. Never calls a write/set API.
 //!
-//! `cargo run -p roch-intel --example probe`
+//! `cargo run -p roch-intel --example intel_probe`
 
 use roch_core::GpuBackend;
 use roch_intel::IntelBackend;

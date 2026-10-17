@@ -206,7 +206,6 @@ pub fn tight_slider(ui: &mut Ui, vm: &mut MainViewModel, f: Field, width: f32, e
 
 #[allow(clippy::too_many_arguments)]
 fn slider_impl(ui: &mut Ui, vm: &mut MainViewModel, f: Field, width: f32, enabled: bool, h: f32, tw: f32, th: f32) {
-    let p = pal(ui.ctx());
     let sense = if enabled { Sense::click_and_drag() } else { Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(vec2(width.max(20.0), h), sense);
     let (min, max) = vm.slider_range(f);
@@ -218,6 +217,33 @@ fn slider_impl(ui: &mut Ui, vm: &mut MainViewModel, f: Field, width: f32, enable
         vm.set(f, v);
     }
     let x = x_for(rect, tw, min, max, vm.get(f));
+    paint_slider(ui, rect, x, enabled, h, tw, th);
+}
+
+/// A `Tight` slider over a plain value (the fan window's per-fan duties), snapping to `step`
+/// counted from `min` (WPF snap-to-tick). Returns true when the value moved.
+pub fn value_slider(ui: &mut Ui, value: &mut i32, range: (i32, i32), step: i32, width: f32, enabled: bool) -> bool {
+    let (min, max) = range;
+    let (h, tw, th) = (17.0, 10.0, 4.0);
+    let sense = if enabled { Sense::click_and_drag() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(vec2(width.max(20.0), h), sense);
+    let mut moved = false;
+    if enabled
+        && (resp.dragged() || resp.clicked() || resp.drag_started())
+        && let Some(pos) = resp.interact_pointer_pos()
+    {
+        let v = value_at(rect, tw, min, max, step, pos.x);
+        moved = v != *value;
+        *value = v;
+    }
+    let x = x_for(rect, tw, min, max, *value);
+    paint_slider(ui, rect, x, enabled, h, tw, th);
+    moved
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_slider(ui: &Ui, rect: Rect, x: f32, enabled: bool, h: f32, tw: f32, th: f32) {
+    let p = pal(ui.ctx());
     let mid = rect.center().y;
     let painter = ui.painter();
     let left_col = if enabled { p.accent } else { p.muted };
@@ -408,4 +434,72 @@ pub fn layout_panel<R>(ui: &mut Ui, margin: egui::Margin, add: impl FnOnce(&mut 
             add(ui)
         })
         .inner
+}
+
+/// A themed free-text box (WPF `TextBox`; `value` = the `ValueBox` look: bold, accent colour,
+/// right-aligned, everything selected on focus). Enter keeps the focus, as it did in WPF; check
+/// [`enter_pressed`] to commit on it.
+pub fn text_box(ui: &mut Ui, text: &mut String, id: Id, size: Vec2, value: bool, enabled: bool) -> Response {
+    let p = pal(ui.ctx());
+    let color = if !enabled {
+        p.muted
+    } else if value {
+        p.accent
+    } else {
+        p.text
+    };
+    let edit = egui::TextEdit::singleline(text)
+        .id(id)
+        .font(if value { theme::bold(BODY) } else { theme::regular(BODY) })
+        .text_color(color)
+        .align(if value { Align2::RIGHT_CENTER } else { Align2::LEFT_CENTER })
+        .margin(egui::Margin::symmetric(4, 1))
+        .background_color(p.panel_alt)
+        .return_key(None::<egui::KeyboardShortcut>)
+        .desired_width(size.x - 8.0);
+    let resp = ui.add_enabled_ui(enabled, |ui| ui.add_sized(size, edit)).inner;
+    if value && resp.gained_focus() {
+        select_all(ui, id, text);
+    }
+    resp
+}
+
+/// Enter was pressed in this (focused) box this frame.
+pub fn enter_pressed(ui: &Ui, resp: &Response) -> bool {
+    resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+}
+
+/// A WPF radio button: a 14 px circle, filled with a centre dot when checked. Returns the click.
+pub fn radio(ui: &mut Ui, checked: bool, text: &str, enabled: bool) -> Response {
+    let p = pal(ui.ctx());
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), theme::regular(BODY), p.text);
+    let size = vec2(14.0 + 6.0 + galley.size().x, 18.0f32.max(galley.size().y));
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    let c = pos2(rect.left() + 7.0, rect.center().y);
+    let ring = if !enabled {
+        p.muted
+    } else if resp.hovered() {
+        p.brand_hover
+    } else {
+        p.text
+    };
+    let painter = ui.painter();
+    painter.circle(c, 6.5, p.bg, Stroke::new(1.0, ring));
+    if checked {
+        painter.circle_filled(c, 3.5, if enabled { p.text } else { p.muted });
+    }
+    let fg = if enabled { p.text } else { p.muted };
+    painter.galley_with_override_text_color(
+        pos2(rect.left() + 20.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        fg,
+    );
+    if enabled { resp.on_hover_cursor(CursorIcon::PointingHand) } else { resp }
+}
+
+/// A button sized to its text with WPF's default `Padding` (12,6 unless given).
+pub fn text_button(ui: &mut Ui, text: &str, kind: ButtonKind, pad: Vec2, enabled: bool) -> Response {
+    let w = ui.painter().layout_no_wrap(text.to_owned(), theme::regular(BODY), Color32::WHITE).size().x;
+    button(ui, text, kind, vec2((w + 2.0 * pad.x + 2.0).round(), (15.0 + 2.0 * pad.y + 2.0).round()), enabled, false)
 }

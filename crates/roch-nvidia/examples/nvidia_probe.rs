@@ -6,7 +6,7 @@
 //! appears here (each of those lives in backend/set.rs or backend/curve.rs's write paths, none of
 //! which a getter reaches).
 //!
-//! `cargo run -p roch-nvidia --example probe [-- --diag-file out.txt]`
+//! `cargo run -p roch-nvidia --example nvidia_probe [-- --diag-file out.txt]`
 
 use roch_core::GpuBackend;
 use roch_nvidia::NvidiaBackend;

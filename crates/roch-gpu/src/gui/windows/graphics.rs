@@ -4,7 +4,7 @@
 use eframe::egui::{self, Align, Context, CornerRadius, Layout, RichText, ViewportClass, ViewportId, vec2};
 use roch_core::{GpuGraphicsInfo, GpuGraphicsRow};
 
-use super::{ChildChrome, Placement, WinCtx, child_builder, content_frame};
+use super::{ChildChrome, Placement, WinCtx, content_frame};
 use crate::gui::theme::{self, BODY, pal};
 
 pub struct GraphicsWindow {
@@ -33,10 +33,11 @@ impl GraphicsWindow {
 
     /// Draw it. Returns false once the user has closed it.
     pub fn show(&mut self, ctx: &Context, w: &mut WinCtx) -> bool {
-        let builder =
-            child_builder("Roch GPU — Graphics", vec2(620.0, 600.0), w.icon, Placement::RightOfOwner, w.main_rect)
-                .with_min_inner_size(vec2(560.0, 480.0))
-                .with_taskbar(false);
+        let builder = self
+            .chrome
+            .builder("Roch GPU — Graphics", vec2(620.0, 600.0), w.icon, Placement::RightOfOwner, w.main_rect)
+            .with_min_inner_size(vec2(560.0, 480.0))
+            .with_taskbar(false);
         ctx.show_viewport_immediate(Self::id(), builder, |ui, _class: ViewportClass| {
             let closed = self.chrome.frame(ui.ctx(), w.dark);
             content_frame(ui.ctx(), 0).inner_margin(egui::Margin { left: 14, right: 14, top: 12, bottom: 12 }).show(

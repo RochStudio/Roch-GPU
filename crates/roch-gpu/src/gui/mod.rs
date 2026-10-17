@@ -5,17 +5,21 @@
 //! * [`shared`] — the service/store/settings/recovery bundle and the log (App statics)
 //! * [`view_model`] — MainViewModel, UI-free and unit-tested
 //! * [`app`] — the eframe App: windows, tray, worker thread, dialogs (MainWindow.xaml.cs)
-//! * [`windows`] — one file per window; Monitor/Fan/Curve are stubs for part 2
+//! * [`windows`] — one file per window
+//! * [`telemetry_table`], [`fan_editor`], [`vf_editor`] — the Monitor/Fan/Curve windows' logic, UI-free
 //! * [`theme`], [`widgets`], [`format`], [`assets`], [`tray`], [`native`]
 
 pub mod app;
 pub mod assets;
+pub mod fan_editor;
 pub mod format;
 pub mod native;
 pub mod shared;
 pub mod startup;
+pub mod telemetry_table;
 pub mod theme;
 pub mod tray;
+pub mod vf_editor;
 pub mod view_model;
 pub mod widgets;
 pub mod windows;
