@@ -22,8 +22,13 @@ libloading = "0.8"
 winreg = "0.55"
 windows-sys = { version = "0.59" }
 
+# Size-tuned (measured in crates/roch-gpu/PERF.md): "s" + fat LTO is 23% smaller than 3 + thin
+# and costs ~2 ms of startup; the app's hot paths wait on the driver and on vsync, not the CPU.
+# "z" came out larger than "s". panic stays "unwind": the poll loop and backend detection
+# catch_unwind so a panicking driver call cannot stop a running fan curve or the vendor fallback.
 [profile.release]
-lto = "thin"
+opt-level = "s"
+lto = "fat"
 codegen-units = 1
 strip = "symbols"
 panic = "unwind"
