@@ -115,6 +115,19 @@ pub trait GpuBackend: Send {
         Ok(())
     }
 
+    /// The graphics-clock ceiling the voltage cap is currently enforced through, in MHz; 0 when the
+    /// cap holds no clock lock. NVIDIA falls back to an NVML clock lock when the driver ignores its
+    /// voltage lock, and that is the same lock `set_clock_range` moves.
+    fn voltage_cap_clock_mhz(&self, _gpu: usize) -> i32 {
+        0
+    }
+
+    /// How many display-driver resets this backend has noticed and recovered from. A reset clears
+    /// state written before it (a clock lock, say), so a change means "write it again".
+    fn driver_reset_count(&self) -> u64 {
+        0
+    }
+
     /// Over-current protection limit for a rail, in milliamps.
     fn set_nvvdd_ocp_milliamps(&mut self, _gpu: usize, _milliamps: i32) -> Result<()> {
         Ok(())

@@ -27,6 +27,15 @@
 //! Callbacks and channel sends are never made while the service holds its locks, so a listener may
 //! call back into the service. Log lines produced while a write holds the lock are buffered and
 //! delivered, in order, right after it releases.
+//!
+//! # Software temperature limit
+//!
+//! A profile's `soft_thermal_limit_c` is enforced here, by the poll loop, on cards that offer it
+//! (`GpuCapabilities::can_set_soft_thermal_limit`): see [`super::soft_thermal`] for the controller.
+//! Its state lives with the backend, under the driver lock, like the software fan curve's. Every
+//! path that stops it — an apply without it, Reset, [`TuningService::release_soft_thermal_limit`]
+//! (exit), a GPU switch, dropping the service — puts the clock range back to exactly what the user
+//! armed, or hands it to the driver.
 
 use std::collections::BTreeMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -34,12 +43,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::thread::{self, JoinHandle, ThreadId};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::backend::GpuBackend;
 use crate::models::voltage_plan;
 use crate::models::*;
 use crate::services::TelemetryHistory;
+use crate::services::soft_thermal::{self, Confirmed, SoftThermalController, ThermalAction, ThermalBounds};
 use crate::util::{clamp_i32, round_even_i32};
 use crate::{GpuError, NOTE_PREFIX, Result};
 
@@ -61,6 +71,10 @@ pub const DEFAULT_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Capacity of a [`TuningService::subscribe`] channel before events are dropped.
 pub const DEFAULT_CHANNEL_CAPACITY: usize = 1024;
+
+/// The software temperature limit steps at most this often, whatever the poll interval: its step
+/// sizes are per second.
+const THERMAL_PERIOD: Duration = Duration::from_millis(900);
 
 // ------------------------------------------------------------------ events
 
@@ -146,6 +160,146 @@ struct Driver {
     /// The software fan curve this process is stepping; `None` when the driver owns the fans.
     active_curve: Option<FanCurve>,
     last_curve_fan_sent: f64,
+    /// The software temperature limit this process is running.
+    thermal: ThermalRun,
+}
+
+/// What the software temperature limit is doing, for the UI. A copy; see
+/// [`TuningService::soft_thermal_status`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SoftThermalStatus {
+    /// An applied profile asks for a limit on this GPU and the card can enforce it.
+    pub enabled: bool,
+    pub limit_c: i32,
+    /// The core clock is being held down.
+    pub active: bool,
+    /// The ceiling being held, in MHz; 0 while not active.
+    pub ceiling_mhz: i32,
+    /// The last temperature the controller saw; NaN before the first.
+    pub last_temp_c: f64,
+    /// Gave up after repeated driver errors; the next Apply tries again.
+    pub stopped: bool,
+}
+
+impl Default for SoftThermalStatus {
+    fn default() -> Self {
+        Self { enabled: false, limit_c: 0, active: false, ceiling_mhz: 0, last_temp_c: f64::NAN, stopped: false }
+    }
+}
+
+/// The software temperature limit as the poll loop runs it.
+struct ThermalRun {
+    ctl: SoftThermalController,
+    /// The GPU the applied limit belongs to; `None` = nothing to run (no limit applied, released at
+    /// exit, or another GPU selected since).
+    gpu: Option<usize>,
+    limit_c: i32,
+    /// The backend's `driver_reset_count` as of the last write.
+    resets_seen: u64,
+    /// The voltage cap's own clock lock, `(mV, MHz)`, when the controller took over that lock: a
+    /// release puts the cap back.
+    voltage_cap: Option<(i32, i32)>,
+    /// `voltage_cap` has been looked for since the clock range was last written by someone else.
+    voltage_cap_checked: bool,
+    last_tick: Option<Instant>,
+}
+
+impl ThermalRun {
+    fn new() -> Self {
+        Self {
+            ctl: SoftThermalController::new(),
+            gpu: None,
+            limit_c: 0,
+            resets_seen: 0,
+            voltage_cap: None,
+            voltage_cap_checked: false,
+            last_tick: None,
+        }
+    }
+
+    fn wants_samples(&self, gpu: usize) -> bool {
+        self.gpu == Some(gpu) && self.limit_c > 0 && !self.ctl.is_stopped()
+    }
+
+    /// Someone else just wrote the clock range (an apply, the Clock Range lever, a new voltage cap,
+    /// a driver reset): the held window is gone from the card, so the next step writes it again,
+    /// after looking for a voltage cap that might now share the lock. `voltage_cap_replaced`: that
+    /// write also settled the voltage cap, so the one remembered is stale.
+    fn clock_range_rewritten(&mut self, voltage_cap_replaced: bool) {
+        self.ctl.forget_written();
+        self.voltage_cap_checked = false;
+        if voltage_cap_replaced {
+            self.voltage_cap = None;
+        }
+        self.last_tick = None;
+    }
+
+    /// Not running any more. The caller has put the clock back (or the card was reset).
+    fn stop(&mut self) {
+        let resets_seen = self.resets_seen;
+        *self = Self::new();
+        self.resets_seen = resets_seen;
+    }
+
+    fn status(&self) -> SoftThermalStatus {
+        let enabled = self.gpu.is_some() && self.limit_c > 0;
+        SoftThermalStatus {
+            enabled,
+            limit_c: if enabled { self.limit_c } else { 0 },
+            active: self.ctl.is_holding(),
+            ceiling_mhz: self.ctl.ceiling_mhz().unwrap_or(0),
+            last_temp_c: self.ctl.last_temp_c(),
+            stopped: self.ctl.is_stopped(),
+        }
+    }
+}
+
+/// The window the thermal controller works in: the card's lockable range, inside the user's own
+/// Clock Range when that lever is on the card, and under a voltage cap's clock lock it took over.
+fn thermal_bounds(st: &EngineState, voltage_cap_mhz: i32) -> ThermalBounds {
+    let user = if st.armed_on_card.has(XocLever::CLOCK_RANGE) {
+        st.applied.as_ref().map(|a| (a.clock_lock_min_mhz, a.clock_lock_max_mhz))
+    } else {
+        None
+    };
+    ThermalBounds::new(st.caps.clock_lock_min_mhz, st.caps.clock_lock_max_mhz, user, voltage_cap_mhz)
+}
+
+/// Put the clock back the way the user left it — their own range, or the driver's — then the voltage
+/// cap's clock lock if the controller had taken it over (`restore_voltage_cap`).
+fn thermal_restore(drv: &mut Driver, gpu: usize, b: &ThermalBounds, restore_voltage_cap: bool) -> Result<()> {
+    drv.backend.set_clock_range(gpu, b.restore.0, b.restore.1)?;
+    let cap = drv.thermal.voltage_cap.take();
+    if restore_voltage_cap && let Some((mv, _)) = cap.filter(|(mv, _)| *mv > 0) {
+        drv.backend.set_voltage_lock(gpu, mv)?;
+    }
+    Ok(())
+}
+
+/// Hand a held clock back and stop the controller, logging what happened. For every path that turns
+/// the limit off without writing the clock range itself.
+fn thermal_release_and_stop(drv: &mut Driver, st: &EngineState, gpu: usize, why: &str, logs: &mut Vec<String>) {
+    if drv.thermal.ctl.is_holding() {
+        let mhz = drv.thermal.voltage_cap.map(|(_, mhz)| mhz).unwrap_or(0);
+        let b = thermal_bounds(st, mhz);
+        match thermal_restore(drv, gpu, &b, true) {
+            Ok(()) => logs.push(format!("Thermal limit: {why}; {}", released_to(&b))),
+            Err(e) => logs.push(format!("Thermal limit: {why}, but the clock could not be released: {}", e.message)),
+        }
+    }
+    drv.thermal.stop();
+}
+
+fn released_to(b: &ThermalBounds) -> String {
+    match b.restore {
+        (0, 0) => "core clock handed back to the driver".into(),
+        (lo, 0) => format!("core clock back to your {lo} MHz clock range"),
+        (lo, hi) => format!("core clock back to your {lo}-{hi} MHz clock range"),
+    }
+}
+
+fn whole(c: f64) -> String {
+    format!("{c:.0}")
 }
 
 /// Engine state. Locked after `Driver` when both are needed.
@@ -168,6 +322,7 @@ struct EngineState {
     live_rail_max_mv: i32,
     voltage_lock_mechanism: String,
     manual_curve_active: bool,
+    thermal_status: SoftThermalStatus,
 }
 
 impl EngineState {
@@ -190,6 +345,7 @@ impl EngineState {
             live_rail_max_mv: 0,
             voltage_lock_mechanism: "none".into(),
             manual_curve_active: false,
+            thermal_status: SoftThermalStatus::default(),
         }
     }
 
@@ -481,6 +637,9 @@ fn add_clamp_notes(notes: &mut Vec<String>, caps: &GpuCapabilities, asked: &Tuni
     if asked.target_voltage_mv > 0 {
         note("voltage cap", asked.target_voltage_mv, applied.target_voltage_mv, " mV");
     }
+    if caps.can_set_soft_thermal_limit && asked.soft_thermal_limit_c > 0 {
+        note("software temperature limit", asked.soft_thermal_limit_c, applied.soft_thermal_limit_c, " °C");
+    }
     // An auto-fan profile still carries whatever fixed duty it last had.
     if asked.fan_mode == FanMode::Fixed {
         note("fan speed", asked.fixed_fan_percent, applied.fixed_fan_percent, "%");
@@ -669,23 +828,131 @@ impl Inner {
         }
         self.history.add(t.clone());
         self.run_fan_curve(&t);
+        self.run_soft_thermal(&t, true);
         self.events.telemetry(&t);
         Ok(())
     }
 
-    /// Nothing is on screen, so a sample is only worth taking if a fan curve needs one — and then
-    /// only the temperature. The reading is stepped into the curve and dropped: it is not stored
-    /// in `latest` or the history and not published, because it has one valid field and would show
-    /// up in the graphs as a run of zeroes. The graphs keep a gap for the time you were gaming.
+    /// Nothing is on screen, so a sample is only worth taking if a fan curve or the software
+    /// temperature limit needs one — and then only the temperature. The reading is stepped into
+    /// them and dropped: it is not stored in `latest` or the history and not published, because it
+    /// has one valid field and would show up in the graphs as a run of zeroes. The graphs keep a gap
+    /// for the time you were gaming.
     fn poll_background(&self) -> Result<()> {
-        let curve_active = lock(&self.driver).active_curve.is_some();
-        if !curve_active {
+        let gpu = self.gpu();
+        let wanted = {
+            let drv = lock(&self.driver);
+            drv.active_curve.is_some() || drv.thermal.wants_samples(gpu)
+        };
+        if !wanted {
             return Ok(());
         }
-        let gpu = self.gpu();
         let t = lock(&self.driver).backend.read_temperature_only(gpu)?;
         self.run_fan_curve(&t);
+        self.run_soft_thermal(&t, true);
         Ok(())
+    }
+
+    /// One step of the software temperature limit. `gated`: the poll loop's call, held to one step
+    /// per [`THERMAL_PERIOD`].
+    fn run_soft_thermal(&self, t: &GpuTelemetry, gated: bool) {
+        let gpu = self.gpu();
+        let mut logs = Vec::new();
+        {
+            let mut guard = lock(&self.driver);
+            let drv = &mut *guard;
+            if !drv.thermal.wants_samples(gpu) {
+                return;
+            }
+            if gated && drv.thermal.last_tick.is_some_and(|at| at.elapsed() < THERMAL_PERIOD) {
+                return;
+            }
+            drv.thermal.last_tick = Some(Instant::now());
+            let limit = drv.thermal.limit_c;
+            let temp = t.temperature_c;
+
+            // A display-driver reset clears the lock without a word; the backend counts the resets
+            // it recovers from. Whatever was written before one is not on the card any more.
+            let resets = drv.backend.driver_reset_count();
+            if resets != drv.thermal.resets_seen {
+                drv.thermal.resets_seen = resets;
+                if drv.thermal.ctl.is_holding() {
+                    logs.push("Thermal limit: the display driver was reset; writing the clock ceiling again".into());
+                }
+                drv.thermal.clock_range_rewritten(false);
+                drv.thermal.last_tick = Some(Instant::now());
+            }
+            // A voltage cap held through the same clock lock is a ceiling too: the controller works
+            // under it, and puts it back when it lets go.
+            if !drv.thermal.voltage_cap_checked {
+                drv.thermal.voltage_cap_checked = true;
+                let mhz = drv.backend.voltage_cap_clock_mhz(gpu);
+                if mhz > 0 {
+                    let mv = drv.backend.read_voltage_lock_mv(gpu);
+                    drv.thermal.voltage_cap = Some((mv, mhz));
+                }
+            }
+
+            let mut st = lock(&self.state);
+            let b = thermal_bounds(&st, drv.thermal.voltage_cap.map(|(_, mhz)| mhz).unwrap_or(0));
+            // A hold starts from the clock the card is running; a background reading has none.
+            let mut clock = t.core_clock_mhz;
+            if drv.thermal.ctl.would_engage(limit, temp) && (clock.is_nan() || clock < 1.0) {
+                clock = drv.backend.read_telemetry(gpu).map(|f| f.core_clock_mhz).unwrap_or(f64::NAN);
+            }
+            let before = drv.thermal.ctl.ceiling_mhz();
+            let action = drv.thermal.ctl.step(limit, temp, clock, &b);
+            let result = match action {
+                ThermalAction::None => None,
+                ThermalAction::Cap { min_mhz, max_mhz } => Some(drv.backend.set_clock_range(gpu, min_mhz, max_mhz)),
+                ThermalAction::Release { .. } => Some(thermal_restore(drv, gpu, &b, true)),
+            };
+            if let Some(r) = result {
+                let failure = r.as_ref().err().map(|e| e.message.clone()).unwrap_or_default();
+                match drv.thermal.ctl.confirm(r.is_ok()) {
+                    Confirmed::Ok => {
+                        drv.thermal.resets_seen = drv.backend.driver_reset_count();
+                        match action {
+                            ThermalAction::Cap { max_mhz, .. } if before != Some(max_mhz) => {
+                                logs.push(if before.is_some_and(|b| max_mhz > b) {
+                                    format!("Thermal limit: {} °C, core ceiling raised to {max_mhz} MHz", whole(temp))
+                                } else if temp >= limit as f64 {
+                                    format!(
+                                        "Thermal limit: {} °C ≥ {limit} °C, core capped at {max_mhz} MHz",
+                                        whole(temp)
+                                    )
+                                } else {
+                                    format!("Thermal limit: core capped at {max_mhz} MHz")
+                                });
+                            }
+                            ThermalAction::Release { .. } => logs.push(format!(
+                                "Thermal limit: {} °C ≤ {} °C, {}",
+                                whole(temp),
+                                whole(limit as f64 - soft_thermal::HYSTERESIS_C),
+                                released_to(&b)
+                            )),
+                            _ => {}
+                        }
+                    }
+                    Confirmed::BackingOff => logs.push(format!(
+                        "Thermal limit: could not move the core clock ceiling: {failure} — trying again in {} s",
+                        soft_thermal::BACKOFF_TICKS
+                    )),
+                    Confirmed::Stopped => {
+                        // Best effort: a driver refusing every write probably refuses this too, but a
+                        // cap left standing with nobody managing it is the worse outcome.
+                        let _ = thermal_restore(drv, gpu, &b, true);
+                        logs.push(format!(
+                            "Thermal limit: could not move the core clock ceiling: {failure} — stopped after {} \
+                             failed attempts. Press Apply to try again.",
+                            soft_thermal::MAX_FAILURES
+                        ));
+                    }
+                }
+            }
+            st.thermal_status = drv.thermal.status();
+        }
+        self.events.logs(logs);
     }
 
     fn run_fan_curve(&self, t: &GpuTelemetry) {
@@ -766,7 +1033,12 @@ impl TuningService {
     pub fn with_history(backend: Box<dyn GpuBackend>, history_seconds: usize) -> Self {
         Self {
             inner: Arc::new(Inner {
-                driver: Mutex::new(Driver { backend, active_curve: None, last_curve_fan_sent: f64::NAN }),
+                driver: Mutex::new(Driver {
+                    backend,
+                    active_curve: None,
+                    last_curve_fan_sent: f64::NAN,
+                    thermal: ThermalRun::new(),
+                }),
                 state: Mutex::new(EngineState::new()),
                 gpu_index: AtomicUsize::new(0),
                 history: TelemetryHistory::new(history_seconds),
@@ -851,10 +1123,16 @@ impl TuningService {
     /// Switch to another GPU of the same backend. Fails for an index the backend did not report.
     pub fn select_gpu(&self, index: usize) -> Result<()> {
         let message;
+        let mut logs = Vec::new();
         {
             let mut guard = lock(&self.inner.driver);
             let drv = &mut *guard;
             let mut st = self.state();
+            // The thermal limit belongs to the card it was applied to: give that card its clock back.
+            if let Some(old) = drv.thermal.gpu {
+                thermal_release_and_stop(drv, &st, old, "switching GPU", &mut logs);
+            }
+            st.thermal_status = drv.thermal.status();
             st.devices = drv.backend.devices().to_vec();
             st.backend_name = drv.backend.backend_name();
             if index >= st.devices.len() {
@@ -868,6 +1146,7 @@ impl TuningService {
             refresh_live_voltage_state(drv.backend.as_mut(), index, &mut st);
             message = format!("Selected {} via {}", st.device(index).name, st.backend_name);
         }
+        self.inner.events.logs(logs);
         self.log(&message);
         Ok(())
     }
@@ -916,7 +1195,16 @@ impl TuningService {
     /// Curve-editor cap changes share the driver lock with full-profile writes.
     pub fn set_voltage_lock(&self, target_mv: i32) -> Result<()> {
         let gpu = self.gpu();
-        let mut drv = lock(&self.inner.driver);
+        let mut guard = lock(&self.inner.driver);
+        let drv = &mut *guard;
+        // NVIDIA may hold the cap through the same clock lock the thermal limit is holding, and
+        // refuses to while another ceiling owns it: hand the lock back first. The next step writes
+        // the ceiling again, under whatever cap this sets.
+        if drv.thermal.ctl.is_holding() {
+            let b = thermal_bounds(&self.state(), 0);
+            thermal_restore(drv, gpu, &b, false)?;
+        }
+        drv.thermal.clock_range_rewritten(true);
         drv.backend.set_voltage_lock(gpu, target_mv)?;
         let mut st = self.state();
         refresh_live_voltage_state(drv.backend.as_mut(), gpu, &mut st);
@@ -958,6 +1246,17 @@ impl TuningService {
 
     pub fn supported_levers(&self) -> XocLever {
         self.state().supported_levers()
+    }
+
+    /// What the software temperature limit is doing (a copy, from the engine state alone).
+    pub fn soft_thermal_status(&self) -> SoftThermalStatus {
+        self.state().thermal_status
+    }
+
+    /// One step of the software temperature limit on this reading, as the poll loop takes it
+    /// (without its once-a-second pacing). For tests and tools; the poll loop calls it by itself.
+    pub fn step_soft_thermal(&self, t: &GpuTelemetry) {
+        self.inner.run_soft_thermal(t, false);
     }
 
     // ------------------------------------------------------------------ voltage ceilings
@@ -1221,6 +1520,26 @@ impl TuningService {
         }
         st.applied = Some(p.clone());
 
+        // The software temperature limit. The clock-range write above (every card that can lock its
+        // clock gets one) put the user's own range, or the driver's, back on the card, so whatever
+        // ceiling the limit held is gone from it: the next poll writes it again. A ceiling already
+        // worked out is kept, so re-applying does not start over from the top.
+        if caps.can_set_soft_thermal_limit && p.soft_thermal_limit_c > 0 {
+            if drv.thermal.gpu != Some(gpu) || drv.thermal.ctl.is_stopped() {
+                drv.thermal.stop();
+            }
+            drv.thermal.gpu = Some(gpu);
+            drv.thermal.limit_c = p.soft_thermal_limit_c;
+            drv.thermal.clock_range_rewritten(true);
+            a.log(format!(
+                "Thermal limit (software): {} °C — caps the core clock while Roch GPU runs",
+                p.soft_thermal_limit_c
+            ));
+        } else {
+            drv.thermal.stop();
+        }
+        st.thermal_status = drv.thermal.status();
+
         // Verify-after-write, still holding the lock: the vendor libraries are not re-entrant and
         // the polling thread reads telemetry through the same handle.
         match drv.backend.read_tuning_state(gpu) {
@@ -1336,6 +1655,11 @@ impl TuningService {
         } else {
             write_xoc(drv.backend.as_mut(), gpu, st, &p, &mut a, lever, false);
         }
+        if lever.has(XocLever::CLOCK_RANGE) && st.caps.can_lock_clocks {
+            // The lever just wrote the user's range over any thermal ceiling (and, on NVIDIA, over a
+            // voltage cap's clock lock); the next step caps inside the new range.
+            drv.thermal.clock_range_rewritten(true);
+        }
 
         // Keep the applied profile describing the card, so the summary line agrees with it.
         if let Some(ap) = st.applied.as_mut() {
@@ -1378,6 +1702,10 @@ impl TuningService {
             let st = &mut *st_guard;
             drv.active_curve = None;
             st.manual_curve_active = false;
+            // The driver reset below releases the clock lock along with everything else, and the
+            // disarmed Clock Range write after it hands the range back to the driver regardless.
+            drv.thermal.stop();
+            st.thermal_status = drv.thermal.status();
             drv.backend.reset_to_defaults(gpu)?;
             // Every gated lever, through the one routine that knows them all. Listing them here by
             // hand is how the SYS and video offsets came to survive a Reset. A disarmed write_xoc
@@ -1422,11 +1750,17 @@ impl TuningService {
     pub fn read_current_as_profile(&self) -> Result<TuningProfile> {
         let gpu = self.gpu();
         let mut drv = lock(&self.inner.driver);
+        let holding = drv.thermal.ctl.is_holding();
         let b = drv.backend.as_mut();
-        let s = b.read_tuning_state(gpu)?;
+        let mut s = b.read_tuning_state(gpu)?;
         let lk = b.read_voltage_lock_mv(gpu);
         let st = self.state();
         let c = &st.caps;
+        // A ceiling the thermal limit is holding is not the user's clock range: show theirs.
+        if holding {
+            (s.locked_clock_min_mhz, s.locked_clock_max_mhz) = thermal_bounds(&st, 0).restore;
+        }
+        let soft_thermal_limit_c = st.applied.as_ref().map(|a| a.soft_thermal_limit_c).unwrap_or(0);
         let percent = c.voltage_style == VoltageControlStyle::Percent;
         Ok(TuningProfile {
             name: "Current".into(),
@@ -1480,6 +1814,8 @@ impl TuningService {
             },
             fan_curve: s.hardware_fan_curve.as_ref().map(FanCurve::clone_config).unwrap_or_default(),
             fixed_fan_percent: s.fan_percent,
+            // Not a driver setting, so the card cannot report it: the one this run is enforcing.
+            soft_thermal_limit_c,
             ..TuningProfile::default()
         })
     }
@@ -1552,6 +1888,37 @@ impl TuningService {
         if released {
             self.log("Fans returned to auto");
         }
+    }
+
+    /// Safety, like [`Self::release_fan_control`]: on exit hand a clock the software temperature
+    /// limit is holding back to the user's own range (or the driver), and stop the limit — it is
+    /// enforced by this process, and a ceiling left behind would outlive it with nobody managing it.
+    /// The next Apply starts it again. Safe to call any number of times.
+    pub fn release_soft_thermal_limit(&self) {
+        self.release_soft_thermal(true);
+    }
+
+    /// `wait`: false from `Drop` when the poll could not be stopped — the driver lock may be held
+    /// by a call that never returns, and an exit must not hang behind it.
+    fn release_soft_thermal(&self, wait: bool) {
+        let mut logs = Vec::new();
+        {
+            let mut guard = if wait {
+                lock(&self.inner.driver)
+            } else {
+                match self.inner.driver.try_lock() {
+                    Ok(g) => g,
+                    Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+                    Err(std::sync::TryLockError::WouldBlock) => return,
+                }
+            };
+            let drv = &mut *guard;
+            let Some(gpu) = drv.thermal.gpu else { return };
+            let mut st = self.state();
+            thermal_release_and_stop(drv, &st, gpu, "released", &mut logs);
+            st.thermal_status = drv.thermal.status();
+        }
+        self.inner.events.logs(logs);
     }
 
     // ------------------------------------------------------------------ polling
@@ -1637,6 +2004,8 @@ impl Drop for TuningService {
     /// with the polling thread, so if the poll cannot be stopped in time it is released only when
     /// that thread finally leaves the driver.
     fn drop(&mut self) {
-        let _ = self.stop_polling();
+        let stopped = self.stop_polling().is_ok();
+        // After the poll, so no step can take the clock again behind the release.
+        self.release_soft_thermal(stopped);
     }
 }

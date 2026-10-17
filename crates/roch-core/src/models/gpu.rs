@@ -152,6 +152,15 @@ pub struct GpuCapabilities {
     pub clock_lock_min_mhz: i32,
     pub clock_lock_max_mhz: i32,
 
+    /// A software temperature limit can be offered: the clock can be capped (`can_lock_clocks`)
+    /// and the driver has no settable thermal limit of its own (RTX 50). It acts only while the app
+    /// runs; see `services::soft_thermal`.
+    pub can_set_soft_thermal_limit: bool,
+    /// Its window in °C: 50 up to 95, or one below the driver's own slowdown threshold when the
+    /// card reports one (a 5070 Ti slows down at 90, so 89).
+    pub soft_thermal_limit_min_c: i32,
+    pub soft_thermal_limit_max_c: i32,
+
     pub can_set_xbar_offset: bool,
     pub xbar_offset_min_mhz: i32,
     pub xbar_offset_max_mhz: i32,
@@ -249,6 +258,9 @@ impl Default for GpuCapabilities {
             can_lock_clocks: false,
             clock_lock_min_mhz: 0,
             clock_lock_max_mhz: 0,
+            can_set_soft_thermal_limit: false,
+            soft_thermal_limit_min_c: SOFT_THERMAL_MIN_C,
+            soft_thermal_limit_max_c: SOFT_THERMAL_MAX_C,
             can_set_xbar_offset: false,
             xbar_offset_min_mhz: 0,
             xbar_offset_max_mhz: 0,
@@ -269,7 +281,32 @@ impl Default for GpuCapabilities {
     }
 }
 
+/// The generic window for a software temperature limit, in °C.
+pub const SOFT_THERMAL_MIN_C: i32 = 50;
+pub const SOFT_THERMAL_MAX_C: i32 = 95;
+
+/// The software temperature limit's window for a card whose driver slows it down at
+/// `slowdown_c` (when it reports one): never offered at or above that threshold, where the driver's
+/// own protection takes over anyway. `None` when the threshold leaves no room.
+pub fn soft_thermal_window(slowdown_c: Option<i32>) -> Option<(i32, i32)> {
+    let max = match slowdown_c {
+        Some(s) if s > 0 => SOFT_THERMAL_MAX_C.min(s - 1),
+        _ => SOFT_THERMAL_MAX_C,
+    };
+    (max > SOFT_THERMAL_MIN_C).then_some((SOFT_THERMAL_MIN_C, max))
+}
+
 impl GpuCapabilities {
+    /// The window a software limit is clamped into: the card's own, or the generic one.
+    pub fn soft_thermal_limit_range(&self) -> (i32, i32) {
+        let (lo, hi) = (self.soft_thermal_limit_min_c, self.soft_thermal_limit_max_c);
+        if self.can_set_soft_thermal_limit && lo > 0 && hi >= lo {
+            (lo, hi)
+        } else {
+            (SOFT_THERMAL_MIN_C, SOFT_THERMAL_MAX_C)
+        }
+    }
+
     pub fn temp_limit_unit(&self) -> &'static str {
         if self.temp_limit_is_percent { "%" } else { "°C" }
     }
@@ -440,6 +477,15 @@ impl Default for GpuTuningState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn soft_thermal_window_stays_below_the_slowdown() {
+        assert_eq!(soft_thermal_window(Some(90)), Some((50, 89)), "RTX 5070 Ti: slowdown 90 °C");
+        assert_eq!(soft_thermal_window(Some(105)), Some((50, 95)));
+        assert_eq!(soft_thermal_window(None), Some((50, 95)));
+        assert_eq!(soft_thermal_window(Some(0)), Some((50, 95)), "0 is no reading");
+        assert_eq!(soft_thermal_window(Some(50)), None, "no room left");
+    }
 
     #[test]
     fn unavailable_fabric_sensor_is_not_zero() {
