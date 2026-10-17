@@ -1,0 +1,29 @@
+[workspace]
+resolver = "3"
+members = ["crates/roch-core", "crates/roch-nvidia", "crates/roch-amd", "crates/roch-intel", "crates/roch-gpu"]
+
+[workspace.package]
+version = "1.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+authors = ["Roch Studio"]
+repository = "https://github.com/RochStudio/Roch-GPU"
+
+[workspace.dependencies]
+roch-core = { path = "crates/roch-core" }
+roch-nvidia = { path = "crates/roch-nvidia" }
+roch-amd = { path = "crates/roch-amd" }
+roch-intel = { path = "crates/roch-intel" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+sha2 = "0.10"
+libloading = "0.8"
+winreg = "0.55"
+windows-sys = { version = "0.59" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "unwind"
