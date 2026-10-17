@@ -176,11 +176,16 @@ impl TelemetryTable {
         }
         // Whatever else this card reports: the backend names what has been checked against the
         // hardware and numbers the rest. Built from the first sample, so a card that reports
-        // nothing extra gets no rows rather than a column of dashes.
-        for key in &extra {
-            if let Some(n) = key.strip_prefix("domain").and_then(|s| s.parse::<i32>().ok()) {
-                t.sensor(key, &domain_name(n), "MHz", 0);
-            }
+        // nothing extra gets no rows rather than a column of dashes. In ascending domain type, the
+        // order the C# backend inserted them in: the keys arrive sorted as text ("domain20" before
+        // "domain3"), which put L2CLK above HUBCLK.
+        let mut domains: Vec<(i32, &str)> = extra
+            .iter()
+            .filter_map(|key| key.strip_prefix("domain").and_then(|s| s.parse::<i32>().ok()).map(|n| (n, *key)))
+            .collect();
+        domains.sort_by_key(|&(n, _)| n);
+        for (n, key) in domains {
+            t.sensor(key, &domain_name(n), "MHz", 0);
         }
 
         t.group("Load");
@@ -575,6 +580,25 @@ mod tests {
         assert_eq!(row(&t, "Memory junction").current, "40.0 °C");
         assert_eq!(t.sensor_count(), t.rows().iter().filter(|r| !r.is_header).count());
         assert!(striped(&t));
+    }
+
+    /// `measure_extra_clocks` is a BTreeMap, so the keys arrive in text order; the rows must still
+    /// follow the domain type, as the C# (whose backend inserted them in ascending type) showed.
+    #[test]
+    fn clock_domains_are_listed_by_type_not_by_key_text() {
+        let extra: BTreeMap<String, f64> =
+            ["coremeasured", "domain20", "domain22", "domain3", "domain31", "domain6", "sys", "video", "xbar"]
+                .iter()
+                .map(|k| (k.to_string(), 0.0))
+                .collect();
+        let t = TelemetryTable::new(&empty(), &GpuCapabilities::default(), extra.keys().map(String::as_str));
+        let names: Vec<&str> = t.rows().iter().map(|r| r.name.as_str()).collect();
+        let at = |n: &str| names.iter().position(|x| *x == n).unwrap();
+        assert!(at("HUBCLK") < at("DISPCLK"));
+        assert!(at("DISPCLK") < at("L2CLK"));
+        assert!(at("L2CLK") < at("Reference clock"));
+        assert!(at("Reference clock") < at("Domain type 31"));
+        assert_eq!(at("SYS") + 1, at("HUBCLK"), "domains follow the named clocks");
     }
 
     #[test]

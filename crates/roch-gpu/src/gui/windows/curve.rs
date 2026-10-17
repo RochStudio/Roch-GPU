@@ -78,6 +78,12 @@ fn read_ceiling_mv(svc: &TuningService, caps: &GpuCapabilities) -> i32 {
     }
 }
 
+/// The window's ceiling read, for the comparison with the C# build (`crate::audit_dump`).
+#[cfg(test)]
+pub(crate) fn audit_ceiling_mv(svc: &TuningService) -> i32 {
+    read_ceiling_mv(svc, &svc.capabilities())
+}
+
 fn read_curve(svc: &TuningService) -> CurveRead {
     let caps = svc.capabilities();
     CurveRead {

@@ -6,11 +6,10 @@ pub fn signed(v: i32) -> String {
     if v > 0 { format!("+{v}") } else { v.to_string() }
 }
 
-/// At most one decimal, trailing zero dropped (C# `0.#`). Banker's rounding is irrelevant at the
-/// precision these figures are shown with.
+/// At most one decimal, trailing zero dropped (C# `0.#`), with .NET's custom-format rounding:
+/// exact ties go away from zero (15.25 → "15.3", where `{:.1}` gives "15.2").
 pub fn one_decimal(v: f64) -> String {
-    let s = format!("{v:.1}");
-    s.strip_suffix(".0").map(str::to_string).unwrap_or(s)
+    roch_core::util::dotnet_custom(v, 0, 1)
 }
 
 /// Parse a user-typed value: leading +/- allowed, whitespace trimmed, trailing units ignored
@@ -55,6 +54,8 @@ mod tests {
         assert_eq!(one_decimal(15.9), "15.9");
         assert_eq!(one_decimal(16.0), "16");
         assert_eq!(one_decimal(12.04), "12");
+        assert_eq!(one_decimal(15.25), "15.3", "an exact tie rounds away from zero, as .NET's 0.#");
+        assert_eq!(one_decimal(0.15), "0.2", ".NET rounds the 15-digit value");
     }
 
     #[test]

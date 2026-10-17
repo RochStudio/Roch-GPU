@@ -18,6 +18,7 @@ use eframe::egui::{
     Ui, ViewportClass, ViewportId, pos2, vec2,
 };
 use roch_core::GpuTelemetry;
+use roch_core::util::dotnet_custom;
 
 use super::{ChildChrome, Placement, Tap, WinCtx, content_frame};
 use crate::gui::telemetry_table::{TelemetryRow, TelemetryTable};
@@ -59,8 +60,16 @@ impl Default for MonitorWindow {
 }
 
 /// `value.ToString(format) + " " + unit`, or an em dash for a reading the card does not give.
+/// The C# formats are the custom "0.0" and "0", which round exact ties away from zero.
 fn summary(value: f64, unit: &str, decimals: usize) -> String {
-    if value.is_finite() { format!("{value:.decimals$} {unit}") } else { "—".into() }
+    if value.is_finite() { format!("{} {unit}", dotnet_custom(value, decimals, decimals)) } else { "—".into() }
+}
+
+/// The three summary cards for one sample, for the comparison with the C# build
+/// (`crate::audit_dump`).
+#[cfg(test)]
+pub(crate) fn audit_summaries(t: &GpuTelemetry) -> [String; 3] {
+    [summary(t.temperature_c, "°C", 1), summary(t.core_clock_mhz, "MHz", 0), summary(t.power_watts, "W", 1)]
 }
 
 /// `TimeSpan.ToString(@"hh\:mm\:ss")`.
@@ -347,6 +356,10 @@ mod tests {
         assert_eq!(summary(28.04, "°C", 1), "28.0 °C");
         assert_eq!(summary(f64::NAN, "W", 1), "—");
         assert_eq!(summary(765.0, "MHz", 0), "765 MHz");
+        // .NET's "0.0" / "0" round an exact tie away from zero; Rust's {:.1} / {:.0} would not.
+        assert_eq!(summary(45.25, "°C", 1), "45.3 °C");
+        assert_eq!(summary(2422.5, "MHz", 0), "2423 MHz");
+        assert_eq!(summary(110.25, "W", 1), "110.3 W");
         assert_eq!(hms(6), "00:00:06");
         assert_eq!(hms(3 * 3600 + 61), "03:01:01");
     }

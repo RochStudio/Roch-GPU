@@ -18,6 +18,7 @@ use eframe::egui::{
     ViewportClass, ViewportId, pos2, vec2,
 };
 use roch_core::models::clock_step;
+use roch_core::util::dotnet_custom;
 use roch_core::{FanCurve, FanMode, FanPoint, GpuCapabilities, GpuTelemetry, VoltageControlStyle, only_notes};
 
 use super::{ChildChrome, Placement, WinCtx, content_frame};
@@ -217,18 +218,13 @@ impl FanWindow {
         });
         let count = self.sliders.len();
         ui.add_space(2.0);
-        let note = if count > 1 {
-            format!("This card reports {count} fans, each addressed separately by the driver.")
-        } else {
-            "This card reports one fan.".into()
-        };
-        wrapped(ui, &note, p.text);
+        wrapped(ui, &fixed_note(count), p.text);
         ui.add_space(6.0);
 
         for i in 0..count {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                let name = if count > 1 { format!("Fan {}", i + 1) } else { "Fan speed".into() };
+                let name = fan_label(i, count);
                 ui.label(RichText::new(name).font(theme::bold(BODY)).color(p.text));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(RichText::new(&self.readouts[i]).font(theme::regular(BODY)).color(p.text));
@@ -342,10 +338,7 @@ impl FanWindow {
         ui.horizontal(|ui| {
             section_title(ui, "POINTS");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let hint = match self.editor.max_points() {
-                    Some(m) => format!("{n} of {m} points  ·  Enter to apply"),
-                    None => format!("{n} points  ·  Enter to apply"),
-                };
+                let hint = point_hint(n, self.editor.max_points());
                 ui.label(RichText::new(hint).font(theme::regular(BODY)).color(p.text));
             });
         });
@@ -357,10 +350,10 @@ impl FanWindow {
             let focus = ui.memory(|m| (m.has_focus(tid), m.has_focus(fid)));
             let pt = self.editor.points()[i];
             if !focus.0 {
-                self.point_rows[i].0 = format!("{:.0}", pt.temperature_c);
+                self.point_rows[i].0 = dotnet_custom(pt.temperature_c, 0, 0);
             }
             if !focus.1 {
-                self.point_rows[i].1 = format!("{:.0}", pt.fan_percent);
+                self.point_rows[i].1 = dotnet_custom(pt.fan_percent, 0, 0);
             }
             ui.add_space(1.0);
             let mut commit = false;
@@ -406,8 +399,8 @@ impl FanWindow {
             vm.mark_curve_dirty();
         }
         if let (Some(pt), Some(row)) = (self.editor.points().get(i), self.point_rows.get_mut(i)) {
-            row.0 = format!("{:.0}", pt.temperature_c);
-            row.1 = format!("{:.0}", pt.fan_percent);
+            row.0 = dotnet_custom(pt.temperature_c, 0, 0);
+            row.1 = dotnet_custom(pt.fan_percent, 0, 0);
         }
     }
 
@@ -501,10 +494,75 @@ fn hardware_point_limit(caps: &GpuCapabilities) -> Option<usize> {
     (caps.fan_curve_is_hardware && caps.fan_curve_points >= 2).then_some(caps.fan_curve_points as usize)
 }
 
-/// The per-fan caption: "45 %   ·   1200 rpm".
+/// The line under FIXED SPEED.
+fn fixed_note(count: usize) -> String {
+    if count > 1 {
+        format!("This card reports {count} fans, each addressed separately by the driver.")
+    } else {
+        "This card reports one fan.".into()
+    }
+}
+
+/// One fixed-speed row's title.
+fn fan_label(i: usize, count: usize) -> String {
+    if count > 1 { format!("Fan {}", i + 1) } else { "Fan speed".into() }
+}
+
+/// The hint beside POINTS.
+fn point_hint(n: usize, max: Option<usize>) -> String {
+    match max {
+        Some(m) => format!("{n} of {m} points  ·  Enter to apply"),
+        None => format!("{n} points  ·  Enter to apply"),
+    }
+}
+
+/// The window as it opens, as `key = value` pairs, for the comparison with the C# build
+/// (`crate::audit_dump`).
+#[cfg(test)]
+pub(crate) fn audit_initial(vm: &MainViewModel, sample: &GpuTelemetry) -> Vec<(String, String)> {
+    let mut w = FanWindow::default();
+    w.load(vm);
+    let caps = &vm.caps;
+    let count = w.sliders.len();
+    let mut out = Vec::new();
+    let mut put = |k: String, v: String| out.push((format!("fanwin.{k}"), v));
+    put("fixed_note".into(), fixed_note(count));
+    put("slider.min".into(), w.slider_range.0.to_string());
+    put("slider.max".into(), w.slider_range.1.to_string());
+    put("slider.step".into(), STEP.to_string());
+    for i in 0..count {
+        put(format!("fan.{i}.label"), fan_label(i, count));
+        put(format!("fan.{i}.value"), w.sliders[i].to_string());
+        put(format!("fan.{i}.readout"), w.readouts[i].clone());
+    }
+    put("link".into(), w.link.to_string());
+    put("software_curve_parameters_visible".into(), (!caps.fan_curve_is_hardware).to_string());
+    put("hysteresis".into(), w.hysteresis.clone());
+    put("min_step".into(), w.min_step.clone());
+    let pts = w.editor.points();
+    for (i, pt) in pts.iter().enumerate() {
+        put(
+            format!("point.{i}"),
+            format!("{} {} °C {} %", i + 1, dotnet_custom(pt.temperature_c, 0, 0), dotnet_custom(pt.fan_percent, 0, 0)),
+        );
+    }
+    put("point_hint".into(), point_hint(pts.len(), w.editor.max_points()));
+    put("mode".into(), w.mode.to_string());
+    for m in 0..3 {
+        put(format!("mode_note.{m}"), mode_note(m, caps, vm.has_zero_rpm()));
+    }
+    put("zero_rpm_visible".into(), vm.has_zero_rpm().to_string());
+    w.on_telemetry(sample);
+    for (i, r) in w.readouts.iter().enumerate() {
+        put(format!("sample_a.readout.{i}"), r.clone());
+    }
+    out
+}
+
+/// The per-fan caption: "45 %   ·   1200 rpm" (C# custom "0": exact ties round away from zero).
 fn readout(duty: f64, rpm: f64) -> String {
-    let duty_text = if duty.is_finite() { format!("{duty:.0} %") } else { "—".into() };
-    if rpm.is_finite() { format!("{duty_text}   ·   {rpm:.0} rpm") } else { duty_text }
+    let duty_text = if duty.is_finite() { format!("{} %", dotnet_custom(duty, 0, 0)) } else { "—".into() };
+    if rpm.is_finite() { format!("{duty_text}   ·   {} rpm", dotnet_custom(rpm, 0, 0)) } else { duty_text }
 }
 
 /// The line under the mode buttons.
@@ -604,7 +662,7 @@ fn paint_fan_curve(ui: &Ui, rect: Rect, g: &FanGeom, e: &FanEditor, p: &Palette)
         let fill = if live { p.accent } else { p.panel };
         painter.circle(at(x, y), if live { 6.0 } else { 5.0 }, fill, Stroke::new(2.0, p.accent));
         if Some(i) == e.dragging() {
-            let label = format!("{:.0}°C → {:.0}%", q.temperature_c, q.fan_percent);
+            let label = format!("{}°C → {}%", dotnet_custom(q.temperature_c, 0, 0), dotnet_custom(q.fan_percent, 0, 0));
             let galley = painter.layout_no_wrap(label, font.clone(), p.text);
             let tx = (x + 8.0).min(w - f64::from(galley.size().x) - 4.0);
             let ty = PAD_T.max(y - 18.0);
@@ -621,6 +679,7 @@ mod tests {
     fn texts() {
         assert_eq!(readout(45.0, 1200.0), "45 %   ·   1200 rpm");
         assert_eq!(readout(f64::NAN, f64::NAN), "—");
+        assert_eq!(readout(31.5, 1010.5), "32 %   ·   1011 rpm", "ties round away from zero, as .NET's \"0\"");
         assert_eq!(describe(FanMode::Fixed, &[60, 75], 60, false), "Set: fan 1 60%, fan 2 75%");
         assert_eq!(describe(FanMode::Fixed, &[], 65, false), "All fans at 65%.");
         assert_eq!(describe(FanMode::Curve, &[], 65, true), "Curve saved to the driver.");

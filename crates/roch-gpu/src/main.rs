@@ -9,6 +9,8 @@
 // (Not for the test harness, whose output cargo captures.)
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
+#[cfg(test)]
+mod audit_dump;
 mod backends;
 mod cli;
 mod console;
