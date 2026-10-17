@@ -16,6 +16,7 @@ pub mod xoc;
 
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use eframe::egui::{self, Context, IconData, Pos2, Rect, Vec2, ViewportBuilder, ViewportCommand, ViewportId};
 use roch_core::GpuTelemetry;
@@ -162,7 +163,7 @@ impl<T: Send + 'static> Tap<T> {
         tap.listener = Some(svc.add_telemetry_listener(move |t| {
             if let Some(svc) = weak.upgrade() {
                 let _ = tx.send(f(&svc, t));
-                wake.request_repaint();
+                crate::gui::wake(&wake, Duration::ZERO);
             }
         }));
         tap
@@ -174,7 +175,7 @@ impl<T: Send + 'static> Tap<T> {
         let _ = std::thread::Builder::new().name("RochGPU read".into()).spawn(move || {
             if let Some(svc) = weak.upgrade() {
                 let _ = tx.send(f(&svc));
-                wake.request_repaint();
+                crate::gui::wake(&wake, Duration::ZERO);
             }
         });
     }

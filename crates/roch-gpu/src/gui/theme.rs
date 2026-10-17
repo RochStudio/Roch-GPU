@@ -3,7 +3,7 @@
 //! The shared Roch Viewer palette. Every window reads the current [`Palette`] from the egui context
 //! with [`pal`], so flipping the mode repaints everything on the next frame. Typography is the
 //! Viewer's: Consolas 12 px (bold for labels and values), loaded from the Windows font folder
-//! with egui's built-in fonts as the fallback for glyphs Consolas lacks.
+//! with Segoe UI Symbol as the fallback for the few glyphs Consolas lacks.
 
 use eframe::egui::{self, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Id, Stroke};
 
@@ -108,35 +108,34 @@ pub fn regular(size: f32) -> FontId {
     FontId::new(size, FontFamily::Proportional)
 }
 
-/// Load Consolas (regular and bold) and Segoe UI Symbol from the Windows font folder, ahead of
-/// egui's own fonts. Missing files are skipped: the app still renders with the built-in fonts.
+/// Load Consolas (regular and bold) and Segoe UI Symbol from the Windows font folder. egui's own
+/// fonts are not compiled in (~0.7 MB of the exe, and only ever a fallback here): Consolas plus
+/// Segoe UI Symbol cover every glyph the UI draws (° — – … · × − → ↑ ↓, and ◀ ▶ ☀, which only
+/// Segoe UI Symbol has). Should Consolas be missing, the first of Segoe UI, Tahoma and Arial
+/// stands in for it. A file that cannot be read is skipped, never fatal.
 pub fn install_fonts(ctx: &Context) {
-    let mut fonts = FontDefinitions::default();
+    let mut fonts = FontDefinitions::empty();
     let dir = std::env::var_os("WINDIR").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
-    let mut load = |key: &str, file: &str| -> bool {
-        match std::fs::read(dir.join("Fonts").join(file)) {
-            Ok(bytes) => {
-                fonts.font_data.insert(key.to_owned(), std::sync::Arc::new(FontData::from_owned(bytes)));
-                true
-            }
-            Err(_) => false,
-        }
+    let mut load = |key: &'static str, file: &str| -> Option<String> {
+        let bytes = std::fs::read(dir.join("Fonts").join(file)).ok()?;
+        fonts.font_data.insert(key.to_owned(), std::sync::Arc::new(FontData::from_owned(bytes)));
+        Some(key.to_owned())
     };
     let regular = load("consolas", "consola.ttf");
     let bold = load("consolas-bold", "consolab.ttf");
     let symbols = load("segoe-symbol", "seguisym.ttf");
-
-    let defaults: Vec<String> = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    let chain = |first: Option<&str>| -> Vec<String> {
-        let mut v: Vec<String> = first.map(|f| vec![f.to_owned()]).unwrap_or_default();
-        if symbols {
-            v.push("segoe-symbol".into());
-        }
-        v.extend(defaults.iter().cloned());
-        v
+    let stand_in = match regular {
+        Some(_) => None,
+        None => [("segoe-ui", "segoeui.ttf"), ("tahoma", "tahoma.ttf"), ("arial", "arial.ttf")]
+            .into_iter()
+            .find_map(|(key, file)| load(key, file)),
     };
-    let regular_chain = chain(regular.then_some("consolas"));
-    let bold_chain = chain(if bold { Some("consolas-bold") } else { regular.then_some("consolas") });
+
+    let chain = |first: Option<String>| -> Vec<String> {
+        [first, stand_in.clone(), symbols.clone()].into_iter().flatten().collect()
+    };
+    let regular_chain = chain(regular.clone());
+    let bold_chain = chain(bold.or(regular));
     fonts.families.insert(FontFamily::Proportional, regular_chain.clone());
     fonts.families.insert(FontFamily::Monospace, regular_chain);
     fonts.families.insert(FontFamily::Name("bold".into()), bold_chain);

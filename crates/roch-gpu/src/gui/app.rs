@@ -8,10 +8,12 @@
 
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::time::Duration;
 
 use eframe::egui::{self, Context, IconData, TextureHandle, ViewportCommand, vec2};
 use roch_core::services::ServiceEvent;
 
+use super::bench::{self, Bench};
 use super::native;
 use super::shared::Shared;
 use super::theme;
@@ -24,6 +26,9 @@ use super::windows::main_window::{self, MainAction};
 use super::windows::monitor::MonitorWindow;
 use super::windows::xoc::XocWindow;
 use super::windows::{ChildChrome, WinCtx};
+
+/// How long a sample waits for the open windows' own per-sample reads before it is drawn.
+const SAMPLE_COALESCE: Duration = Duration::from_millis(30);
 
 /// Runs view-model jobs one at a time, in order, off the UI thread.
 struct Worker {
@@ -41,7 +46,7 @@ impl Worker {
                 if tx.send(outcome).is_err() {
                     break;
                 }
-                ctx.request_repaint();
+                super::wake(&ctx, Duration::ZERO);
             }
         });
         Worker { jobs, done }
@@ -83,20 +88,36 @@ pub struct RochApp {
     curve: Option<CurveWindow>,
     xoc: Option<XocWindow>,
     graphics: Option<GraphicsWindow>,
+    /// The tray icon is made after the first frame (it is a few ms of shell calls the window
+    /// need not wait for), unless the app starts in the tray.
+    tray_due: bool,
+    first_frame_drawn: bool,
+    /// Root frames drawn (only advanced while tracing).
+    frames: u64,
+    bench: Option<Bench>,
 }
 
 impl RochApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, shared: Shared, minimized: bool, show_requests: Receiver<()>) -> Self {
+    /// `vm` was built on the startup thread (`gui::Boot`), from the same `shared`.
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        shared: Shared,
+        vm: MainViewModel,
+        minimized: bool,
+        show_requests: Receiver<()>,
+    ) -> Self {
         let ctx = cc.egui_ctx.clone();
         let dark = shared.settings().dark_mode;
         theme::install_fonts(&ctx);
         theme::apply(&ctx, dark);
+        crate::trace!("app: fonts + theme");
 
-        let vm = MainViewModel::new(shared.clone());
         let events = shared.service.subscribe();
-        // Wake the UI for each sample; the sample itself travels through `events`.
+        // Wake the UI for each sample; the sample itself travels through `events`. The short
+        // delay lets a window's own per-sample read (a `Tap`, which wakes on its own as soon as
+        // it is done) land in the same frame instead of a second one.
         let wake = ctx.clone();
-        shared.service.add_telemetry_listener(move |_| wake.request_repaint());
+        shared.service.add_telemetry_listener(move |_| super::wake(&wake, SAMPLE_COALESCE));
         // The monitor starts closed, so the poll starts in the background (no driver call unless a
         // fan curve needs a temperature).
         shared.service.set_background_mode(true);
@@ -105,9 +126,12 @@ impl RochApp {
             shared.log(&format!("Polling could not start: {e}"));
         }
 
-        let tray = Tray::new(&ctx);
+        crate::trace!("app: polling started");
+        let tray = if minimized { Tray::new(&ctx) } else { None };
         let worker = Worker::start(shared.clone(), ctx.clone());
         let auto_monitor = shared.settings().auto_open_monitor;
+        // The benchmark only ever drives the simulated GPU.
+        let bench = crate::trace::bench().filter(|_| shared.service.backend_name() == "Simulated GPU").map(Bench::new);
         let mut app = Self {
             shared,
             vm,
@@ -128,6 +152,10 @@ impl RochApp {
             curve: None,
             xoc: None,
             graphics: None,
+            tray_due: !minimized,
+            first_frame_drawn: false,
+            frames: 0,
+            bench,
         };
         if minimized {
             app.minimize_to_tray(&ctx);
@@ -275,7 +303,7 @@ impl RochApp {
         }
         self.dispatch_jobs();
         if self.vm.busy() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            ctx.request_repaint_after(Duration::from_millis(100));
         }
     }
 
@@ -432,8 +460,78 @@ impl RochApp {
     }
 }
 
+impl RochApp {
+    /// One trace line per root frame: the main window's own time, and the whole frame including
+    /// every open child viewport (each of which is laid out, painted and swapped inside it).
+    fn trace_frame(&mut self, ctx: &Context, total: Duration, main: Duration) {
+        self.frames += 1;
+        let open: Vec<&str> = [
+            (self.monitor.is_some(), "telemetry"),
+            (self.fan.is_some(), "fan"),
+            (self.curve.is_some(), "curve"),
+            (self.xoc.is_some(), "xoc"),
+            (self.graphics.is_some(), "graphics"),
+        ]
+        .into_iter()
+        .filter_map(|(on, name)| on.then_some(name))
+        .collect();
+        crate::trace!(
+            "frame #{}: {:.2} ms (main {:.2} ms) open [{}]",
+            self.frames,
+            total.as_secs_f64() * 1000.0,
+            main.as_secs_f64() * 1000.0,
+            open.join(" ")
+        );
+        if self.frames == 1 {
+            crate::trace!("first frame drawn");
+            ctx.request_repaint(); // so the next frame can stamp "presented"
+        }
+    }
+
+    fn bench_step(&mut self, ctx: &Context, step: bench::Step) {
+        use bench::{Step, Win};
+        match step {
+            Step::Open(Win::Monitor) => self.set_monitor_open(true),
+            Step::Close(Win::Monitor) => self.set_monitor_open(false),
+            Step::Open(Win::Curve) => self.handle_action(ctx, MainAction::OpenCurve),
+            Step::Open(Win::Xoc) => self.handle_action(ctx, MainAction::OpenXoc),
+            Step::Open(Win::Fan) => self.handle_action(ctx, MainAction::OpenFan),
+            Step::Open(Win::Graphics) => self.handle_action(ctx, MainAction::OpenGraphics),
+            Step::Close(Win::Curve) => self.curve = None,
+            Step::Close(Win::Xoc) => self.xoc = None,
+            Step::Close(Win::Fan) => {
+                self.fan = None;
+                self.update_poll_detail();
+            }
+            Step::Close(Win::Graphics) => self.graphics = None,
+            Step::Exit => {
+                self.really_close = true;
+                ctx.send_viewport_cmd(ViewportCommand::Close);
+            }
+        }
+    }
+}
+
 impl eframe::App for RochApp {
     fn logic(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        if self.frames == 1 && crate::trace::enabled() {
+            crate::trace!("first frame presented");
+        }
+        if let Some(mut b) = self.bench.take() {
+            let (step, wait) = b.tick(self.frames);
+            ctx.request_repaint_after(wait);
+            if step != Some(bench::Step::Exit) {
+                self.bench = Some(b);
+            }
+            if let Some(step) = step {
+                self.bench_step(ctx, step);
+            }
+        }
+        if self.tray_due && self.first_frame_drawn {
+            self.tray_due = false;
+            self.tray = Tray::new(ctx);
+            crate::trace!("app: tray");
+        }
         self.pump(ctx);
 
         // Alt+F4, or the taskbar's Close: run our own close path instead.
@@ -450,8 +548,10 @@ impl eframe::App for RochApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let started = crate::trace::enabled().then(std::time::Instant::now);
         let mut actions = Vec::new();
         let needed = main_window::show(ui, &mut self.vm, self.icon_tex.as_ref(), &mut actions);
+        let main_done = started.map(|t| t.elapsed());
         // SizeToContent="Height" with MinHeight="640".
         let want = needed.max(main_window::MIN_HEIGHT).round();
         if (want - self.content_height).abs() > 1.0 {
@@ -465,6 +565,15 @@ impl eframe::App for RochApp {
         self.show_dialog(&ctx);
         // Jobs queued by this frame's clicks start now, not on the next event.
         self.dispatch_jobs();
+        if !self.first_frame_drawn {
+            self.first_frame_drawn = true;
+            if self.tray_due {
+                ctx.request_repaint(); // the next frame makes the tray icon
+            }
+        }
+        if let (Some(t), Some(main)) = (started, main_done) {
+            self.trace_frame(&ctx, t.elapsed(), main);
+        }
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {

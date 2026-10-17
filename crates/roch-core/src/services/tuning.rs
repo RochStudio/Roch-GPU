@@ -714,9 +714,9 @@ impl Inner {
         }
     }
 
-    fn poll_loop(&self, interval: Duration, cancel: Receiver<()>) {
+    fn poll_loop(&self, interval: Duration, cancel: Receiver<PollSignal>) {
         loop {
-            if !matches!(cancel.try_recv(), Err(TryRecvError::Empty)) {
+            if !matches!(cancel.try_recv(), Err(TryRecvError::Empty) | Ok(PollSignal::Wake)) {
                 break;
             }
             let background = self.background_mode.load(Ordering::SeqCst);
@@ -730,15 +730,22 @@ impl Inner {
                 Err(_) => self.events.log("Poll error: the backend panicked"),
             }
             match cancel.recv_timeout(interval) {
-                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Timeout) | Ok(PollSignal::Wake) => continue,
                 _ => break,
             }
         }
     }
 }
 
+/// What the polling thread can be told between samples.
+enum PollSignal {
+    Stop,
+    /// Sample now rather than at the end of the interval (a window that shows readings opened).
+    Wake,
+}
+
 struct Poller {
-    cancel: Sender<()>,
+    cancel: Sender<PollSignal>,
     done: Receiver<()>,
     handle: Option<JoinHandle<()>>,
     thread_id: ThreadId,
@@ -1553,7 +1560,16 @@ impl TuningService {
     /// does the least work that still keeps a fan curve running, and no driver call at all when no
     /// curve is active — a full sample is ~13 ms of synchronous NVAPI work.
     pub fn set_background_mode(&self, on: bool) {
-        self.inner.background_mode.store(on, Ordering::SeqCst);
+        let was = self.inner.background_mode.swap(on, Ordering::SeqCst);
+        // Leaving the background: take the first full sample now instead of up to an interval
+        // later. (`try_lock`: never wait behind a stop that is waiting on the driver.)
+        if was
+            && !on
+            && let Ok(poll) = self.poll.try_lock()
+            && let Some(p) = poll.as_ref()
+        {
+            let _ = p.cancel.send(PollSignal::Wake);
+        }
     }
 
     pub fn background_mode(&self) -> bool {
@@ -1567,7 +1583,7 @@ impl TuningService {
     /// Start (or restart) the polling thread. Fails if a previous poll could not be stopped.
     pub fn start_polling(&self, interval_ms: u64) -> Result<()> {
         self.stop_polling()?;
-        let (cancel_tx, cancel_rx) = mpsc::channel::<()>();
+        let (cancel_tx, cancel_rx) = mpsc::channel::<PollSignal>();
         let (done_tx, done_rx) = mpsc::channel::<()>();
         let inner = Arc::clone(&self.inner);
         let interval = Duration::from_millis(interval_ms);
@@ -1593,7 +1609,7 @@ impl TuningService {
     pub fn stop_polling_timeout(&self, timeout: Duration) -> Result<()> {
         let mut slot = lock(&self.poll);
         let Some(poller) = slot.as_mut() else { return Ok(()) };
-        let _ = poller.cancel.send(());
+        let _ = poller.cancel.send(PollSignal::Stop);
         if thread::current().id() == poller.thread_id {
             // Called from a listener on the poll thread itself: it cannot wait for itself. The loop
             // exits as soon as the listener returns.

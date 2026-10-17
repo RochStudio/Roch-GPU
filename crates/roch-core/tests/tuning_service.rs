@@ -625,6 +625,27 @@ fn background_mode_costs() {
     assert_eq!(svc.history().snapshot().len(), history_before, "background does not grow history");
 }
 
+/// Leaving background mode samples at once instead of waiting out the interval, so a window
+/// that shows readings fills in immediately; staying in it (or entering it) wakes nothing.
+#[test]
+fn leaving_background_mode_samples_at_once() {
+    let svc = TuningService::new(Box::new(CountingBackend::default()));
+    svc.initialize(0).unwrap();
+    svc.set_background_mode(true);
+    svc.start_polling(60_000).unwrap();
+    thread::sleep(Duration::from_millis(100));
+    svc.set_background_mode(true);
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(counting(&svc, |c| c.full_reads), 0, "background: no reads, and no wake while staying there");
+
+    let events = svc.subscribe();
+    svc.set_background_mode(false);
+    let sample = events.recv_timeout(Duration::from_secs(5));
+    svc.stop_polling().unwrap();
+    assert!(sample.is_ok(), "a sample arrived long before the 60 s interval");
+    assert_eq!(counting(&svc, |c| c.full_reads), 1);
+}
+
 /// "Stock ceiling tracking, and the voltage levers end to end through the service."
 #[test]
 fn stock_ceiling_tracking_and_voltage_levers() {

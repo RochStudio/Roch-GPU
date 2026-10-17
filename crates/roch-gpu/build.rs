@@ -8,6 +8,13 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
+    // Load opengl32.dll on first use instead of at process start. Only the window needs it, and
+    // merely having it mapped costs every process ~55 ms on exit (its DLL_PROCESS_DETACH), which
+    // was 90% of a CLI run such as `info --mock`. glutin loads it explicitly before any wgl call.
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        println!("cargo:rustc-link-arg-bin=RochGPU=/DELAYLOAD:opengl32.dll");
+        println!("cargo:rustc-link-arg-bin=RochGPU=delayimp.lib");
+    }
     let mut res = winresource::WindowsResource::new();
     res.set_icon("assets/RochGPU.ico")
         .set_manifest_file("assets/app.manifest")

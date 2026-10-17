@@ -95,6 +95,7 @@ fn dispatch(
     let gpu = usize::try_from(gpu).unwrap_or(usize::MAX);
 
     let backend = if mock { backends::mock() } else { backends::create_and_initialize()?.0 };
+    crate::trace!("cli: backend detected ({})", backend.backend_name());
     let svc = TuningService::new(backend);
     let store = ProfileStore::new(store_root)?;
 
@@ -172,6 +173,7 @@ fn initialize(svc: &TuningService, gpu: usize) -> CliResult<()> {
 /// actually runs, which can be tens of millivolts out.
 fn start(svc: &TuningService, store: &ProfileStore, gpu: usize) -> CliResult<()> {
     initialize(svc, gpu)?;
+    crate::trace!("cli: service initialised");
     let mut s = store.load_settings();
     let name = svc.device().name;
     seed_observed(svc, &s, &name);

@@ -4,7 +4,7 @@ Handoff file for the GUI port. Part 1 = app shell, theme, tray, view model, main
 Graphics windows. Part 2 = Monitor, Fan and V/F Curve windows. Both parts are done.
 
 Stack: eframe/egui **0.37** with the **glow** renderer (`default-features = false`, features
-`glow`, `default_fonts`, `clipboard`), `tray-icon` 0.26, `image` 0.25 (png only, already pulled in by
+`glow`, `clipboard`; no `default_fonts`, see Theme API), `tray-icon` 0.26, `image` 0.25 (png only, already pulled in by
 eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no `update`).
 
 ## Running / testing
@@ -27,7 +27,7 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 
 | file | C# origin | what |
 |---|---|---|
-| `mod.rs` | `App.OnStartup/OnExit`, `EntryPoint` window half | `run(args)`: store, settings, single-instance claim, panic log, `startup::start`, show-request listener, `eframe::run_native` |
+| `mod.rs` | `App.OnStartup/OnExit`, `EntryPoint` window half | `run(args)`: store, settings, single-instance claim, panic log, then `Boot` (a thread running `startup::start` + `MainViewModel::new`, with the `schtasks` query prefetched) alongside `eframe::run_native` creating the window and GL context; the app creator joins it |
 | `startup.rs` | `App.OnStartup` | `Flags::parse`, backend detection + "start simulated?" offer, recovery journal (recover BEFORE the logon profile), `--apply-profile`, `--exit` |
 | `shared.rs` | `App` statics | `Shared` (Arc service, store, `Mutex<AppSettings>`, `Mutex<Option<ProfileRecovery>>`, recovery notice, `StartupTasks`), `trial_profile` (= `App.TrialProfile`), `log`/`log_line` (1 MB rotating log) |
 | `view_model.rs` | `MainViewModel`, `ProfileSlot` | all UI logic, toolkit-free |
@@ -72,6 +72,11 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
   never block the UI thread; `tap.spawn(|svc| ..)` does a one-off read on its own thread;
   `tap.sender()` lets a `queue_custom` job post results back. `tap.drain()` each frame. Dropping it
   removes the listener.
+* Repaints: data arriving from another thread (samples, tap results, worker outcomes) wakes the UI
+  with `gui::wake` — one frame — not `request_repaint`, which egui turns into two. Every root frame
+  also repaints every open child viewport, so an idle window must not request frames; the app's
+  sample wake waits 30 ms so a tap's result lands in the same frame. Leaving background mode
+  wakes the poll thread for an immediate sample (`set_background_mode(false)`).
 * Hide to tray: title-bar −, or any minimise. Closes all child windows, remembering Monitor/Fan and
   reopening them on restore (deviation: WPF left owned windows alone). eframe runs no `ui()` while
   hidden, only `logic()`, which is where tray commands, show requests, telemetry and job results are
@@ -85,7 +90,9 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 section_border text muted header highlight brand brand_hover selected title_hover close_hover
 accent accent_dim warn danger`. `accent` = red GPU-information values and value boxes (v1.1.0).
 Font: Consolas 12 (`theme::regular(BODY)`, bold = `theme::bold(BODY)` → consolab.ttf) from
-`%WINDIR%\Fonts`, Segoe UI Symbol then egui defaults as fallbacks. The theme is switched by
+`%WINDIR%\Fonts`, Segoe UI Symbol as the fallback (egui's own fonts are not compiled in, so a new
+glyph must exist in Consolas or Segoe UI Symbol). The theme is switched by
+
 `theme::apply(ctx, dark)`; `RochApp` persists it in `AppSettings::dark_mode`. Custom-drawn
 controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
 

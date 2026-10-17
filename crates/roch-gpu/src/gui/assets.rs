@@ -1,6 +1,6 @@
 //! Embedded images: the 256 px app icon (window icon, title strip) and the multi-size .ico (tray).
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use eframe::egui::{self, IconData};
 
@@ -45,18 +45,24 @@ pub fn ico_frame_rgba(ico: &[u8], size: u32) -> Option<(Vec<u8>, u32, u32)> {
     png_rgba(data)
 }
 
-/// The window icon.
+/// The window icon, decoded once: the main window, every child window and the title strip's
+/// texture all use it.
 pub fn window_icon() -> Arc<IconData> {
-    match png_rgba(ICON_PNG) {
+    static ICON: OnceLock<Arc<IconData>> = OnceLock::new();
+    ICON.get_or_init(|| match png_rgba(ICON_PNG) {
         Some((rgba, width, height)) => Arc::new(IconData { rgba, width, height }),
         None => Arc::new(IconData::default()),
-    }
+    })
+    .clone()
 }
 
 /// The icon as a texture for the 24 px dragon in the title strip.
 pub fn icon_texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
-    let (rgba, w, h) = png_rgba(ICON_PNG)?;
-    let image = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
+    let icon = window_icon();
+    if icon.rgba.is_empty() {
+        return None;
+    }
+    let image = egui::ColorImage::from_rgba_unmultiplied([icon.width as usize, icon.height as usize], &icon.rgba);
     Some(ctx.load_texture("roch_icon", image, egui::TextureOptions::LINEAR))
 }
 
