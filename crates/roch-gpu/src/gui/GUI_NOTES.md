@@ -144,12 +144,13 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
 
 * Shown by `main_window::sliders` in the hardware Temperature Limit's place when
   `vm.has_soft_temp_limit()` (no `can_set_temp_limit`, but `can_set_soft_thermal_limit`). Label
-  `soft_temp_label()` ("Temperature Limit (°C, software)", broken onto two lines by
-  `slider_row_with_tip` because it is wider than the 180 px column); tooltip on the label and the
-  value box: `soft_temp_range_text()`.
-* `Field::SoftTempLimit` spans one below the card's window up to its top: the left end is **Off**
-  (value box "Off", `soft_temp_limit_c()` = 0 in the profile). Typing "off" or 0 turns it off; any
-  other number lands inside the window. `build_profile_from_editor` / `load_into_editor` carry it as
+  `soft_temp_label()` ("Temperature Limit (°C)"); tooltip on the label and the value box:
+  `soft_temp_range_text()`.
+* `Field::SoftTempLimit` spans the card's window; its top is the card's own limit
+  (`soft_temp_card_limit()`, NVML GPU max, 88 °C on a 5070 Ti) and is the default: the value box
+  shows the number, and `soft_temp_limit_c()` stores 0 there, so the software does nothing. Typing
+  "off", "card" or 0 returns to it; any number lands inside the window, and anything at or above
+  the card's limit is the card's limit. `build_profile_from_editor` / `load_into_editor` carry it as
   `soft_thermal_limit_c`, so slots, named profiles, the logon task and Apply treat it like any field.
 * Live state comes from the service, not from samples (the controller runs in background mode
   too): `soft_thermal_active_text()` takes over the limiter line ("Thermal limit active: capped at

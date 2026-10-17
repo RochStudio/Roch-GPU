@@ -211,10 +211,13 @@ impl NvidiaBackend {
 
         // Software temperature limit: offered where the clock can be capped and the driver has no
         // thermal limit of its own — every RTX 50 so far (no NVAPI thermal policy, and NVML refuses
-        // the target temperature). Never offered at or above the driver's own slowdown threshold
-        // (a read; 90 °C on a 5070 Ti).
+        // the target temperature). The window tops out at the card's own limit, its GPU-max
+        // threshold (88 °C on a 5070 Ti), and never reaches the slowdown (90 °C). Both are reads.
         let soft_window = if max_lock > 0 && !can_temp {
-            soft_thermal_window(crate::nvml::temperature_threshold_c(nvml_index, crate::nvml::THRESHOLD_SLOWDOWN))
+            soft_thermal_window(
+                crate::nvml::temperature_threshold_c(nvml_index, crate::nvml::THRESHOLD_GPU_MAX),
+                crate::nvml::temperature_threshold_c(nvml_index, crate::nvml::THRESHOLD_SLOWDOWN),
+            )
         } else {
             None
         };

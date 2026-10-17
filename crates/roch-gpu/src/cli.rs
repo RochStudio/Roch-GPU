@@ -266,8 +266,9 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
     if c.can_set_soft_thermal_limit {
         outln!(
             out,
-            "Soft temp limit: {}..{} °C (software, app must be running)",
+            "Soft temp limit: {}..{} °C ({} °C is the card's own limit; below it the app caps clocks while it runs)",
             c.soft_thermal_limit_min_c,
+            c.soft_thermal_limit_max_c,
             c.soft_thermal_limit_max_c
         );
     }
@@ -480,7 +481,9 @@ pub fn build_apply_profile(
     }
     if let Some(v) = o.get("soft-temp") {
         // "off" or 0 turns it off.
-        p.soft_thermal_limit_c = if v.trim().eq_ignore_ascii_case("off") { 0 } else { int(v)? };
+        let t = v.trim();
+        p.soft_thermal_limit_c =
+            if t.eq_ignore_ascii_case("off") || t.eq_ignore_ascii_case("card") { 0 } else { int(v)? };
         if p.soft_thermal_limit_c > 0 && !caps.can_set_soft_thermal_limit {
             notes.push(if caps.can_set_temp_limit {
                 format!("{NOTE_PREFIX} this card has a temperature limit of its own (--temp) — software limit {v}°C ignored.")
@@ -886,9 +889,9 @@ RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
   RochGPU.exe info
   RochGPU.exe sensors                    list supplemental native sensor readings
   RochGPU.exe monitor [--interval 1000]
-  RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83|off] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
+  RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83|card] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
     each gated flag arms its own lever for that apply; a lever you do not name goes back to the driver's own value
-    --soft-temp: a software temperature limit for cards without one (RTX 50); only enforced while the app runs
+    --soft-temp: a software temperature limit below the card's own (RTX 50); 'card' leaves it to the card; only enforced while the app runs
   RochGPU.exe apply-profile <name> [--gpu 0]
   RochGPU.exe list-profiles
   RochGPU.exe reset [--gpu 0]
@@ -1166,7 +1169,12 @@ mod tests {
         let (code, out, err) = run_mock("info --mock rtx50", &store);
         assert_eq!(code, 0, "{err}");
         assert!(out.contains("Temp limit    : not supported\n"), "{out}");
-        assert!(out.contains("Soft temp limit: 50..89 °C (software, app must be running)\n"), "{out}");
+        assert!(
+            out.contains(
+                "Soft temp limit: 50..88 °C (88 °C is the card's own limit; below it the app caps clocks while it runs)\n"
+            ),
+            "{out}"
+        );
         let (_, out, _) = run_mock("info --mock", &store);
         assert!(!out.contains("Soft temp limit"), "a card with its own limit prints what v1.1.0 printed");
 
@@ -1181,8 +1189,11 @@ mod tests {
         );
         let (code, out, _) = run_mock("apply --mock rtx50 --soft-temp 99", &store);
         assert_eq!(code, 0);
-        assert!(out.contains("software temperature limit 99 °C is outside this card's range — applied 89 °C"), "{out}");
-        assert!(out.contains("so 89 °C is not enforced"), "{out}");
+        assert!(
+            out.contains("temperature limit 99 °C is at or above this card's own limit (88 °C) — left to the card."),
+            "{out}"
+        );
+        assert!(!out.contains("is not enforced"), "nothing for the app to enforce: {out}");
         let (code, out, _) = run_mock("apply --mock rtx50 --soft-temp off", &store);
         assert_eq!((code, out.as_str()), (0, "Applied.\n"), "off needs no note");
         let (code, _, _) = run_mock("apply --mock rtx50 --soft-temp hot", &store);
@@ -1212,7 +1223,7 @@ mod tests {
             can_lock_clocks: true,
             can_set_soft_thermal_limit: true,
             soft_thermal_limit_min_c: 50,
-            soft_thermal_limit_max_c: 89,
+            soft_thermal_limit_max_c: 88,
             ..Default::default()
         };
         let (p, notes) =

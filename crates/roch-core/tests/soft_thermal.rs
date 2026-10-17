@@ -174,7 +174,7 @@ fn offered_only_where_the_driver_has_no_limit() {
     let (svc, _p) = rig();
     let c = svc.capabilities();
     assert!(c.can_set_soft_thermal_limit && !c.can_set_temp_limit);
-    assert_eq!((c.soft_thermal_limit_min_c, c.soft_thermal_limit_max_c), (50, 89));
+    assert_eq!((c.soft_thermal_limit_min_c, c.soft_thermal_limit_max_c), (50, 88), "tops out at the card's own limit");
 
     // A card with its own thermal policy never runs the software limit, whatever the profile says.
     let svc = TuningService::new(Box::new(MockBackend::new()));
@@ -471,12 +471,19 @@ fn reapplying_keeps_the_ceiling_it_worked_out() {
 #[test]
 fn clamp_is_noted() {
     let (svc, _p) = rig();
+    let errs = svc.apply(&limit(30));
+    assert_eq!(
+        errs,
+        vec!["Note: software temperature limit 30 °C is outside this card's range — applied 50 °C instead."]
+    );
+    assert_eq!(svc.soft_thermal_status().limit_c, 50);
+    // At or above the card's own limit there is nothing to enforce: said so, and left to the card.
     let errs = svc.apply(&limit(97));
     assert_eq!(
         errs,
-        vec!["Note: software temperature limit 97 °C is outside this card's range — applied 89 °C instead."]
+        vec!["Note: temperature limit 97 °C is at or above this card's own limit (88 °C) — left to the card."]
     );
-    assert_eq!(svc.soft_thermal_status().limit_c, 89);
+    assert_eq!(svc.soft_thermal_status().limit_c, 0);
 }
 
 #[test]

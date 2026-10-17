@@ -169,7 +169,8 @@ impl GpuBackend for MockBackend {
 
     fn capabilities(&mut self, _gpu: usize) -> Result<GpuCapabilities> {
         let hw_temp = self.hardware_temp_limit;
-        let (soft_min, soft_max) = soft_thermal_window(Some(90)).unwrap_or((0, 0));
+        // The thresholds an RTX 5070 Ti reports: GPU max 88 °C, slowdown 90 °C.
+        let (soft_min, soft_max) = soft_thermal_window(Some(88), Some(90)).unwrap_or((0, 0));
         Ok(GpuCapabilities {
             can_set_core_offset: true,
             can_set_memory_offset: true,

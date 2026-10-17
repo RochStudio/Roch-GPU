@@ -442,15 +442,15 @@ fn soft_temp_row_replaces_a_missing_hardware_limit() {
     let f = rtx50_fixture();
     let vm = vm(&f);
     assert!(!vm.has_temp_limit() && vm.has_soft_temp_limit());
-    assert_eq!(vm.soft_temp_label(), "Temperature Limit (°C, software)");
+    assert_eq!(vm.soft_temp_label(), "Temperature Limit (°C)");
     let tip = vm.range_text(Field::SoftTempLimit);
-    assert!(tip.starts_with("Off, or 50 … 89 °C."), "{tip}");
-    for words in ["only while Roch GPU is running", "from the tray", "caps the core clock", "slowdown"] {
+    assert!(tip.starts_with("50 … 88 °C. 88 °C is this card's own limit (the default)"), "{tip}");
+    for words in ["only while Roch GPU is running", "from the tray", "core clock is capped", "slowdown"] {
         assert!(tip.contains(words), "tooltip says {words:?}: {tip}");
     }
-    // Nothing applied yet: Off, at the slider's left end.
-    assert_eq!(vm.input_text(Field::SoftTempLimit), "Off");
-    assert_eq!(vm.slider_range(Field::SoftTempLimit), (49, 89));
+    // Nothing applied yet: the card's own limit, at the slider's top.
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "88");
+    assert_eq!(vm.slider_range(Field::SoftTempLimit), (50, 88));
     assert_eq!(vm.step(Field::SoftTempLimit), 1);
     assert_eq!(vm.build_profile_from_editor("x").soft_thermal_limit_c, 0);
 }
@@ -465,19 +465,24 @@ fn soft_temp_value_box_and_nudges() {
     };
     assert_eq!(typed(&mut vm, "83"), ("83".into(), 83));
     assert!(vm.pending_changes());
-    assert_eq!(typed(&mut vm, "0"), ("Off".into(), 0));
+    assert_eq!(typed(&mut vm, "0"), ("88".into(), 0), "0 is the card's own limit");
     assert_eq!(typed(&mut vm, "75"), ("75".into(), 75));
-    assert_eq!(typed(&mut vm, "off"), ("Off".into(), 0));
-    assert_eq!(typed(&mut vm, "30"), ("50".into(), 50), "a number below the window is its bottom, not Off");
-    assert_eq!(typed(&mut vm, "99"), ("89".into(), 89), "never above slowdown - 1");
-    assert_eq!(typed(&mut vm, "abc"), ("89".into(), 89), "garbage leaves it alone");
-    vm.commit_input(Field::SoftTempLimit, "Off");
+    assert_eq!(typed(&mut vm, "off"), ("88".into(), 0));
+    assert_eq!(typed(&mut vm, "70"), ("70".into(), 70));
+    assert_eq!(typed(&mut vm, "card"), ("88".into(), 0));
+    assert_eq!(typed(&mut vm, "30"), ("50".into(), 50), "below the window is its bottom");
+    assert_eq!(typed(&mut vm, "99"), ("88".into(), 0), "above the card's limit is the card's limit");
+    assert_eq!(typed(&mut vm, "abc"), ("88".into(), 0), "garbage leaves it alone");
+    assert_eq!(typed(&mut vm, "87"), ("87".into(), 87), "one below the card's limit is enforced");
     vm.nudge(Field::SoftTempLimit, 1);
-    assert_eq!(vm.input_text(Field::SoftTempLimit), "50", "one step right of Off is the bottom of the window");
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "88", "one step up from 87 is the card's own limit");
+    assert_eq!(vm.build_profile_from_editor("x").soft_thermal_limit_c, 0);
+    vm.nudge(Field::SoftTempLimit, 1);
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "88", "the card's limit is the top");
     vm.nudge(Field::SoftTempLimit, -1);
-    assert_eq!(vm.input_text(Field::SoftTempLimit), "Off");
-    vm.nudge_spec("softtemp:1");
-    assert_eq!(vm.get(Field::SoftTempLimit), 50);
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "87");
+    vm.nudge_spec("softtemp:-1");
+    assert_eq!(vm.get(Field::SoftTempLimit), 86);
 }
 
 #[test]
@@ -507,10 +512,10 @@ fn soft_temp_applies_shows_live_state_and_saves_in_slots() {
     assert_eq!(saved.soft_thermal_limit_c, 70);
     assert!(vm.slots()[0].summary.contains("soft temp 70 °C"), "{}", vm.slots()[0].summary);
 
-    // Reset turns it off, hands the clock back and shows Off.
+    // Reset turns it off, hands the clock back and shows the card's own limit.
     vm.reset();
     vm.run_jobs_inline();
-    assert_eq!(vm.input_text(Field::SoftTempLimit), "Off");
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "88");
     assert!(!f.shared.service.soft_thermal_status().enabled);
     assert_eq!(f.shared.service.read_tuning_state().unwrap().locked_clock_max_mhz, 0);
     assert!(!vm.limit_is_active());

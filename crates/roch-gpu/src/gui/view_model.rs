@@ -62,7 +62,7 @@ pub enum Field {
     FixedFan,
     NvvddOcpAmps,
     MsvddOcpAmps,
-    /// The software temperature limit, in °C; any value below its window is "Off".
+    /// The software temperature limit, in °C; the window's top is the card's own limit (stored as 0).
     SoftTempLimit,
 }
 
@@ -610,7 +610,7 @@ impl MainViewModel {
         format!("Temperature Limit ({})", self.caps.temp_limit_unit())
     }
     pub fn soft_temp_label(&self) -> &'static str {
-        "Temperature Limit (°C, software)"
+        "Temperature Limit (°C)"
     }
     pub fn voltage_boost_label(&self) -> &'static str {
         if self.caps.voltage_style == VoltageControlStyle::Percent { "Voltage Limit (%)" } else { "Voltage Boost (%)" }
@@ -684,22 +684,23 @@ impl MainViewModel {
     pub fn soft_temp_range_text(&self) -> String {
         let (lo, hi) = self.caps.soft_thermal_limit_range();
         format!(
-            "Off, or {lo} … {hi} °C. This card's driver has no temperature limit of its own, so Roch GPU \
-             provides one: when the GPU temperature reaches the limit it caps the core clock, a step at a time, \
-             and lets it climb back as the card cools. It works only while Roch GPU is running, including \
-             from the tray; closing the app hands the clock back. The driver's own slowdown at the hardware \
-             threshold still applies."
+            "{lo} … {hi} °C. {hi} °C is this card's own limit (the default): the card holds that temperature by \
+             itself and Roch GPU does nothing. This card's driver offers no way to lower it, so below {hi} °C Roch \
+             GPU enforces the limit in software: when the GPU reaches it, the core clock is capped a step at a \
+             time and allowed to climb back as the card cools. That works only while Roch GPU is running, \
+             including from the tray; closing the app hands the clock back. The card's own slowdown at the \
+             hardware threshold always applies."
         )
     }
 
-    /// The slider's leftmost position, which means Off.
-    fn soft_temp_off(&self) -> i32 {
-        self.caps.soft_thermal_limit_range().0 - 1
+    /// The slider's top: the card's own limit, where the software has nothing to do.
+    pub fn soft_temp_card_limit(&self) -> i32 {
+        self.caps.soft_thermal_limit_range().1
     }
-    /// The editor's software limit as a profile stores it: 0 when Off.
+    /// The editor's software limit as a profile stores it: 0 at the card's own limit.
     pub fn soft_temp_limit_c(&self) -> i32 {
         let v = self.get(Field::SoftTempLimit);
-        if self.has_soft_temp_limit() && v > self.soft_temp_off() { v } else { 0 }
+        if self.has_soft_temp_limit() && v < self.soft_temp_card_limit() { v } else { 0 }
     }
 
     // ------------------------------------------------------------------ steps and ranges
@@ -801,7 +802,7 @@ impl MainViewModel {
             Field::FixedFan => (c.fan_min_percent, c.fan_max_percent),
             Field::NvvddOcpAmps => (self.nvvdd_ocp_min_a(), self.nvvdd_ocp_max_a()),
             Field::MsvddOcpAmps => (self.msvdd_ocp_min_a(), self.msvdd_ocp_max_a()),
-            Field::SoftTempLimit => (self.soft_temp_off(), c.soft_thermal_limit_range().1),
+            Field::SoftTempLimit => c.soft_thermal_limit_range(),
         }
     }
 
@@ -874,7 +875,6 @@ impl MainViewModel {
                 signed(v)
             }
             Field::MemoryOffset if !self.caps.memory_clock_is_absolute => signed(v),
-            Field::SoftTempLimit if v <= self.soft_temp_off() => "Off".into(),
             _ => v.to_string(),
         }
     }
@@ -883,12 +883,13 @@ impl MainViewModel {
     /// [`Self::input_text`] either way, so a clamped value replaces what was typed.
     pub fn commit_input(&mut self, f: Field, text: &str) {
         if f == Field::SoftTempLimit {
-            // "Off" or 0 turns it off; any other number lands in the window rather than below it.
-            let off = self.soft_temp_off();
-            if text.trim().eq_ignore_ascii_case("off") {
-                self.set(f, off);
+            // "Off", "card" or 0 go back to the card's own limit; any number lands in the window.
+            let card = self.soft_temp_card_limit();
+            let t = text.trim();
+            if t.eq_ignore_ascii_case("off") || t.eq_ignore_ascii_case("card") {
+                self.set(f, card);
             } else if let Some(v) = super::format::parse_signed(text) {
-                self.set(f, if v <= 0 { off } else { v.max(off + 1) });
+                self.set(f, if v <= 0 { card } else { v });
             }
             return;
         }
@@ -1837,8 +1838,9 @@ impl MainViewModel {
         self.set(Field::MemoryOffset, p.memory_offset_mhz);
         self.set(Field::PowerLimit, p.power_limit_percent);
         self.set(Field::TempLimit, p.temp_limit_c);
-        // 0 (off) clamps to the slider's Off position.
-        self.set(Field::SoftTempLimit, p.soft_thermal_limit_c);
+        // 0 is the card's own limit: the slider's top, never the bottom of the window.
+        let soft = if p.soft_thermal_limit_c > 0 { p.soft_thermal_limit_c } else { self.soft_temp_card_limit() };
+        self.set(Field::SoftTempLimit, soft);
         self.set(Field::VoltageBoost, p.voltage_boost_percent);
         self.set(Field::VoltageOffset, p.voltage_offset_mv);
         let rail = if p.voltage_rail_max_mv > 0 { p.voltage_rail_max_mv } else { self.stock_nvvdd_max_mv() };

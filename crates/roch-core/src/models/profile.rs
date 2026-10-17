@@ -352,12 +352,13 @@ impl TuningProfile {
                 clamp_i32(self.memory_timing_level, 0, caps.memory_timing_options.len() as i32 - 1);
         }
         self.fan_curve.normalize();
-        // 0 (or less) is off. A real request lands in the card's window, or in the generic one when
-        // this card offers none, so a hand-edited 300 °C never reaches the controller.
-        if self.soft_thermal_limit_c <= 0 {
+        // 0 (or less) means the card's own limit, and so does anything at or above it: the top of
+        // the window is the temperature the card already holds itself, so there is nothing for the
+        // software to do there. A real request below it lands in the window.
+        let (lo, hi) = caps.soft_thermal_limit_range();
+        if self.soft_thermal_limit_c <= 0 || self.soft_thermal_limit_c >= hi {
             self.soft_thermal_limit_c = 0;
         } else {
-            let (lo, hi) = caps.soft_thermal_limit_range();
             self.soft_thermal_limit_c = clamp_i32(self.soft_thermal_limit_c, lo, hi);
         }
     }
@@ -431,7 +432,7 @@ mod tests {
             can_lock_clocks: true,
             can_set_soft_thermal_limit: true,
             soft_thermal_limit_min_c: 50,
-            soft_thermal_limit_max_c: 89,
+            soft_thermal_limit_max_c: 88,
             ..Default::default()
         };
         let clamp = |v: i32, caps: &GpuCapabilities| {
@@ -439,13 +440,15 @@ mod tests {
             p.clamp_to(caps);
             p.soft_thermal_limit_c
         };
-        assert_eq!(clamp(0, &caps), 0, "off stays off");
-        assert_eq!(clamp(-5, &caps), 0, "negative is off");
+        assert_eq!(clamp(0, &caps), 0, "0 is the card's own limit");
+        assert_eq!(clamp(-5, &caps), 0);
         assert_eq!(clamp(30, &caps), 50);
         assert_eq!(clamp(83, &caps), 83);
-        assert_eq!(clamp(95, &caps), 89, "never above the card's window (slowdown - 1)");
+        assert_eq!(clamp(87, &caps), 87);
+        assert_eq!(clamp(88, &caps), 0, "the card's own limit needs no software");
+        assert_eq!(clamp(95, &caps), 0, "above the card's limit is the card's limit");
         // A card without the feature still keeps the value sane.
-        assert_eq!(clamp(300, &GpuCapabilities::default()), 95);
+        assert_eq!(clamp(300, &GpuCapabilities::default()), 0);
     }
 
     #[test]

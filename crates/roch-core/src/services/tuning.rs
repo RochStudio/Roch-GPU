@@ -637,12 +637,24 @@ fn add_clamp_notes(notes: &mut Vec<String>, caps: &GpuCapabilities, asked: &Tuni
     if asked.target_voltage_mv > 0 {
         note("voltage cap", asked.target_voltage_mv, applied.target_voltage_mv, " mV");
     }
-    if caps.can_set_soft_thermal_limit && asked.soft_thermal_limit_c > 0 {
-        note("software temperature limit", asked.soft_thermal_limit_c, applied.soft_thermal_limit_c, " °C");
-    }
     // An auto-fan profile still carries whatever fixed duty it last had.
     if asked.fan_mode == FanMode::Fixed {
         note("fan speed", asked.fixed_fan_percent, applied.fixed_fan_percent, "%");
+    }
+    if caps.can_set_soft_thermal_limit && asked.soft_thermal_limit_c > 0 {
+        let card = caps.soft_thermal_limit_range().1;
+        if applied.soft_thermal_limit_c == 0 {
+            // At or above the card's own limit there is nothing for the software to do.
+            notes.push(format!(
+                "{NOTE_PREFIX} temperature limit {} °C is at or above this card's own limit ({card} °C) — left to the card.",
+                asked.soft_thermal_limit_c
+            ));
+        } else if asked.soft_thermal_limit_c != applied.soft_thermal_limit_c {
+            notes.push(format!(
+                "{NOTE_PREFIX} software temperature limit {} °C is outside this card's range — applied {} °C instead.",
+                asked.soft_thermal_limit_c, applied.soft_thermal_limit_c
+            ));
+        }
     }
 }
 
