@@ -14,8 +14,6 @@ mod cli;
 mod console;
 mod elevation;
 mod gui;
-// `claim` and `listen_for_show_requests` belong to the window half; the GUI port calls them.
-#[allow(dead_code)]
 mod single_instance;
 
 use std::io::Write;
@@ -42,11 +40,18 @@ fn entry(args: &[String]) -> i32 {
         return 0;
     }
 
-    if !elevation::is_elevated() && elevation::relaunch_elevated(args) {
+    if wants_elevation(args) && !elevation::is_elevated() && elevation::relaunch_elevated(args) {
         return 0;
     }
 
     gui::run(args)
+}
+
+/// The window elevates because it writes clocks. The simulated GPU (`--mock`) writes nothing, so
+/// it runs at whatever level it was started with: no UAC prompt for a UI demo, and the GUI can be
+/// run and tested from an ordinary shell. (Deviation from the WPF build, which always elevated.)
+fn wants_elevation(args: &[String]) -> bool {
+    !args.iter().any(|a| a == "--mock")
 }
 
 /// Help is the one word both halves answer to; the CLI's version is the useful one.
@@ -76,5 +81,13 @@ mod tests {
         assert!(!wants_command_line(&v(&["--minimized"])));
         assert!(!wants_command_line(&v(&["--apply-profile", "Slot 1", "--minimized"])));
         assert!(!wants_command_line(&v(&["--mock"])));
+    }
+
+    #[test]
+    fn only_the_simulated_gpu_skips_elevation() {
+        assert!(wants_elevation(&v(&[])));
+        assert!(wants_elevation(&v(&["--apply-profile", "Slot 1", "--minimized"])));
+        assert!(!wants_elevation(&v(&["--mock"])));
+        assert!(!wants_elevation(&v(&["--minimized", "--mock"])));
     }
 }
