@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Windows only: the backends are Win32 FFI and the GUI is a Windows app. Tests touch no driver.
+  build-and-test:
+    name: Build, test and package (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Test, lint and build
+        shell: pwsh
+        run: ./build.ps1
+
+      # The --mock backend touches no driver, so the binary can be smoke-tested without a GPU.
+      - name: Smoke-test the CLI against the mock GPU
+        shell: pwsh
+        run: |
+          $out = & './dist/RochGPU.exe' info --mock 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "'RochGPU.exe info --mock' exited $LASTEXITCODE" }
+          if ($out -notmatch 'Simulated') { throw "mock backend did not report a simulated GPU" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: roch-gpu-dist
+          path: dist/
+          retention-days: 14
