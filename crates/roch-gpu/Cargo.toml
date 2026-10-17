@@ -14,7 +14,6 @@ roch-core.workspace = true
 roch-nvidia.workspace = true
 roch-amd.workspace = true
 roch-intel.workspace = true
-serde_json.workspace = true
 chrono.workspace = true
 eframe = { version = "0.37", default-features = false, features = ["glow", "clipboard"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
@@ -28,9 +27,7 @@ features = [
     "Win32_Storage_FileSystem",
     "Win32_System_Console",
     "Win32_System_ProcessStatus",
-    "Win32_System_Registry",
     "Win32_System_Threading",
-    "Win32_Graphics_Dwm",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ]
