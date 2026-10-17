@@ -28,15 +28,17 @@ pub mod windows;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 use eframe::egui;
-use roch_core::services::ProfileStore;
+use roch_core::services::{AppSettings, ProfileStore};
 
 use crate::single_instance;
-use shared::SchtasksStartup;
+use shared::{PrefetchedStartup, SchtasksStartup, Shared, StartupTasks};
 use startup::{Flags, Started};
+use view_model::MainViewModel;
 
 /// Run the window. `args` are the window's own flags (`--mock`, `--minimized`,
 /// `--apply-profile <name>`, `--exit`); returns the process exit code.
@@ -61,20 +63,17 @@ pub fn run(args: &[String]) -> i32 {
     }
 
     crate::trace!("gui: single instance claimed");
-    install_panic_log(store.root_directory().join("roch-gpu.log"));
-    let started = startup::start(&flags, store, settings, Arc::new(SchtasksStartup), |message| {
-        native::message_box(
-            &format!("{message}\n\nStart with a simulated GPU instead (UI demo only)?"),
-            "Roch GPU — no supported GPU",
-            native::Buttons::YesNo,
-            native::Icon::Warning,
-        )
-    });
-    let (shared, minimized) = match started {
-        Started::Exit(code) => return code,
-        Started::Window { shared, minimized } => (shared, minimized),
-    };
-    crate::trace!("gui: backend ready ({})", shared.service.backend_name());
+    let log_path = store.root_directory().join("roch-gpu.log");
+    install_panic_log(log_path.clone());
+    if flags.exit_after {
+        // `--exit`: apply the logon profile and quit. No window, so nothing to overlap with.
+        return match startup::start(&flags, store, settings, Arc::new(SchtasksStartup), offer_mock) {
+            Started::Exit(code) => code,
+            Started::Window { .. } => 0,
+        };
+    }
+    // The driver half of startup runs beside the window's creation rather than before it.
+    let boot = Boot::spawn(flags, store, settings);
 
     // A second launch cannot open a window of its own, so it asks this one to come forward.
     let (show_tx, show_rx) = channel::<()>();
@@ -104,21 +103,36 @@ pub fn run(args: &[String]) -> i32 {
         persist_window: false,
         ..Default::default()
     };
-    let exit_shared = shared.clone();
     crate::trace!("gui: run_native");
     let result = eframe::run_native(
         "Roch GPU",
         options,
-        Box::new(move |cc| {
+        Box::new(|cc| {
             crate::trace!("gui: eframe created (window + GL context)");
+            let Some(Booted::Window { shared, minimized, vm }) = boot.wait() else {
+                return Err("startup ended before the window opened".into());
+            };
+            crate::trace!("gui: driver startup joined");
             if let Ok(mut g) = wake.lock() {
                 *g = Some(cc.egui_ctx.clone());
             }
-            let app = app::RochApp::new(cc, shared, minimized, show_rx);
+            let app = app::RochApp::new(cc, shared, *vm, minimized, show_rx);
             crate::trace!("gui: app created");
             Ok(Box::new(app))
         }),
     );
+    // The window can fail before it ever asked for the driver half (no OpenGL), which may still
+    // be mid-apply: let it finish rather than exit under it.
+    let _ = boot.wait();
+    let exit_shared = match boot.outcome() {
+        Some(Ok(shared)) => shared,
+        Some(Err(code)) => return code,
+        None => {
+            // Only reachable if the driver half panicked, which the panic log has recorded.
+            shared::log_line(&log_path, "Startup did not finish.");
+            return 1;
+        }
+    };
     // Belt and braces for a window that never got to on_exit.
     exit_shared.service.release_fan_control();
     exit_shared.save_settings();
@@ -129,6 +143,78 @@ pub fn run(args: &[String]) -> i32 {
             native::message_box(&format!("{e}"), "Roch GPU error", native::Buttons::Ok, native::Icon::Error);
             1
         }
+    }
+}
+
+/// The "no supported GPU" prompt: start the simulated GPU instead?
+fn offer_mock(message: &str) -> bool {
+    native::message_box(
+        &format!("{message}\n\nStart with a simulated GPU instead (UI demo only)?"),
+        "Roch GPU — no supported GPU",
+        native::Buttons::YesNo,
+        native::Icon::Warning,
+    )
+}
+
+/// What the driver half of startup hands the window.
+enum Booted {
+    Exit(i32),
+    Window { shared: Shared, minimized: bool, vm: Box<MainViewModel> },
+}
+
+/// The driver half of startup — backend detection and initialisation, the recovery journal, the
+/// logon apply and the view model's first reads — on its own thread, so it overlaps eframe
+/// creating the window and its OpenGL context (each ~90-100 ms on an RTX 5070 Ti, and until
+/// now one after the other). The window is created hidden and stays so until its first frame,
+/// which waits for this; the steps themselves run in the same order as before. The logon task's
+/// `schtasks /Query` (a process launch) is started first, on a thread of its own.
+struct Boot {
+    handle: Mutex<Option<JoinHandle<Booted>>>,
+    /// What the thread produced, once joined: the shared state, or the exit code.
+    outcome: Mutex<Option<Result<Shared, i32>>>,
+}
+
+impl Boot {
+    fn spawn(flags: Flags, store: Arc<ProfileStore>, settings: AppSettings) -> Self {
+        let log_path = store.root_directory().join("roch-gpu.log");
+        let tasks: Arc<dyn StartupTasks> = Arc::new(PrefetchedStartup::start(Arc::new(SchtasksStartup)));
+        let spawned = std::thread::Builder::new().name("RochGPU startup".into()).spawn(move || {
+            match startup::start(&flags, store, settings, tasks, offer_mock) {
+                Started::Exit(code) => Booted::Exit(code),
+                Started::Window { shared, minimized } => {
+                    crate::trace!("gui: backend ready ({})", shared.service.backend_name());
+                    let vm = Box::new(MainViewModel::new(shared.clone()));
+                    crate::trace!("gui: view model");
+                    Booted::Window { shared, minimized, vm }
+                }
+            }
+        });
+        let (handle, outcome) = match spawned {
+            Ok(h) => (Some(h), None),
+            Err(e) => {
+                shared::log_line(&log_path, &format!("Could not start: {e}"));
+                (None, Some(Err(1)))
+            }
+        };
+        Self { handle: Mutex::new(handle), outcome: Mutex::new(outcome) }
+    }
+
+    /// Wait for the thread, the first time only (later calls return `None`). A panic on it is
+    /// re-raised here, as it would have been when this ran on the main thread.
+    fn wait(&self) -> Option<Booted> {
+        let handle = self.handle.lock().ok()?.take()?;
+        let booted = handle.join().unwrap_or_else(|e| std::panic::resume_unwind(e));
+        if let Ok(mut o) = self.outcome.lock() {
+            *o = Some(match &booted {
+                Booted::Exit(code) => Err(*code),
+                Booted::Window { shared, .. } => Ok(shared.clone()),
+            });
+        }
+        Some(booted)
+    }
+
+    fn outcome(&self) -> Option<Result<Shared, i32>> {
+        self.outcome.lock().ok()?.clone()
     }
 }
 

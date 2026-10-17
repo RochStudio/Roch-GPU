@@ -27,7 +27,7 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 
 | file | C# origin | what |
 |---|---|---|
-| `mod.rs` | `App.OnStartup/OnExit`, `EntryPoint` window half | `run(args)`: store, settings, single-instance claim, panic log, `startup::start`, show-request listener, `eframe::run_native` |
+| `mod.rs` | `App.OnStartup/OnExit`, `EntryPoint` window half | `run(args)`: store, settings, single-instance claim, panic log, then `Boot` (a thread running `startup::start` + `MainViewModel::new`, with the `schtasks` query prefetched) alongside `eframe::run_native` creating the window and GL context; the app creator joins it |
 | `startup.rs` | `App.OnStartup` | `Flags::parse`, backend detection + "start simulated?" offer, recovery journal (recover BEFORE the logon profile), `--apply-profile`, `--exit` |
 | `shared.rs` | `App` statics | `Shared` (Arc service, store, `Mutex<AppSettings>`, `Mutex<Option<ProfileRecovery>>`, recovery notice, `StartupTasks`), `trial_profile` (= `App.TrialProfile`), `log`/`log_line` (1 MB rotating log) |
 | `view_model.rs` | `MainViewModel`, `ProfileSlot` | all UI logic, toolkit-free |

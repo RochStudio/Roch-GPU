@@ -32,6 +32,41 @@ impl StartupTasks for SchtasksStartup {
     }
 }
 
+/// Answers the first [`StartupTasks::exists`] from a query started on a thread the moment it is
+/// made: it is a `schtasks.exe` launch (~10 ms), and startup has better things to wait on. Every
+/// later query, and every change, goes straight to the wrapped tasks; a change first discards
+/// the early answer, which could describe the task as it was before.
+pub struct PrefetchedStartup {
+    inner: Arc<dyn StartupTasks>,
+    first: Mutex<Option<std::thread::JoinHandle<bool>>>,
+}
+
+impl PrefetchedStartup {
+    pub fn start(inner: Arc<dyn StartupTasks>) -> Self {
+        let query = inner.clone();
+        let first = std::thread::Builder::new().name("RochGPU startup query".into()).spawn(move || query.exists()).ok();
+        Self { inner, first: Mutex::new(first) }
+    }
+
+    fn take_first(&self) -> Option<bool> {
+        lock(&self.first).take().and_then(|h| h.join().ok())
+    }
+}
+
+impl StartupTasks for PrefetchedStartup {
+    fn exists(&self) -> bool {
+        self.take_first().unwrap_or_else(|| self.inner.exists())
+    }
+    fn register(&self, exe_path: &str, profile_name: &str) -> Result<()> {
+        let _ = self.take_first();
+        self.inner.register(exe_path, profile_name)
+    }
+    fn unregister(&self) -> Result<()> {
+        let _ = self.take_first();
+        self.inner.unregister()
+    }
+}
+
 /// Shared application state (C# `App.Service`, `App.Store`, `App.Settings`, `App.Recovery`,
 /// `App.RecoveryNotice`). Clone freely; every field is shared.
 #[derive(Clone)]
@@ -168,5 +203,54 @@ pub fn log_line(path: &std::path::Path, line: &str) {
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let _ = writeln!(f, "{now}  {line}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    use super::*;
+
+    #[derive(Default)]
+    struct Fake {
+        registered: AtomicBool,
+        queries: AtomicUsize,
+    }
+
+    impl StartupTasks for Fake {
+        fn exists(&self) -> bool {
+            self.queries.fetch_add(1, Ordering::SeqCst);
+            self.registered.load(Ordering::SeqCst)
+        }
+        fn register(&self, _: &str, _: &str) -> Result<()> {
+            self.registered.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+        fn unregister(&self) -> Result<()> {
+            self.registered.store(false, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_first_query_is_answered_early_and_later_ones_ask_again() {
+        let fake = Arc::new(Fake::default());
+        let tasks = PrefetchedStartup::start(fake.clone());
+        assert!(!tasks.exists());
+        assert_eq!(fake.queries.load(Ordering::SeqCst), 1);
+        fake.registered.store(true, Ordering::SeqCst);
+        assert!(tasks.exists());
+        assert_eq!(fake.queries.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn a_change_discards_the_early_answer() {
+        let fake = Arc::new(Fake::default());
+        let tasks = PrefetchedStartup::start(fake.clone());
+        tasks.register("RochGPU.exe", "Slot 1").unwrap();
+        assert!(tasks.exists());
+        tasks.unregister().unwrap();
+        assert!(!tasks.exists());
     }
 }
