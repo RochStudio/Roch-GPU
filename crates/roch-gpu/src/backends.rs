@@ -33,9 +33,19 @@ pub fn create_and_initialize() -> Result<(Box<dyn GpuBackend>, Vec<Attempt>)> {
     create_from(&VENDORS)
 }
 
-/// The simulated GPU (`--mock`), uninitialised like a real one fresh from its constructor.
-pub fn mock() -> Box<dyn GpuBackend> {
-    Box::new(MockBackend::new())
+/// The word after `--mock` that picks the simulated RTX 50: a card whose driver offers no
+/// temperature limit, so the software one is shown instead.
+pub const MOCK_RTX50: &str = "rtx50";
+
+/// The simulated GPU for `--mock [variant]`, uninitialised like a real one fresh from its
+/// constructor. `rtx50` (any case) is the card without a hardware
+/// temperature limit; anything else, or nothing, the default card.
+pub fn mock_variant(variant: Option<&str>) -> Box<dyn GpuBackend> {
+    if variant.is_some_and(|v| v.trim().eq_ignore_ascii_case(MOCK_RTX50)) {
+        Box::new(MockBackend::without_hardware_temp_limit())
+    } else {
+        Box::new(MockBackend::new())
+    }
 }
 
 /// [`create_and_initialize`] over an explicit list, for tests.

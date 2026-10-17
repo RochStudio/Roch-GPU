@@ -118,7 +118,12 @@ impl MockBackend {
     /// A card like an RTX 5070 Ti: no settable temperature limit, so the software one is offered,
     /// with a driver slowdown at 90 °C (window 50..89 °C).
     pub fn without_hardware_temp_limit() -> Self {
-        Self { hardware_temp_limit: false, ..Self::new() }
+        let mut m = Self { hardware_temp_limit: false, ..Self::new() };
+        if let Some(d) = m.devices.first_mut() {
+            d.name = "Simulated RTX 5070 Ti".into();
+            d.vram_megabytes = 16303;
+        }
+        m
     }
 
     /// The simulated temperature right now, before the next reading moves it.
