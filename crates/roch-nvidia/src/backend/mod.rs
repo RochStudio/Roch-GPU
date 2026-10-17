@@ -483,6 +483,14 @@ impl GpuBackend for NvidiaBackend {
     fn set_clock_range(&mut self, gpu: usize, min_mhz: i32, max_mhz: i32) -> Result<()> {
         self.set_clock_range_impl(gpu, min_mhz, max_mhz)
     }
+    /// The NVML clock cap standing in for an ignored voltage lock (see `set_voltage_lock_impl`).
+    fn voltage_cap_clock_mhz(&self, _gpu: usize) -> i32 {
+        self.nvml_clock_cap_mhz.max(0)
+    }
+    /// NVML reopens its session after a display-driver reset (`nvml::session_epoch`).
+    fn driver_reset_count(&self) -> u64 {
+        nvml::session_epoch().max(0) as u64
+    }
     fn set_nvvdd_ocp_milliamps(&mut self, gpu: usize, milliamps: i32) -> Result<()> {
         self.write_ocp(gpu, crate::private::OCP_SLOT_NVVDD, milliamps, "NVVDD")
     }
