@@ -18,6 +18,8 @@ use crate::backends;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Flags {
     pub mock: bool,
+    /// The word after `--mock`, when there is one (`rtx50`: see `backends::mock_variant`).
+    pub mock_variant: Option<String>,
     pub exit_after: bool,
     pub minimized: bool,
     pub apply_profile: Option<String>,
@@ -27,7 +29,19 @@ impl Flags {
     pub fn parse(args: &[String]) -> Flags {
         let has = |f: &str| args.iter().any(|a| a == f);
         let apply_profile = args.iter().position(|a| a == "--apply-profile").and_then(|i| args.get(i + 1)).cloned();
-        Flags { mock: has("--mock"), exit_after: has("--exit"), minimized: has("--minimized"), apply_profile }
+        let mock_variant = args
+            .iter()
+            .position(|a| a == "--mock")
+            .and_then(|i| args.get(i + 1))
+            .filter(|a| !a.starts_with("--"))
+            .cloned();
+        Flags {
+            mock: has("--mock"),
+            mock_variant,
+            exit_after: has("--exit"),
+            minimized: has("--minimized"),
+            apply_profile,
+        }
     }
 }
 
@@ -56,7 +70,7 @@ pub fn start(
     let history = settings.history_seconds.max(1) as usize;
 
     // NVIDIA, AMD or Intel, whichever initialises. One binary, any card.
-    let mut backend: Box<dyn GpuBackend> = backends::mock();
+    let mut backend: Box<dyn GpuBackend> = backends::mock_variant(flags.mock_variant.as_deref());
     let mut detect_error = None;
     if !mock {
         match backends::create_and_initialize() {
@@ -87,7 +101,7 @@ pub fn start(
             return Started::Exit(1);
         }
         drop(service);
-        service = make_service(backends::mock());
+        service = make_service(backends::mock_variant(flags.mock_variant.as_deref()));
         if let Err(e) = service.initialize(0) {
             log(&format!("Init failed: {}", e.message));
             return Started::Exit(1);
@@ -195,6 +209,10 @@ mod tests {
         assert!(f.minimized && !f.mock && !f.exit_after);
         let f = Flags::parse(&v(&["--mock", "--exit", "--apply-profile"]));
         assert!(f.mock && f.exit_after);
+        assert_eq!(f.mock_variant, None);
+        let f = Flags::parse(&v(&["--mock", "rtx50", "--minimized"]));
+        assert!(f.mock && f.minimized);
+        assert_eq!(f.mock_variant.as_deref(), Some("rtx50"));
         assert_eq!(f.apply_profile, None);
     }
 }

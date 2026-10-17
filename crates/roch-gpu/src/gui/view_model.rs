@@ -62,9 +62,11 @@ pub enum Field {
     FixedFan,
     NvvddOcpAmps,
     MsvddOcpAmps,
+    /// The software temperature limit, in °C; any value below its window is "Off".
+    SoftTempLimit,
 }
 
-const FIELD_COUNT: usize = 19;
+const FIELD_COUNT: usize = 20;
 
 impl Field {
     pub const ALL: [Field; FIELD_COUNT] = [
@@ -87,6 +89,7 @@ impl Field {
         Field::FixedFan,
         Field::NvvddOcpAmps,
         Field::MsvddOcpAmps,
+        Field::SoftTempLimit,
     ];
 
     /// The nudge-command name the WPF arrows used ("core:-1").
@@ -101,6 +104,7 @@ impl Field {
             Field::MemoryOffset => "mem",
             Field::PowerLimit => "power",
             Field::TempLimit => "temp",
+            Field::SoftTempLimit => "softtemp",
             Field::VoltageRailMax => "rail",
             Field::MsvddRailMax => "msvdd",
             Field::VoltageRailFloor => "railfloor",
@@ -554,6 +558,10 @@ impl MainViewModel {
     pub fn has_temp_limit(&self) -> bool {
         self.caps.can_set_temp_limit
     }
+    /// The software temperature limit stands in for a hardware one the driver does not offer.
+    pub fn has_soft_temp_limit(&self) -> bool {
+        !self.caps.can_set_temp_limit && self.caps.can_set_soft_thermal_limit
+    }
     pub fn has_zero_rpm(&self) -> bool {
         self.caps.can_set_zero_rpm
     }
@@ -600,6 +608,9 @@ impl MainViewModel {
     }
     pub fn temp_label(&self) -> String {
         format!("Temperature Limit ({})", self.caps.temp_limit_unit())
+    }
+    pub fn soft_temp_label(&self) -> &'static str {
+        "Temperature Limit (°C, software)"
     }
     pub fn voltage_boost_label(&self) -> &'static str {
         if self.caps.voltage_style == VoltageControlStyle::Percent { "Voltage Limit (%)" } else { "Voltage Boost (%)" }
@@ -667,6 +678,28 @@ impl MainViewModel {
             c.temp_limit_unit(),
             c.temp_limit_default_c
         )
+    }
+
+    /// The software limit's tooltip: what it does, and what it cannot.
+    pub fn soft_temp_range_text(&self) -> String {
+        let (lo, hi) = self.caps.soft_thermal_limit_range();
+        format!(
+            "Off, or {lo} … {hi} °C. This card's driver has no temperature limit of its own, so Roch GPU \
+             provides one: when the GPU temperature reaches the limit it caps the core clock, a step at a time, \
+             and lets it climb back as the card cools. It works only while Roch GPU is running, including \
+             from the tray; closing the app hands the clock back. The driver's own slowdown at the hardware \
+             threshold still applies."
+        )
+    }
+
+    /// The slider's leftmost position, which means Off.
+    fn soft_temp_off(&self) -> i32 {
+        self.caps.soft_thermal_limit_range().0 - 1
+    }
+    /// The editor's software limit as a profile stores it: 0 when Off.
+    pub fn soft_temp_limit_c(&self) -> i32 {
+        let v = self.get(Field::SoftTempLimit);
+        if self.has_soft_temp_limit() && v > self.soft_temp_off() { v } else { 0 }
     }
 
     // ------------------------------------------------------------------ steps and ranges
@@ -768,6 +801,7 @@ impl MainViewModel {
             Field::FixedFan => (c.fan_min_percent, c.fan_max_percent),
             Field::NvvddOcpAmps => (self.nvvdd_ocp_min_a(), self.nvvdd_ocp_max_a()),
             Field::MsvddOcpAmps => (self.msvdd_ocp_min_a(), self.msvdd_ocp_max_a()),
+            Field::SoftTempLimit => (self.soft_temp_off(), c.soft_thermal_limit_range().1),
         }
     }
 
@@ -790,6 +824,7 @@ impl MainViewModel {
             Field::MemoryOffset => self.memory_step_mhz(),
             Field::PowerLimit => self.power_step_percent(),
             Field::TempLimit => self.temp_step(),
+            Field::SoftTempLimit => 1,
             Field::VoltageBoost => clock_step::VOLTAGE_BOOST_PERCENT,
             Field::FixedFan => clock_step::FAN_PERCENT,
             Field::ClockLockMin | Field::ClockLockMax => 15,
@@ -839,6 +874,7 @@ impl MainViewModel {
                 signed(v)
             }
             Field::MemoryOffset if !self.caps.memory_clock_is_absolute => signed(v),
+            Field::SoftTempLimit if v <= self.soft_temp_off() => "Off".into(),
             _ => v.to_string(),
         }
     }
@@ -846,6 +882,16 @@ impl MainViewModel {
     /// Commit a typed value. Garbage leaves the value unchanged; the caller re-reads
     /// [`Self::input_text`] either way, so a clamped value replaces what was typed.
     pub fn commit_input(&mut self, f: Field, text: &str) {
+        if f == Field::SoftTempLimit {
+            // "Off" or 0 turns it off; any other number lands in the window rather than below it.
+            let off = self.soft_temp_off();
+            if text.trim().eq_ignore_ascii_case("off") {
+                self.set(f, off);
+            } else if let Some(v) = super::format::parse_signed(text) {
+                self.set(f, if v <= 0 { off } else { v.max(off + 1) });
+            }
+            return;
+        }
         if let Some(v) = super::format::parse_signed(text) {
             self.set(f, v);
         }
@@ -861,6 +907,7 @@ impl MainViewModel {
             Field::MemoryOffset => self.memory_step_mhz(),
             Field::PowerLimit => self.power_step_percent(),
             Field::TempLimit => self.temp_step(),
+            Field::SoftTempLimit => 1,
             Field::VoltageBoost => clock_step::VOLTAGE_BOOST_PERCENT,
             _ => 5,
         };
@@ -1258,6 +1305,7 @@ impl MainViewModel {
             Field::FixedFan => format!("{} … {} %", self.caps.fan_min_percent, self.caps.fan_max_percent),
             Field::NvvddOcpAmps => self.nvvdd_ocp_range_text(),
             Field::MsvddOcpAmps => self.msvdd_ocp_range_text(),
+            Field::SoftTempLimit => self.soft_temp_range_text(),
         }
     }
 
@@ -1292,8 +1340,35 @@ impl MainViewModel {
         }
     }
 
-    /// No sample means nothing is being polled — say so rather than claim "no limiter".
+    /// The software temperature limit's live state, from the service (it runs in the background
+    /// too, so this needs no sample). `Some` while it is holding the clock down.
+    pub fn soft_thermal_active_text(&self) -> Option<String> {
+        if !self.has_soft_temp_limit() {
+            return None;
+        }
+        let s = self.shared.service.soft_thermal_status();
+        (s.enabled && s.active && s.ceiling_mhz > 0)
+            .then(|| format!("Thermal limit active: capped at {} MHz", s.ceiling_mhz))
+    }
+
+    /// One line for the XOC window's clock range while the software limit holds the clock inside it.
+    pub fn soft_thermal_clock_range_note(&self) -> Option<String> {
+        let s = self.shared.service.soft_thermal_status();
+        (self.has_soft_temp_limit() && s.enabled && s.active).then(|| {
+            format!(
+                "The software temperature limit ({} °C) is holding the clock at or below {} MHz, inside this range; \
+                 the range comes back in full as the GPU cools.",
+                s.limit_c, s.ceiling_mhz
+            )
+        })
+    }
+
+    /// No sample means nothing is being polled — say so rather than claim "no limiter". The
+    /// software temperature limit holding the clock down takes the line: it is the limiter then.
     pub fn limit_reason_text(&self) -> String {
+        if let Some(text) = self.soft_thermal_active_text() {
+            return text;
+        }
         match &self.telemetry {
             None => "Limiter — open the monitor to sample".into(),
             Some(t) if t.limit_reason == "Unavailable" => "Limiter status not reported".into(),
@@ -1302,9 +1377,10 @@ impl MainViewModel {
         }
     }
     pub fn limit_is_active(&self) -> bool {
-        self.telemetry
-            .as_ref()
-            .is_some_and(|t| !t.limit_reason.is_empty() && t.limit_reason != "None" && t.limit_reason != "Unavailable")
+        self.soft_thermal_active_text().is_some()
+            || self.telemetry.as_ref().is_some_and(|t| {
+                !t.limit_reason.is_empty() && t.limit_reason != "None" && t.limit_reason != "Unavailable"
+            })
     }
 
     // ------------------------------------------------------------------ status
@@ -1387,6 +1463,9 @@ impl MainViewModel {
         };
         let temp = if c.can_set_temp_limit {
             format!(" · temp {}{}", a.temp_limit_c, c.temp_limit_unit())
+        } else if self.has_soft_temp_limit() && p.soft_thermal_limit_c > 0 {
+            // Not on the card: the limit this process enforces.
+            format!(" · temp {}°C (software)", p.soft_thermal_limit_c)
         } else {
             String::new()
         };
@@ -1526,6 +1605,9 @@ impl MainViewModel {
             format!("power {}%", p.power_limit_percent),
             format!("temp {} {}", p.temp_limit_c, self.caps.temp_limit_unit()),
         ];
+        if self.has_soft_temp_limit() && p.soft_thermal_limit_c > 0 {
+            bits.push(format!("soft temp {} °C", p.soft_thermal_limit_c));
+        }
         if p.target_voltage_mv > 0 {
             bits.insert(0, format!("{} mV", p.target_voltage_mv));
         }
@@ -1743,6 +1825,7 @@ impl MainViewModel {
             fixed_fan_percent: g(Field::FixedFan),
             fixed_fan_percents: self.per_fan_percents.clone(),
             fan_curve: self.editor_curve.clone_config(),
+            soft_thermal_limit_c: self.soft_temp_limit_c(),
             ..TuningProfile::default()
         }
     }
@@ -1754,6 +1837,8 @@ impl MainViewModel {
         self.set(Field::MemoryOffset, p.memory_offset_mhz);
         self.set(Field::PowerLimit, p.power_limit_percent);
         self.set(Field::TempLimit, p.temp_limit_c);
+        // 0 (off) clamps to the slider's Off position.
+        self.set(Field::SoftTempLimit, p.soft_thermal_limit_c);
         self.set(Field::VoltageBoost, p.voltage_boost_percent);
         self.set(Field::VoltageOffset, p.voltage_offset_mv);
         let rail = if p.voltage_rail_max_mv > 0 { p.voltage_rail_max_mv } else { self.stock_nvvdd_max_mv() };

@@ -181,6 +181,13 @@ pub struct TuningProfile {
     pub fixed_fan_percents: Vec<i32>,
     pub fan_curve: FanCurve,
 
+    /// Software temperature limit in °C; 0 = off. Not a driver setting: while the app runs, the
+    /// service caps the graphics clock whenever the GPU passes it (see `services::soft_thermal`).
+    /// For cards whose driver offers no settable thermal limit (RTX 50). Not in v1.1.0, whose
+    /// profile reader ignores the field; profiles without it load as off.
+    #[serde(rename = "SoftThermalLimitC")]
+    pub soft_thermal_limit_c: i32,
+
     #[serde(with = "dotnet_datetime")]
     pub modified_utc: DateTime<Utc>,
 }
@@ -221,6 +228,7 @@ impl Default for TuningProfile {
             fixed_fan_percent: 50,
             fixed_fan_percents: Vec::new(),
             fan_curve: FanCurve::default(),
+            soft_thermal_limit_c: 0,
             modified_utc: Utc::now(),
         }
     }
@@ -344,6 +352,14 @@ impl TuningProfile {
                 clamp_i32(self.memory_timing_level, 0, caps.memory_timing_options.len() as i32 - 1);
         }
         self.fan_curve.normalize();
+        // 0 (or less) is off. A real request lands in the card's window, or in the generic one when
+        // this card offers none, so a hand-edited 300 °C never reaches the controller.
+        if self.soft_thermal_limit_c <= 0 {
+            self.soft_thermal_limit_c = 0;
+        } else {
+            let (lo, hi) = caps.soft_thermal_limit_range();
+            self.soft_thermal_limit_c = clamp_i32(self.soft_thermal_limit_c, lo, hi);
+        }
     }
 
     /// JSON with enums as numbers, the shape System.Text.Json wrote without a string-enum
@@ -393,6 +409,43 @@ mod tests {
         assert_eq!(numeric["XocArmed"], 5);
         let back: TuningProfile = serde_json::from_value(numeric).unwrap();
         assert_eq!(back.fan_mode, FanMode::Curve);
+    }
+
+    #[test]
+    fn soft_thermal_limit_round_trips_and_defaults_off() {
+        // A v1.1.0 profile has no such field: it loads as off.
+        let old = TuningProfile::from_json(r#"{"Name":"Slot 2","TempLimitC":80}"#).unwrap();
+        assert_eq!(old.soft_thermal_limit_c, 0);
+        let p = TuningProfile { soft_thermal_limit_c: 78, ..Default::default() };
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains(r#""SoftThermalLimitC":78"#), "{json}");
+        assert_eq!(TuningProfile::from_json(&json).unwrap().soft_thermal_limit_c, 78);
+        // The recovery journal's numeric-enum shape carries it too.
+        let back: TuningProfile = serde_json::from_value(p.to_numeric_enum_value()).unwrap();
+        assert_eq!(back.soft_thermal_limit_c, 78);
+    }
+
+    #[test]
+    fn clamp_soft_thermal_limit() {
+        let caps = GpuCapabilities {
+            can_lock_clocks: true,
+            can_set_soft_thermal_limit: true,
+            soft_thermal_limit_min_c: 50,
+            soft_thermal_limit_max_c: 89,
+            ..Default::default()
+        };
+        let clamp = |v: i32, caps: &GpuCapabilities| {
+            let mut p = TuningProfile { soft_thermal_limit_c: v, ..Default::default() };
+            p.clamp_to(caps);
+            p.soft_thermal_limit_c
+        };
+        assert_eq!(clamp(0, &caps), 0, "off stays off");
+        assert_eq!(clamp(-5, &caps), 0, "negative is off");
+        assert_eq!(clamp(30, &caps), 50);
+        assert_eq!(clamp(83, &caps), 83);
+        assert_eq!(clamp(95, &caps), 89, "never above the card's window (slowdown - 1)");
+        // A card without the feature still keeps the value sane.
+        assert_eq!(clamp(300, &GpuCapabilities::default()), 95);
     }
 
     #[test]

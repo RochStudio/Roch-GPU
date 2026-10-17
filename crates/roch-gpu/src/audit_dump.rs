@@ -974,7 +974,7 @@ fn audit_dump() {
 
     let store = Arc::new(ProfileStore::new(Some(dir.into())).unwrap());
     let settings = store.load_settings();
-    let backend = if mock { backends::mock() } else { backends::create_and_initialize().unwrap().0 };
+    let backend = if mock { backends::mock_variant(None) } else { backends::create_and_initialize().unwrap().0 };
     let svc = Arc::new(TuningService::with_history(backend, settings.history_seconds.max(1) as usize));
     svc.initialize(0).unwrap();
     let shared = Shared::new(svc.clone(), store.clone(), settings, Arc::new(ReadOnlyStartup));

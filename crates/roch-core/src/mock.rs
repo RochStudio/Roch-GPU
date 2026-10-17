@@ -53,6 +53,15 @@ pub struct MockBackend {
     /// One duty per cooler, because the real driver addresses them separately and a mock that
     /// forgets that agrees with any bug about it.
     pub fan_percents: [i32; 3],
+    /// The card has a settable temperature limit of its own (default). False models an RTX 50 card:
+    /// no thermal policy, so the software temperature limit is offered instead.
+    pub hardware_temp_limit: bool,
+    /// Hold the simulated load here instead of random-walking it (tests).
+    pub fixed_load: Option<f64>,
+    /// Every `set_clock_range` call, in order.
+    pub clock_range_writes: Vec<(i32, i32)>,
+    /// Make `set_clock_range` fail (tests of the error paths).
+    pub fail_clock_range: bool,
 }
 
 impl Default for MockBackend {
@@ -99,7 +108,37 @@ impl MockBackend {
             curve_delta_mhz: [0; 8],
             calls: Vec::new(),
             fan_percents: [50, 50, 50],
+            hardware_temp_limit: true,
+            fixed_load: None,
+            clock_range_writes: Vec::new(),
+            fail_clock_range: false,
         }
+    }
+
+    /// A card like an RTX 5070 Ti: no settable temperature limit, so the software one is offered,
+    /// with a driver slowdown at 90 °C (window 50..89 °C).
+    pub fn without_hardware_temp_limit() -> Self {
+        let mut m = Self { hardware_temp_limit: false, ..Self::new() };
+        if let Some(d) = m.devices.first_mut() {
+            d.name = "Simulated RTX 5070 Ti".into();
+            d.vram_megabytes = 16303;
+        }
+        m
+    }
+
+    /// The simulated temperature right now, before the next reading moves it.
+    pub fn sim_temp_c(&self) -> f64 {
+        self.sim_temp
+    }
+
+    /// Start the simulated temperature somewhere (tests).
+    pub fn set_sim_temp_c(&mut self, c: f64) {
+        self.sim_temp = c;
+    }
+
+    /// The clock window currently pinned, 0/0 when unpinned.
+    pub fn clock_range(&self) -> (i32, i32) {
+        (self.lock_lo, self.lock_hi)
     }
 
     fn call(&mut self, name: &str) {
@@ -129,11 +168,17 @@ impl GpuBackend for MockBackend {
     }
 
     fn capabilities(&mut self, _gpu: usize) -> Result<GpuCapabilities> {
+        let hw_temp = self.hardware_temp_limit;
+        let (soft_min, soft_max) = soft_thermal_window(Some(90)).unwrap_or((0, 0));
         Ok(GpuCapabilities {
             can_set_core_offset: true,
             can_set_memory_offset: true,
             can_set_power_limit: true,
-            can_set_temp_limit: true,
+            can_set_temp_limit: hw_temp,
+            // As the NVIDIA backend decides it: a clock that can be capped, and no thermal policy.
+            can_set_soft_thermal_limit: !hw_temp,
+            soft_thermal_limit_min_c: soft_min,
+            soft_thermal_limit_max_c: soft_max,
             can_set_fan_speed: true,
             can_read_voltage: true,
             can_set_voltage_boost: true,
@@ -150,9 +195,10 @@ impl GpuBackend for MockBackend {
             power_limit_min_percent: 50,
             power_limit_max_percent: 115,
             power_limit_default_percent: 100,
-            temp_limit_min_c: 65,
-            temp_limit_max_c: 88,
-            temp_limit_default_c: 83,
+            // Zeros without a thermal policy, as the NVIDIA backend reports it.
+            temp_limit_min_c: if hw_temp { 65 } else { 0 },
+            temp_limit_max_c: if hw_temp { 88 } else { 0 },
+            temp_limit_default_c: if hw_temp { 83 } else { 0 },
             voltage_boost_min_percent: 0,
             voltage_boost_max_percent: 100,
             fan_min_percent: 0,
@@ -195,19 +241,33 @@ impl GpuBackend for MockBackend {
 
     fn read_telemetry(&mut self, _gpu: usize) -> Result<GpuTelemetry> {
         // Random-walk load; temperature follows load minus fan cooling.
-        self.load = clamp_f64(self.load + (self.rng.next_f64() - 0.5) * 20.0, 0.0, 100.0);
+        let walked = clamp_f64(self.load + (self.rng.next_f64() - 0.5) * 20.0, 0.0, 100.0);
+        self.load = self.fixed_load.map(|l| clamp_f64(l, 0.0, 100.0)).unwrap_or(walked);
         let fan =
             if self.fan_manual { self.fan as f64 } else { clamp_f64(30.0 + (self.sim_temp - 40.0) * 1.5, 30.0, 100.0) };
-        let target_temp = 35.0 + self.load * 0.45 * (self.power as f64 / 100.0) - fan * 0.08;
-        self.sim_temp += (target_temp - self.sim_temp) * 0.15;
-        self.sim_temp = self.sim_temp.min(self.temp as f64 + 1.0);
 
         let core = self.core as f64;
-        let core_clock = if self.load < 5.0 {
+        let free_clock = if self.load < 5.0 {
             210.0
         } else {
             (2610.0 + core).min(2810.0 + core) - if self.sim_temp > 70.0 { (self.sim_temp - 70.0) * 15.0 } else { 0.0 }
         };
+        // A pinned window holds the clock inside it.
+        let mut core_clock = free_clock;
+        if self.lock_hi > 0 {
+            core_clock = core_clock.min(self.lock_hi as f64);
+        }
+        if self.lock_lo > 0 && self.load >= 5.0 {
+            core_clock = core_clock.max(self.lock_lo as f64);
+        }
+        // Heat goes roughly with the square of the clock held down against the one the card wanted,
+        // so a lower ceiling cools the simulated card (what the software temperature limit relies on).
+        let clock_heat = if free_clock > 0.0 { (core_clock / free_clock).clamp(0.0, 1.5).powi(2) } else { 1.0 };
+        let target_temp = 35.0 + self.load * 0.45 * (self.power as f64 / 100.0) * clock_heat - fan * 0.08;
+        self.sim_temp += (target_temp - self.sim_temp) * 0.15;
+        if self.hardware_temp_limit {
+            self.sim_temp = self.sim_temp.min(self.temp as f64 + 1.0);
+        }
         let mem_clock = if self.load < 5.0 { 405.0 } else { 10501.0 + self.mem as f64 };
         let volt_ceiling =
             if self.volt_lock_mv > 0 { self.volt_lock_mv as f64 } else { 1100.0 + self.volt_offset as f64 };
@@ -236,7 +296,7 @@ impl GpuBackend for MockBackend {
             perf_state: if self.load < 5.0 { "P8" } else { "P0" }.into(),
             limit_reason: if power_pct >= self.power as f64 - 0.5 {
                 "Power"
-            } else if self.sim_temp >= self.temp as f64 {
+            } else if self.hardware_temp_limit && self.sim_temp >= self.temp as f64 {
                 "Temperature"
             } else {
                 "None"
@@ -322,6 +382,10 @@ impl GpuBackend for MockBackend {
     }
 
     fn set_clock_range(&mut self, _gpu: usize, min_mhz: i32, max_mhz: i32) -> Result<()> {
+        self.clock_range_writes.push((min_mhz, max_mhz));
+        if self.fail_clock_range {
+            crate::bail!("Simulated clock-range failure");
+        }
         self.lock_lo = min_mhz;
         self.lock_hi = max_mhz;
         Ok(())

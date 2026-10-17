@@ -153,13 +153,32 @@ fn header(ui: &mut Ui, vm: &MainViewModel, actions: &mut Vec<MainAction>) {
 
 /// One Afterburner-style row: label (180) | ◀ slider ▶ | value box (88 column).
 fn slider_row(ui: &mut Ui, vm: &mut MainViewModel, label: &str, f: Field, enabled: bool, margin_y: f32) {
+    slider_row_with_tip(ui, vm, label, f, enabled, margin_y, None);
+}
+
+/// [`slider_row`] with a tooltip on the label too. A label too wide for its column breaks before
+/// its parenthesis onto a second line.
+fn slider_row_with_tip(
+    ui: &mut Ui,
+    vm: &mut MainViewModel,
+    label: &str,
+    f: Field,
+    enabled: bool,
+    margin_y: f32,
+    label_tip: Option<&str>,
+) {
     ui.add_space(margin_y);
     let w = ui.available_width();
     ui.allocate_ui_with_layout(vec2(w, 30.0), Layout::left_to_right(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        let (r, _) = ui.allocate_exact_size(vec2(180.0, 30.0), Sense::hover());
+        let (r, resp) = ui.allocate_exact_size(vec2(180.0, 30.0), Sense::hover());
         let color = if enabled { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
-        ui.painter().text(r.left_center(), Align2::LEFT_CENTER, label, theme::bold(BODY), color);
+        let wide = ui.painter().layout_no_wrap(label.to_string(), theme::bold(BODY), color).size().x > r.width() - 4.0;
+        let text = if wide { label.replacen(" (", "\n(", 1) } else { label.to_string() };
+        ui.painter().text(r.left_center(), Align2::LEFT_CENTER, text, theme::bold(BODY), color);
+        if let Some(tip) = label_tip {
+            resp.on_hover_text(tip);
+        }
         ui.add_space(8.0);
         let slider_w = w - 180.0 - 88.0 - 8.0 - 18.0;
         widgets::nudged_slider(ui, vm, f, slider_w, enabled, false);
@@ -245,6 +264,10 @@ fn sliders(ui: &mut Ui, vm: &mut MainViewModel, actions: &mut Vec<MainAction>) {
             if vm.has_temp_limit() {
                 let label = vm.temp_label();
                 slider_row(ui, vm, &label, Field::TempLimit, !busy, 12.0);
+            } else if vm.has_soft_temp_limit() {
+                // Where the hardware limit would be, for a driver that has none (RTX 50).
+                let tip = vm.soft_temp_range_text();
+                slider_row_with_tip(ui, vm, vm.soft_temp_label(), Field::SoftTempLimit, !busy, 12.0, Some(&tip));
             }
             if vm.has_memory_timing() {
                 memory_timing(ui, vm);

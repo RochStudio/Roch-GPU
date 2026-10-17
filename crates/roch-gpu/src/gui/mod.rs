@@ -135,6 +135,7 @@ pub fn run(args: &[String]) -> i32 {
     };
     // Belt and braces for a window that never got to on_exit.
     exit_shared.service.release_fan_control();
+    exit_shared.service.release_soft_thermal_limit();
     exit_shared.save_settings();
     match result {
         Ok(()) => 0,

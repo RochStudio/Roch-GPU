@@ -4,12 +4,12 @@
 //! ```text
 //!   RochGPU.exe info                       show GPUs, capabilities, current tuning
 //!   RochGPU.exe monitor [--interval 1000]  live telemetry until Ctrl+C
-//!   RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--fan 60|auto]
+//!   RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83] [--fan 60|auto]
 //!   RochGPU.exe apply-profile <name> [--gpu 0]     apply a saved GUI profile
 //!   RochGPU.exe list-profiles
 //!   RochGPU.exe reset [--gpu 0]
 //!   RochGPU.exe startup --enable <profile> | --disable | --status
-//!   add --mock anywhere to use the simulated GPU
+//!   add --mock anywhere to use the simulated GPU (--mock rtx50: one without a hardware temp limit)
 //! ```
 
 use std::collections::BTreeMap;
@@ -94,7 +94,7 @@ fn dispatch(
     let gpu = opts.get("gpu").and_then(|s| s.trim().parse::<i32>().ok()).unwrap_or(0);
     let gpu = usize::try_from(gpu).unwrap_or(usize::MAX);
 
-    let backend = if mock { backends::mock() } else { backends::create_and_initialize()?.0 };
+    let backend = if mock { backends::mock_variant(opts.get("mock")) } else { backends::create_and_initialize()?.0 };
     crate::trace!("cli: backend detected ({})", backend.backend_name());
     let svc = TuningService::new(backend);
     let store = ProfileStore::new(store_root)?;
@@ -262,6 +262,15 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
             c.temp_limit_default_c
         ))
     );
+    // Only where it is offered: a card with its own limit prints exactly what v1.1.0 printed.
+    if c.can_set_soft_thermal_limit {
+        outln!(
+            out,
+            "Soft temp limit: {}..{} °C (software, app must be running)",
+            c.soft_thermal_limit_min_c,
+            c.soft_thermal_limit_max_c
+        );
+    }
     let voltage_label = if c.voltage_style == VoltageControlStyle::Percent { "Voltage limit" } else { "Voltage boost" };
     outln!(
         out,
@@ -469,6 +478,18 @@ pub fn build_apply_profile(
             notes.push(format!("{NOTE_PREFIX} this card exposes no temperature limit — {tp}°C ignored."));
         }
     }
+    if let Some(v) = o.get("soft-temp") {
+        // "off" or 0 turns it off.
+        p.soft_thermal_limit_c = if v.trim().eq_ignore_ascii_case("off") { 0 } else { int(v)? };
+        if p.soft_thermal_limit_c > 0 && !caps.can_set_soft_thermal_limit {
+            notes.push(if caps.can_set_temp_limit {
+                format!("{NOTE_PREFIX} this card has a temperature limit of its own (--temp) — software limit {v}°C ignored.")
+            } else {
+                format!("{NOTE_PREFIX} this card cannot cap its clock, so it has no software temperature limit — {v}°C ignored.")
+            });
+            p.soft_thermal_limit_c = 0;
+        }
+    }
     if let Some(v) = o.get("volt") {
         p.voltage_boost_percent = int(v)?;
     }
@@ -581,9 +602,23 @@ pub fn build_apply_profile(
 
 fn apply(svc: &TuningService, o: &Opts, out: &mut dyn Write, err: &mut dyn Write) -> CliResult<i32> {
     let current = svc.read_current_as_profile()?;
-    let (p, mut notes) = build_apply_profile(current, &svc.capabilities(), o)?;
+    let caps = svc.capabilities();
+    let (p, mut notes) = build_apply_profile(current, &caps, o)?;
     notes.extend(svc.apply(&p));
+    notes.extend(soft_thermal_note(&caps, &svc.applied_profile().unwrap_or(p)));
     Ok(report(&notes, out, err))
+}
+
+/// The software temperature limit is enforced by a running Roch GPU; this process exits as soon as
+/// the apply is done, so say that the limit is not being enforced from here. `p`: what was applied.
+fn soft_thermal_note(caps: &roch_core::GpuCapabilities, p: &TuningProfile) -> Option<String> {
+    (caps.can_set_soft_thermal_limit && p.soft_thermal_limit_c > 0).then(|| {
+        format!(
+            "{NOTE_PREFIX} the software temperature limit only acts while Roch GPU is running (window or tray); \
+             this command exits, so {} °C is not enforced from here. Set it in the window, or in a startup profile.",
+            p.soft_thermal_limit_c
+        )
+    })
 }
 
 fn apply_profile(
@@ -604,7 +639,8 @@ fn apply_profile(
              Use the GUI with --minimized for curves."
         );
     }
-    let errs = svc.apply(&p);
+    let mut errs = svc.apply(&p);
+    errs.extend(soft_thermal_note(&svc.capabilities(), &svc.applied_profile().unwrap_or(p)));
     Ok(report(&errs, out, err))
 }
 
@@ -850,14 +886,15 @@ RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
   RochGPU.exe info
   RochGPU.exe sensors                    list supplemental native sensor readings
   RochGPU.exe monitor [--interval 1000]
-  RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
+  RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83|off] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
     each gated flag arms its own lever for that apply; a lever you do not name goes back to the driver's own value
+    --soft-temp: a software temperature limit for cards without one (RTX 50); only enforced while the app runs
   RochGPU.exe apply-profile <name> [--gpu 0]
   RochGPU.exe list-profiles
   RochGPU.exe reset [--gpu 0]
   RochGPU.exe diag                       dump everything the driver reports (for bug reports)
   RochGPU.exe startup --enable <profile> | --disable | --status
-  (add --mock to any command to use a simulated GPU)";
+  (add --mock to any command to use a simulated GPU; --mock rtx50 for one without a hardware temp limit)";
 
 fn usage(out: &mut dyn Write) {
     outln!(out, "{USAGE}");
@@ -1120,5 +1157,80 @@ mod tests {
         assert_eq!(String::from_utf8(o).unwrap(), "Applied.\n");
         assert!(String::from_utf8(e).unwrap().starts_with("Note: fan curve mode needs a resident process"));
         let _ = std::fs::remove_dir_all(store);
+    }
+
+    #[test]
+    fn soft_temp_on_the_simulated_rtx50() {
+        let store = temp_store("softtemp");
+        // `info` names the window, and only on a card that offers it.
+        let (code, out, err) = run_mock("info --mock rtx50", &store);
+        assert_eq!(code, 0, "{err}");
+        assert!(out.contains("Temp limit    : not supported\n"), "{out}");
+        assert!(out.contains("Soft temp limit: 50..89 °C (software, app must be running)\n"), "{out}");
+        let (_, out, _) = run_mock("info --mock", &store);
+        assert!(!out.contains("Soft temp limit"), "a card with its own limit prints what v1.1.0 printed");
+
+        // `apply --soft-temp` sets it, and says the CLI cannot enforce it.
+        let (code, out, err) = run_mock("apply --mock rtx50 --soft-temp 83", &store);
+        assert_eq!(code, 0, "{err}");
+        assert_eq!(
+            out,
+            "Note: the software temperature limit only acts while Roch GPU is running (window or tray); this \
+             command exits, so 83 °C is not enforced from here. Set it in the window, or in a startup profile.\n\
+             Applied.\n"
+        );
+        let (code, out, _) = run_mock("apply --mock rtx50 --soft-temp 99", &store);
+        assert_eq!(code, 0);
+        assert!(out.contains("software temperature limit 99 °C is outside this card's range — applied 89 °C"), "{out}");
+        assert!(out.contains("so 89 °C is not enforced"), "{out}");
+        let (code, out, _) = run_mock("apply --mock rtx50 --soft-temp off", &store);
+        assert_eq!((code, out.as_str()), (0, "Applied.\n"), "off needs no note");
+        let (code, _, _) = run_mock("apply --mock rtx50 --soft-temp hot", &store);
+        assert_eq!(code, 2, "not a number");
+
+        // A card with a hardware limit points at --temp instead.
+        let (code, out, _) = run_mock("apply --mock --soft-temp 80", &store);
+        assert_eq!(code, 0);
+        assert_eq!(
+            out,
+            "Note: this card has a temperature limit of its own (--temp) — software limit 80°C ignored.\nApplied.\n"
+        );
+
+        // A saved profile carrying it gets the same note from apply-profile.
+        let ps = ProfileStore::new(Some(store.clone())).unwrap();
+        ps.save(&mut TuningProfile { name: "Cool".into(), soft_thermal_limit_c: 75, ..Default::default() }).unwrap();
+        let line = vec!["apply-profile".to_string(), "Cool".into(), "--mock".into(), "rtx50".into()];
+        let (mut o, mut e) = (Vec::new(), Vec::new());
+        assert_eq!(run_with(&line, Some(store.clone()), &mut o, &mut e), 0);
+        assert!(String::from_utf8(o).unwrap().contains("so 75 °C is not enforced from here"));
+        let _ = std::fs::remove_dir_all(store);
+    }
+
+    #[test]
+    fn soft_temp_flag_folds_into_the_profile() {
+        let caps = GpuCapabilities {
+            can_lock_clocks: true,
+            can_set_soft_thermal_limit: true,
+            soft_thermal_limit_min_c: 50,
+            soft_thermal_limit_max_c: 89,
+            ..Default::default()
+        };
+        let (p, notes) =
+            build_apply_profile(TuningProfile::default(), &caps, &Opts::parse(&args("--soft-temp 80"))).unwrap();
+        assert_eq!((p.soft_thermal_limit_c, notes.len()), (80, 0));
+        let (p, _) = build_apply_profile(p, &caps, &Opts::parse(&args("--soft-temp 0"))).unwrap();
+        assert_eq!(p.soft_thermal_limit_c, 0);
+        // A card that cannot cap its clock.
+        let (p, notes) = build_apply_profile(
+            TuningProfile::default(),
+            &GpuCapabilities::default(),
+            &Opts::parse(&args("--soft-temp 80")),
+        )
+        .unwrap();
+        assert_eq!(p.soft_thermal_limit_c, 0);
+        assert_eq!(
+            notes,
+            vec!["Note: this card cannot cap its clock, so it has no software temperature limit — 80°C ignored."]
+        );
     }
 }

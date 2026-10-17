@@ -118,6 +118,10 @@ impl RochApp {
         // it is done) land in the same frame instead of a second one.
         let wake = ctx.clone();
         shared.service.add_telemetry_listener(move |_| super::wake(&wake, SAMPLE_COALESCE));
+        // And for each log line: the software temperature limit logs every ceiling it moves, also
+        // while no sample is being taken, and the limiter line shows it.
+        let wake = ctx.clone();
+        shared.service.add_log_listener(move |_| super::wake(&wake, SAMPLE_COALESCE));
         // The monitor starts closed, so the poll starts in the background (no driver call unless a
         // fan curve needs a temperature).
         shared.service.set_background_mode(true);
@@ -581,8 +585,10 @@ impl eframe::App for RochApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        // Hand fans back to the driver if this app was running a curve, then persist settings.
+        // Hand fans back to the driver if this app was running a curve, and the clock if the
+        // software temperature limit was holding it down; then persist settings.
         self.shared.service.release_fan_control();
+        self.shared.service.release_soft_thermal_limit();
         let _ = self.shared.service.stop_polling();
         self.shared.save_settings();
     }

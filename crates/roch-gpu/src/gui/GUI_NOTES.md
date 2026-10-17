@@ -10,6 +10,12 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 ## Running / testing
 
 * `CARGO_TARGET_DIR=target/gui cargo run -p roch-gpu -- --mock` — simulated GPU.
+  `--mock rtx50` simulates a card without a hardware temperature limit (as an RTX 50), which shows
+  the software Temperature Limit row instead.
+* Beside a resident (real, elevated) Roch GPU: `ROCH_TRACE=<file> ROCH_TRACE_BENCH=1` with `--mock`
+  makes the run *isolated* (`trace::isolated`): no single-instance claim or show request, so the
+  resident copy is neither signalled nor asked to come forward. The bench script then exits by
+  itself after ~45 s.
 * `--mock` **skips the UAC relaunch** (`main.rs::wants_elevation`): the simulated GPU writes nothing,
   so the GUI can be run from an ordinary shell. Every other GUI launch still elevates (as WPF did).
 * Isolate test runs from the real profiles: set `APPDATA` to a scratch folder before launching
@@ -100,13 +106,14 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
 
 * Numeric editor values are addressed by `Field` (VoltageBoost, VoltageOffset, TargetVoltage,
   CoreOffset, MemoryOffset, PowerLimit, TempLimit, VoltageRailMax/Floor, MsvddRailMax/Floor,
-  Xbar/Sys/VideoOffset, ClockLockMin/Max, FixedFan, Nvvdd/MsvddOcpAmps):
+  Xbar/Sys/VideoOffset, ClockLockMin/Max, FixedFan, Nvvdd/MsvddOcpAmps, SoftTempLimit):
   `get(f)`, `set(f, v) -> bool` (snap via `clock_step::snap_within`, clamp, mark dirty — C#
   `SetTuned`), `bounds(f)`, `slider_range(f)`, `step(f)`, `input_text(f)`, `commit_input(f, &str)`,
   `nudge(f, dir)`, `nudge_spec("core:-1")`, `range_text(f)` (value-box tooltip).
 * Capability switches: `has_voltage_boost, is_voltage_offset, has_curve_editor, has_xoc,
   has_voltage_rail, has_msvdd_rail, has_ocp, has_clock_lock, has_intel_clock_range, has_xbar,
-  has_sys, has_video, has_temp_limit, has_zero_rpm, has_memory_timing`; `caps`, `device` are pub.
+  has_sys, has_video, has_temp_limit, has_soft_temp_limit, has_zero_rpm, has_memory_timing`; `caps`,
+  `device` are pub.
 * Texts: identity lines (`driver_line`, `bios_line`, `pcie_bus_line`, `resizable_bar_line`,
   `memory_type_line`, `device_display_name`, `telemetry_device_name`), labels, range texts,
   `voltage_cap_text`, `target_voltage_range_text`, `xoc_status_text`, `limit_reason_text`,
@@ -132,6 +139,25 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
   thread. Use it for `set_fans`, `set_vf_curve_targets`, `set_voltage_lock`, etc. To get results
   into a window's own state, capture an `Arc<Mutex<..>>` the window also holds, or use
   `vm.report()`.
+
+## Software temperature limit (new; not in v1.1.0)
+
+* Shown by `main_window::sliders` in the hardware Temperature Limit's place when
+  `vm.has_soft_temp_limit()` (no `can_set_temp_limit`, but `can_set_soft_thermal_limit`). Label
+  `soft_temp_label()` ("Temperature Limit (°C, software)", broken onto two lines by
+  `slider_row_with_tip` because it is wider than the 180 px column); tooltip on the label and the
+  value box: `soft_temp_range_text()`.
+* `Field::SoftTempLimit` spans one below the card's window up to its top: the left end is **Off**
+  (value box "Off", `soft_temp_limit_c()` = 0 in the profile). Typing "off" or 0 turns it off; any
+  other number lands inside the window. `build_profile_from_editor` / `load_into_editor` carry it as
+  `soft_thermal_limit_c`, so slots, named profiles, the logon task and Apply treat it like any field.
+* Live state comes from the service, not from samples (the controller runs in background mode
+  too): `soft_thermal_active_text()` takes over the limiter line ("Thermal limit active: capped at
+  N MHz", warn colour), and `soft_thermal_clock_range_note()` adds a line under the XOC Clock Range.
+  The app wakes on service log lines (`add_log_listener` in `RochApp::new`) because the controller
+  logs every ceiling it moves, so the line updates in an idle window.
+* `on_exit` and `gui::run`'s belt-and-braces path call `release_soft_thermal_limit()` beside
+  `release_fan_control()`; `TuningService::drop` does it too.
 
 ## Part 2 windows
 
@@ -168,7 +194,8 @@ profile bar with two-step Save, right-click clear, Startup + profile combo, Appl
 line, summary, footer links + status), XOC window, Graphics window, worker-thread writes, log file,
 panic log.
 
-Deviations: see the report in the PR/hand-off; notably `--mock` skips elevation; child windows close
+Deviations: see the report in the PR/hand-off; notably the software temperature limit row (a new
+feature, above); `--mock` skips elevation; child windows close
 on hide-to-tray (Monitor/Fan reopen on restore); dialogs are egui modals instead of MessageBoxes
 (the no-GPU prompt and fatal errors use a native MessageBox); Enter in a value box commits and
 keeps focus (same as WPF); no exe-embedded icon resource (window/tray icons are set at runtime —

@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use roch_core::util::{clamp_i32, round_even_i32};
-use roch_core::{GpuCapabilities, Result};
+use roch_core::{GpuCapabilities, Result, soft_thermal_window};
 
 use super::{MIN_LOCKABLE_MHZ, NvidiaBackend, VOLTAGE_BOOST_HEADROOM_MV, VOLTAGE_RAIL_HEADROOM_MV};
 use crate::nvapi::{self, NvError};
@@ -209,6 +209,17 @@ impl NvidiaBackend {
         let max_lock = crate::nvml::max_graphics_clock_mhz(nvml_index);
         let min_lock = crate::nvml::min_graphics_clock_mhz(nvml_index);
 
+        // Software temperature limit: offered where the clock can be capped and the driver has no
+        // thermal limit of its own — every RTX 50 so far (no NVAPI thermal policy, and NVML refuses
+        // the target temperature). Never offered at or above the driver's own slowdown threshold
+        // (a read; 90 °C on a 5070 Ti).
+        let soft_window = if max_lock > 0 && !can_temp {
+            soft_thermal_window(crate::nvml::temperature_threshold_c(nvml_index, crate::nvml::THRESHOLD_SLOWDOWN))
+        } else {
+            None
+        };
+        let (soft_min, soft_max) = soft_window.unwrap_or((0, 0));
+
         let caps = GpuCapabilities {
             can_set_core_offset: can_core,
             can_set_memory_offset: can_mem,
@@ -266,6 +277,9 @@ impl NvidiaBackend {
             can_lock_clocks: max_lock > 0,
             clock_lock_min_mhz: if min_lock > 0 { min_lock } else { MIN_LOCKABLE_MHZ },
             clock_lock_max_mhz: max_lock,
+            can_set_soft_thermal_limit: soft_window.is_some(),
+            soft_thermal_limit_min_c: soft_min,
+            soft_thermal_limit_max_c: soft_max,
             can_set_xbar_offset: can_xbar,
             xbar_offset_min_mhz: xbar_min,
             xbar_offset_max_mhz: xbar_max,

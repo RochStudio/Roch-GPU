@@ -100,6 +100,11 @@ fn body(ui: &mut Ui, vm: &mut MainViewModel) {
                 "Pin the graphics clock inside this window now, or put it back",
                 busy,
             );
+            // The thumbs keep showing the user's own range; say what is holding the clock lower.
+            if let Some(note) = vm.soft_thermal_clock_range_note() {
+                ui.add(egui::Label::new(RichText::new(note).font(theme::regular(BODY)).color(p.warn)).wrap());
+                ui.add_space(6.0);
+            }
         }
     });
 
