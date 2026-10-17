@@ -15,10 +15,13 @@ mod console;
 mod elevation;
 mod gui;
 mod single_instance;
+mod trace;
 
 use std::io::Write;
 
 fn main() {
+    trace::init();
+    crate::trace!("main");
     let args: Vec<String> = std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
     let code = entry(&args);
     let _ = std::io::stdout().flush();
@@ -29,13 +32,16 @@ fn main() {
 fn entry(args: &[String]) -> i32 {
     if wants_command_line(args) {
         let _console = console::attach_to_output(); // restores the code page on the way out
-        return cli::run(args);
+        crate::trace!("cli: console attached");
+        let code = cli::run(args);
+        crate::trace!("cli: done");
+        return code;
     }
 
     // Before the prompt, not after: a second launch while the logon copy sits in the tray should
     // cost nothing at all, and asking for elevation first would cost a UAC dialog to then do
     // nothing with.
-    if single_instance::already_running() {
+    if !trace::isolated(args) && single_instance::already_running() {
         single_instance::ask_existing_to_show();
         return 0;
     }

@@ -96,6 +96,9 @@ impl MonitorWindow {
             return;
         }
         self.last_stamp = Some(t.timestamp);
+        if self.table.is_none() {
+            crate::trace!("telemetry: first sample arrived");
+        }
         let table =
             self.table.get_or_insert_with(|| TelemetryTable::new(t, &w.vm.caps, extra.keys().map(String::as_str)));
         table.add(t, Some(extra));

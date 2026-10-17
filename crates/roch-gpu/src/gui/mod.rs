@@ -11,6 +11,7 @@
 
 pub mod app;
 pub mod assets;
+pub mod bench;
 pub mod fan_editor;
 pub mod format;
 pub mod native;
@@ -49,14 +50,17 @@ pub fn run(args: &[String]) -> i32 {
         }
     };
     let settings = store.load_settings();
+    crate::trace!("gui: store + settings loaded");
 
     // Claimed here rather than in the entry point because the elevated relaunch is a new process:
     // whichever copy actually runs the window is the one that should hold the handle.
-    if !single_instance::claim() {
+    let isolated = crate::trace::isolated(args);
+    if !isolated && !single_instance::claim() {
         single_instance::ask_existing_to_show();
         return 0;
     }
 
+    crate::trace!("gui: single instance claimed");
     install_panic_log(store.root_directory().join("roch-gpu.log"));
     let started = startup::start(&flags, store, settings, Arc::new(SchtasksStartup), |message| {
         native::message_box(
@@ -70,11 +74,12 @@ pub fn run(args: &[String]) -> i32 {
         Started::Exit(code) => return code,
         Started::Window { shared, minimized } => (shared, minimized),
     };
+    crate::trace!("gui: backend ready ({})", shared.service.backend_name());
 
     // A second launch cannot open a window of its own, so it asks this one to come forward.
     let (show_tx, show_rx) = channel::<()>();
     let wake: Arc<std::sync::Mutex<Option<egui::Context>>> = Arc::default();
-    {
+    if !isolated {
         let wake = wake.clone();
         single_instance::listen_for_show_requests(move || {
             let _ = show_tx.send(());
@@ -100,14 +105,18 @@ pub fn run(args: &[String]) -> i32 {
         ..Default::default()
     };
     let exit_shared = shared.clone();
+    crate::trace!("gui: run_native");
     let result = eframe::run_native(
         "Roch GPU",
         options,
         Box::new(move |cc| {
+            crate::trace!("gui: eframe created (window + GL context)");
             if let Ok(mut g) = wake.lock() {
                 *g = Some(cc.egui_ctx.clone());
             }
-            Ok(Box::new(app::RochApp::new(cc, shared, minimized, show_rx)))
+            let app = app::RochApp::new(cc, shared, minimized, show_rx);
+            crate::trace!("gui: app created");
+            Ok(Box::new(app))
         }),
     );
     // Belt and braces for a window that never got to on_exit.
