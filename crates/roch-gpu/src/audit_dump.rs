@@ -136,11 +136,12 @@ impl Norm for FanCurve {
     }
 }
 
-struct Out(Vec<String>);
+/// The dump's lines; `prefix` goes in front of every key (the capability variants).
+struct Out(Vec<String>, String);
 
 impl Out {
     fn put(&mut self, key: impl AsRef<str>, v: impl Norm) {
-        self.0.push(format!("{} = {}", key.as_ref(), v.norm()));
+        self.0.push(format!("{}{} = {}", self.1, key.as_ref(), v.norm()));
     }
 }
 
@@ -288,8 +289,7 @@ fn snake(name: &str) -> String {
 }
 
 fn view_model(o: &mut Out, vm: &MainViewModel) {
-    let p = "vm";
-    let mut put = |k: &str, v: String| o.0.push(format!("{p}.{k} = {}", v.norm()));
+    let mut put = |k: &str, v: String| o.put(format!("vm.{k}"), v);
     put("backend_name", vm.backend_name.clone());
     put("vram_text", vm.vram_text());
     put("telemetry_device_name", vm.telemetry_device_name());
@@ -840,6 +840,129 @@ fn audit_fmt() {
     std::fs::write(out_file, text).unwrap();
 }
 
+/// Intel- and AMD-style capabilities on the mock (as the C# App tests do), to cover the labels,
+/// ranges and steps no NVIDIA card shows.
+fn variants(o: &mut Out, shared: &Shared) {
+    let base = shared.service.capabilities();
+    let intel = GpuCapabilities {
+        voltage_style: VoltageControlStyle::Percent,
+        core_offset_step_mhz: 1,
+        core_offset_min_mhz: -300,
+        core_offset_max_mhz: 500,
+        memory_clock_is_absolute: true,
+        memory_clock_unit: "Mbps".into(),
+        memory_offset_min_mhz: 19000,
+        memory_offset_max_mhz: 22000,
+        memory_clock_default_mhz: 19000,
+        temp_limit_min_c: 60,
+        temp_limit_max_c: 100,
+        temp_limit_default_c: 90,
+        power_limit_max_percent: 120,
+        can_edit_vf_curve: true,
+        fan_curve_is_hardware: true,
+        fan_curve_points: 10,
+        can_set_voltage_rail: false,
+        can_set_msvdd_rail: false,
+        can_set_ocp: false,
+        can_set_xbar_offset: false,
+        can_set_sys_offset: false,
+        can_set_video_offset: false,
+        fan_count: 1,
+        ..base.clone()
+    };
+    let intel_load = TuningProfile {
+        core_offset_mhz: 91,
+        memory_offset_mhz: 19001,
+        voltage_boost_percent: 41,
+        power_limit_percent: 101,
+        temp_limit_c: 99,
+        xoc_armed: XocLever::CLOCK_RANGE,
+        clock_lock_min_mhz: 500,
+        clock_lock_max_mhz: 2300,
+        fan_mode: FanMode::Curve,
+        ..TuningProfile::default()
+    };
+    let amd = GpuCapabilities {
+        voltage_style: VoltageControlStyle::Offset,
+        memory_clock_is_absolute: true,
+        memory_offset_min_mhz: 2400,
+        memory_offset_max_mhz: 2800,
+        memory_clock_default_mhz: 2518,
+        power_limit_is_offset: true,
+        power_limit_min_percent: -10,
+        power_limit_max_percent: 15,
+        power_limit_default_percent: 0,
+        can_set_zero_rpm: true,
+        can_set_memory_timing: true,
+        memory_timing_options: vec!["Default".into(), "Fast Timing".into(), "Fast Timing Level 2".into()],
+        can_set_voltage_rail: false,
+        can_set_msvdd_rail: false,
+        can_set_ocp: false,
+        can_set_xbar_offset: false,
+        can_set_sys_offset: false,
+        can_set_video_offset: false,
+        can_lock_clocks: false,
+        fan_curve_is_hardware: true,
+        fan_curve_points: 5,
+        can_read_hardware_fan_curve: true,
+        voltage_offset_min_mv: -200,
+        can_set_temp_limit: false,
+        can_set_voltage_boost: false,
+        fan_count: 2,
+        ..base
+    };
+    let amd_load = TuningProfile {
+        core_offset_mhz: -45,
+        memory_offset_mhz: 2518,
+        power_limit_percent: 5,
+        voltage_offset_mv: -50,
+        zero_rpm: false,
+        memory_timing_level: 1,
+        fan_mode: FanMode::Fixed,
+        fixed_fan_percent: 47,
+        fixed_fan_percents: vec![40, 55],
+        ..TuningProfile::default()
+    };
+    // Keys the C# variant block leaves out (they describe the session, not the capabilities).
+    let skip = |l: &str| {
+        let k = l.split(" = ").next().unwrap_or("");
+        let k = k.split_once('.').map_or(k, |x| x.1).split_once('.').map_or("", |x| x.1);
+        k.starts_with("vm.slot.")
+            || [
+                "vm.profiles",
+                "vm.title_text",
+                "vm.pending_changes",
+                "vm.status",
+                "vm.status_is_error",
+                "vm.applied_summary",
+            ]
+            .contains(&k)
+            || (k.starts_with("vm.gate.") && k != "vm.gate.clock_range")
+    };
+    for (name, caps, load) in [("intel", intel, intel_load), ("amd", amd, amd_load)] {
+        o.1 = format!("var.{name}.");
+        let start = o.0.len();
+        let mut vm = MainViewModel::new(shared.clone());
+        vm.caps = caps;
+        vm.load_into_editor(&load);
+        view_model(o, &vm);
+        profile(o, "vm.build", &vm.build_profile_from_editor("Audit"));
+        sliders(o, &vm);
+        let prefix = o.1.clone();
+        for (k, v) in fan::audit_initial(&vm, &sample_a()) {
+            o.0.push(format!("{prefix}{k} = {}", v.norm()));
+        }
+        for key in ["core", "mem", "voltboost", "voltoffset", "power", "temp"] {
+            vm.nudge_spec(&format!("{key}:1"));
+            vm.nudge_spec(&format!("{key}:1"));
+        }
+        profile(o, "nudged", &vm.build_profile_from_editor("Audit"));
+        let mut kept: Vec<String> = o.0.drain(start..).filter(|l| !skip(l)).collect();
+        o.0.append(&mut kept);
+        o.1.clear();
+    }
+}
+
 #[test]
 #[ignore = "audit harness: needs ROCH_AUDIT_MODE/DIR/OUT; reads the real GPU in real mode"]
 fn audit_dump() {
@@ -847,7 +970,7 @@ fn audit_dump() {
     let dir = std::env::var("ROCH_AUDIT_DIR").expect("ROCH_AUDIT_DIR");
     let out_file = std::env::var("ROCH_AUDIT_OUT").expect("ROCH_AUDIT_OUT");
     let mock = mode == "mock";
-    let mut o = Out(Vec::new());
+    let mut o = Out(Vec::new(), String::new());
 
     let store = Arc::new(ProfileStore::new(Some(dir.into())).unwrap());
     let settings = store.load_settings();
@@ -947,6 +1070,7 @@ fn audit_dump() {
 
     if mock {
         mock_actions(&mut o, &svc, &mut vm);
+        variants(&mut o, &shared);
     }
     assert!(!vm.busy());
 
