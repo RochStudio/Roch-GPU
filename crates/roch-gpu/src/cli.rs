@@ -694,13 +694,10 @@ fn fmt_domain(d: &nv_domains::ClockDomain) -> String {
     format!("{:>4}  {:>4}  {range}  {:>6} MHz  {:>6} MHz", d.slot, d.type_, d.measured_mhz, d.offset_mhz)
 }
 
-/// ---- ADAPTER: NVIDIA clock domains ------------------------------------------------------------
+/// ---- NVIDIA clock domains ----------------------------------------------------------------------
 ///
-/// FIX UP once `roch_nvidia` lands `NvidiaBackend::read_clock_domains(&mut self, gpu) ->
-/// Vec<ClockDomain>` (fields slot, type_, has_range, min_mhz, max_mhz, measured_mhz, offset_mhz)
-/// and `set_clock_domain_offset(&mut self, gpu, slot, mhz) -> i32`, and makes
-/// `NvidiaBackend::as_any_mut` return `Some(self)`. Only the two method bodies in the
-/// `impl DomainAccess for NvidiaBackend` below need changing; the verb itself is finished.
+/// The `domains` verb reaches the private clock-domain family through this small seam, so the
+/// verb body can be tested against a fake without a card.
 pub mod nv_domains {
     use roch_core::GpuBackend;
     use roch_nvidia::NvidiaBackend;
@@ -732,26 +729,23 @@ pub mod nv_domains {
     }
 
     impl DomainAccess for NvidiaBackend {
-        fn read(&mut self, _gpu: usize) -> Vec<ClockDomain> {
-            // FIX UP:
-            // self.read_clock_domains(_gpu)
-            //     .into_iter()
-            //     .map(|d| ClockDomain {
-            //         slot: d.slot,
-            //         type_: d.type_.to_string(),
-            //         has_range: d.has_range,
-            //         min_mhz: d.min_mhz,
-            //         max_mhz: d.max_mhz,
-            //         measured_mhz: d.measured_mhz,
-            //         offset_mhz: d.offset_mhz,
-            //     })
-            //     .collect()
-            Vec::new()
+        fn read(&mut self, gpu: usize) -> Vec<ClockDomain> {
+            self.read_clock_domains(gpu)
+                .into_iter()
+                .map(|d| ClockDomain {
+                    slot: d.slot,
+                    type_: d.type_.to_string(),
+                    has_range: d.has_range,
+                    min_mhz: d.min_mhz,
+                    max_mhz: d.max_mhz,
+                    measured_mhz: d.measured_mhz,
+                    offset_mhz: d.offset_mhz,
+                })
+                .collect()
         }
 
-        fn set_offset(&mut self, _gpu: usize, _slot: i32, _mhz: i32) -> i32 {
-            // FIX UP: self.set_clock_domain_offset(_gpu, _slot, _mhz)
-            -1
+        fn set_offset(&mut self, gpu: usize, slot: i32, mhz: i32) -> i32 {
+            self.set_clock_domain_offset(gpu, slot, mhz)
         }
     }
 }
