@@ -280,6 +280,15 @@ fn stock_profiles() {
     let amd = GpuCapabilities { memory_clock_is_absolute: true, memory_clock_default_mhz: 2518, ..Default::default() };
     assert_eq!(TuningProfile::stock(&amd, Some("Test")).memory_offset_mhz, 2518);
     assert_eq!(TuningProfile::stock(&GpuCapabilities::default(), None).memory_offset_mhz, 0);
+    // The temperature default is whatever this card reports, not one value for every GPU.
+    for temp_default in [65, 83, 88, 90] {
+        let caps = GpuCapabilities { temp_limit_default_c: temp_default, ..Default::default() };
+        assert_eq!(
+            TuningProfile::stock(&caps, None).temp_limit_c,
+            temp_default,
+            "stock keeps a {temp_default} °C card's own default"
+        );
+    }
 }
 
 /// The full recovery journal flow from the C# tests (mock writes only).

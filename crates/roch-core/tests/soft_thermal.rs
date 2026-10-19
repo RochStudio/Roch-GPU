@@ -174,7 +174,8 @@ fn offered_only_where_the_driver_has_no_limit() {
     let (svc, _p) = rig();
     let c = svc.capabilities();
     assert!(c.can_set_soft_thermal_limit && !c.can_set_temp_limit);
-    assert_eq!((c.soft_thermal_limit_min_c, c.soft_thermal_limit_max_c), (50, 88), "tops out at the card's own limit");
+    assert_eq!((c.soft_thermal_limit_min_c, c.soft_thermal_limit_max_c), (50, 105), "runs to the 105 °C ceiling");
+    assert_eq!(c.soft_thermal_card_limit_c, 88, "the card's own limit is still 88 °C");
 
     // A card with its own thermal policy never runs the software limit, whatever the profile says.
     let svc = TuningService::new(Box::new(MockBackend::new()));
@@ -477,11 +478,28 @@ fn clamp_is_noted() {
         vec!["Note: software temperature limit 30 °C is outside this card's range — applied 50 °C instead."]
     );
     assert_eq!(svc.soft_thermal_status().limit_c, 50);
-    // At or above the card's own limit there is nothing to enforce: said so, and left to the card.
+    // Below the card's own limit still arms the controller.
+    let errs = svc.apply(&limit(87));
+    assert!(errs.is_empty(), "{errs:?}");
+    assert_eq!(svc.soft_thermal_status().limit_c, 87);
+    // At or above the card's own limit the value is kept, but the card manages itself.
     let errs = svc.apply(&limit(97));
     assert_eq!(
         errs,
         vec!["Note: temperature limit 97 °C is at or above this card's own limit (88 °C) — left to the card."]
+    );
+    assert_eq!(svc.soft_thermal_status().limit_c, 0);
+    let errs = svc.apply(&limit(105));
+    assert_eq!(
+        errs,
+        vec!["Note: temperature limit 105 °C is at or above this card's own limit (88 °C) — left to the card."]
+    );
+    assert_eq!(svc.soft_thermal_status().limit_c, 0);
+    // Beyond the window is clamped to off.
+    let errs = svc.apply(&limit(106));
+    assert_eq!(
+        errs,
+        vec!["Note: temperature limit 106 °C is outside this card's window — applied off (the card's own limit)."]
     );
     assert_eq!(svc.soft_thermal_status().limit_c, 0);
 }

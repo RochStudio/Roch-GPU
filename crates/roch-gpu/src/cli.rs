@@ -266,10 +266,10 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
     if c.can_set_soft_thermal_limit {
         outln!(
             out,
-            "Soft temp limit: {}..{} °C ({} °C is the card's own limit; below it the app caps clocks while it runs)",
+            "Soft temp limit: {}..{} °C (default {} °C — the card's own limit where the driver reports one, otherwise the top of the range; at or above it the card manages itself; below it the app caps clocks while it runs)",
             c.soft_thermal_limit_min_c,
             c.soft_thermal_limit_max_c,
-            c.soft_thermal_limit_max_c
+            c.soft_thermal_card_limit_c
         );
     }
     let voltage_label = if c.voltage_style == VoltageControlStyle::Percent { "Voltage limit" } else { "Voltage boost" };
@@ -615,7 +615,8 @@ fn apply(svc: &TuningService, o: &Opts, out: &mut dyn Write, err: &mut dyn Write
 /// The software temperature limit is enforced by a running Roch GPU; this process exits as soon as
 /// the apply is done, so say that the limit is not being enforced from here. `p`: what was applied.
 fn soft_thermal_note(caps: &roch_core::GpuCapabilities, p: &TuningProfile) -> Option<String> {
-    (caps.can_set_soft_thermal_limit && p.soft_thermal_limit_c > 0).then(|| {
+    let off = caps.soft_thermal_off_c();
+    (caps.can_set_soft_thermal_limit && p.soft_thermal_limit_c > 0 && p.soft_thermal_limit_c < off).then(|| {
         format!(
             "{NOTE_PREFIX} the software temperature limit only acts while Roch GPU is running (window or tray); \
              this command exits, so {} °C is not enforced from here. Set it in the window, or in a startup profile.",
@@ -1171,7 +1172,7 @@ mod tests {
         assert!(out.contains("Temp limit    : not supported\n"), "{out}");
         assert!(
             out.contains(
-                "Soft temp limit: 50..88 °C (88 °C is the card's own limit; below it the app caps clocks while it runs)\n"
+                "Soft temp limit: 50..105 °C (default 88 °C — the card's own limit where the driver reports one, otherwise the top of the range; at or above it the card manages itself; below it the app caps clocks while it runs)\n"
             ),
             "{out}"
         );
@@ -1191,6 +1192,13 @@ mod tests {
         assert_eq!(code, 0);
         assert!(
             out.contains("temperature limit 99 °C is at or above this card's own limit (88 °C) — left to the card."),
+            "99 °C is above the card's own limit: {out}"
+        );
+        assert!(!out.contains("is not enforced"), "nothing for the app to enforce: {out}");
+        let (code, out, _) = run_mock("apply --mock rtx50 --soft-temp 105", &store);
+        assert_eq!(code, 0);
+        assert!(
+            out.contains("temperature limit 105 °C is at or above this card's own limit (88 °C) — left to the card."),
             "{out}"
         );
         assert!(!out.contains("is not enforced"), "nothing for the app to enforce: {out}");
@@ -1223,12 +1231,14 @@ mod tests {
             can_lock_clocks: true,
             can_set_soft_thermal_limit: true,
             soft_thermal_limit_min_c: 50,
-            soft_thermal_limit_max_c: 88,
+            soft_thermal_limit_max_c: 105,
             ..Default::default()
         };
         let (p, notes) =
             build_apply_profile(TuningProfile::default(), &caps, &Opts::parse(&args("--soft-temp 80"))).unwrap();
         assert_eq!((p.soft_thermal_limit_c, notes.len()), (80, 0));
+        let (p, _) = build_apply_profile(p, &caps, &Opts::parse(&args("--soft-temp 105"))).unwrap();
+        assert_eq!(p.soft_thermal_limit_c, 105, "the top is folded in; the service leaves the card to itself");
         let (p, _) = build_apply_profile(p, &caps, &Opts::parse(&args("--soft-temp 0"))).unwrap();
         assert_eq!(p.soft_thermal_limit_c, 0);
         // A card that cannot cap its clock.

@@ -1,7 +1,9 @@
 # Research: GPU thermal limit / temperature target on GeForce RTX 50 (Blackwell), Windows user mode
 
 Date: 2026-10-17. Scope: public documentation and open-source code only. Nothing
-was run against the GPU. mVolt+ and NVIDIA driver binaries were not examined.
+was run against the GPU. The reference tuning utility and NVIDIA driver binaries
+were not examined for this initial survey (a static look at the utility was added
+later; see the addendum).
 
 ## Short answer
 
@@ -50,8 +52,8 @@ What we can do cleanly:
   - hwcooling.net (RTX 3080 vs RTX 5080 thermals)
   - TechPowerUp, igor'sLAB and Tom's Hardware on Blackwell hotspot and MODS
   - Searches for Afterburner and Unwinder posts about the RTX 50 temp limit
-- Skipped as instructed: HWiNFO (closed source), mVolt+, and the NVIDIA driver
-  binaries.
+- Skipped as instructed for this first sweep: HWiNFO (closed source), the reference tuning utility,
+  and the NVIDIA driver binaries.
 
 ## Candidate interfaces
 
@@ -63,7 +65,7 @@ What we can do cleanly:
 | 4 | NVML read-only thermal info | `nvmlDeviceGetFieldValues` with `NVML_FI_DEV_TEMPERATURE_SHUTDOWN_TLIMIT=193`, `SLOWDOWN_TLIMIT=194`, `MEM_MAX_TLIMIT=195`, `GPU_MAX_TLIMIT=196` ("Ada and later"; the header says these replace `GetTemperatureThreshold`); `nvmlDeviceGetMarginTemperature` (`nvmlMarginTemperature_v1_t {u32 version; int marginTemperature;}`) | R only | Ada and later | nvml.h | Official. Useful for displaying the fixed limits and headroom. **There is no setter.** `nvmlDeviceSetFieldValues` does not exist; the only related calls are Get and Clear. |
 | 5 | Classic private NVAPI thermal policies ("Temp Limit" slider in older Afterburner, NvAPIWrapper and nvapi-rs) | GetInfo `0x0D258BB5`, GetStatus `0xE9C425A1`, SetStatus `0x34C0B13D`. v2 layouts in nvapi-rs and NvAPIWrapper: info = {ver, count u8, ?, 4×{controller, ?, min, def, max, ?}}; status = {ver, count, 4×{controller, target ×256, flags}}; temps in Q8 (°C×256) | R/W | Pascal through Ada desktop | arcnmx/nvapi-rs (MIT), NvAPIWrapper (LGPL-3.0), nvapioc (no licence file), afterglow (MIT). IDs are community-published. | Widely used, but **returns no entries on our RTX 5070 Ti / 616.92**. nvoc notes the SET "returns OK on mobile but silently does not persist". Matches hwcooling.net: on RTX 50 "you can no longer adjust the temperature limit". |
 | 6 | Legacy "GPS" thermal limit | `NvAPI_GPS_GetThermalLimit 0x583113ED`, `NvAPI_GPS_SetThermalLimit 0xC07E210F` | names only | Unknown. "GPS" (power steering) dates from the notebook era. NVML's `GPS_CURR` threshold is unsupported on our card. | Names only, in arcnmx/nvapi-rs (MIT) and NvAPIWrapper (LGPL-3.0) | **No published struct layout.** Using it would mean guessing a layout. Not viable. |
-| 7 | Private "ClientThermalTarget" read-modify-write pair | GET `0xC4554575`, SET `0xE097144F`, plus private policies GetInfo `0x2F69F8E5`. Published layout: 984-byte buffer, version `0x203D8`, mask dword = 1<<idx, 15-dword entries, target Q8 at dword 15*idx+7; GetInfo is 15704 bytes, version `0x33D58` | R/W | Verified only on an **RTX 4060 Laptop** (GPS index 2, range 75–87, `nvidia-smi` 87→82). For desktops the authors fall back to the acoustics index, which on our card is the same NVML ACOUSTIC path that reports unsupported. No Blackwell desktop evidence. | Skyworks-Neo/nvoc (Apache-2.0) and Skyworks-Neo/nvapi-rs fork (MIT), `sys/src/gpu/thermal.rs` | **Excluded under our hard rule.** The comments say the layout was "RE'd from the ref-tool CLI (… sub_140013090)", call it "NDA", and cite `nvapi64.dll`'s "static table off_1804DD000". It was derived from decompiling NVIDIA's driver DLL and an unnamed closed tool, which might even be mVolt+. The code licences are permissive, but that does not clean the provenance. |
+| 7 | Private "ClientThermalTarget" read-modify-write pair | GET `0xC4554575`, SET `0xE097144F`, plus private policies GetInfo `0x2F69F8E5`. Published layout: 984-byte buffer, version `0x203D8`, mask dword = 1<<idx, 15-dword entries, target Q8 at dword 15*idx+7; GetInfo is 15704 bytes, version `0x33D58` | R/W | Verified only on an **RTX 4060 Laptop** (GPS index 2, range 75–87, `nvidia-smi` 87→82). For desktops the authors fall back to the acoustics index, which on our card is the same NVML ACOUSTIC path that reports unsupported. No Blackwell desktop evidence. | Skyworks-Neo/nvoc (Apache-2.0) and Skyworks-Neo/nvapi-rs fork (MIT), `sys/src/gpu/thermal.rs` | **Excluded under our hard rule.** The comments say the layout was "RE'd from the ref-tool CLI (… sub_140013090)", call it "NDA", and cite `nvapi64.dll`'s "static table off_1804DD000". It was derived from decompiling NVIDIA's driver DLL and an unnamed closed tool, which might even be that reference tool. The code licences are permissive, but that does not clean the provenance. |
 | 8 | Other private thermal setters listed by nvoc's audit | `ThermalHwFsSetInfo 0xCBC9361B`, `ThermChannelSetControl 0x8DF19FA2`, `SetThermalSimulationMode 0x8CD42541` / `SetExtendedThermalSimulationMode 0x95E71AB6` | W | Not published as working on any GPU. Thermal simulation spoofs the temperature reading and is dangerous. | nvoc `docs/reverse-engineering/nvapi/*.md` (Apache-2.0; RE-derived from a dump of nvapi64.dll's QueryInterface table, R610.74) | **Excluded**: same provenance problem as #7, no layouts, and unsafe. |
 | 9 | Public NVAPI SDK | Only `NvAPI_GPU_GetThermalSettings` (read), `NvAPI_GPU_GetPerfDecreaseInfo` (read, has a thermal reason bit) and `NvAPI_GPU_GetOverclockStatus` (R595+, read) | R only | All | NVIDIA/nvapi, `nvapi.h` (MIT, SPDX header; the libs are also MIT per License.txt) | Official. **The public SDK has no thermal setter.** |
 | 10 | RM control interface (open kernel modules) | `NV2080_CTRL_CMD_THERMAL_SYSTEM_EXECUTE_V2 0x20800513` (sensor/target queries only) | R | Linux RM | NVIDIA/open-gpu-kernel-modules, `ctrl2080thermal.h` (MIT) | Thermal *policy* controls are not in the open headers; they live in closed GSP firmware. These controls also cannot be reached from Windows user mode without undocumented driver escapes. Not viable. |
@@ -90,7 +92,7 @@ way to set the thermal limit on an RTX 50 card from Windows user mode.
 - The only published Blackwell-era setter layout (#7) comes from decompiling
   NVIDIA binaries and a closed tool. It is also unverified on desktop Blackwell.
 
-mVolt+'s −40..105 °C "Thermal limit" therefore probably relies on an undocumented
+The reference tool's −40..105 °C "Thermal limit" therefore probably relies on an undocumented
 interface. We must not try to rediscover it.
 
 ## Clean-room options
@@ -127,12 +129,30 @@ interface. We must not try to rediscover it.
 
 - **Legal and licensing:** the information comes from decompiling NVIDIA
   binaries, against NVIDIA's licence. The "ref tool" behind it is unnamed and
-  might be mVolt+. Shipping it in a GPL-3.0 project could expose the project to
+  might be that reference tool. Shipping it in a GPL-3.0 project could expose the project to
   claims, and contributors cannot certify its origin.
 - **Technical:** private, version-magic-checked buffers can change between
   drivers. A wrong RMW on a 984-byte or 15 KB blob could set nonsense thermal
   targets. Thermal simulation spoofs sensor readings and could disable thermal
   protection.
+
+## Addendum 2026-10-19: what the reference utility's live limit actually calls
+
+A reference tuning utility (a 3,437,056-byte PE) was inspected statically, without running it:
+
+- Its only temperature-affecting setter imports are `nvmlDeviceSetGpuLockedClocks` and
+  `nvmlDeviceResetGpuLockedClocks`. It contains none of the private NVAPI thermal-policy
+  IDs (set `0x34C0B13D`, status `0xE9C425A1`, info `0x0D258BB5`, client target
+  `0xC4554575` / `0xE097144F`) and no named `NvAPI_GPU_Set*Thermal*` import.
+- Its persisted config has `thermal_limit: { enabled, temperature_raw }`, and its UI tops out
+  at 105 °C.
+
+So its live temperature limit is a clock-cap controller of the same class as ours: 105 °C means
+"do not cap", not a raised hardware throttle. Roch GPU now offers the same 50…105 °C window;
+the slider defaults to the card's own limit (88 °C on a 5070 Ti), and values from there up to
+105 °C mean "leave it to the card", while the firmware slowdown (90 °C on the 5070 Ti) still
+applies. The reference tool also has a separate VBIOS limits editor that patches a BIOS image
+offline; Roch GPU deliberately does not do that.
 
 ## Sources
 

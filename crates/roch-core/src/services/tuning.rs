@@ -642,17 +642,23 @@ fn add_clamp_notes(notes: &mut Vec<String>, caps: &GpuCapabilities, asked: &Tuni
         note("fan speed", asked.fixed_fan_percent, applied.fixed_fan_percent, "%");
     }
     if caps.can_set_soft_thermal_limit && asked.soft_thermal_limit_c > 0 {
-        let card = caps.soft_thermal_limit_range().1;
+        let off = caps.soft_thermal_off_c();
         if applied.soft_thermal_limit_c == 0 {
-            // At or above the card's own limit there is nothing for the software to do.
             notes.push(format!(
-                "{NOTE_PREFIX} temperature limit {} °C is at or above this card's own limit ({card} °C) — left to the card.",
+                "{NOTE_PREFIX} temperature limit {} °C is outside this card's window — applied off (the card's own limit).",
                 asked.soft_thermal_limit_c
             ));
         } else if asked.soft_thermal_limit_c != applied.soft_thermal_limit_c {
             notes.push(format!(
                 "{NOTE_PREFIX} software temperature limit {} °C is outside this card's range — applied {} °C instead.",
                 asked.soft_thermal_limit_c, applied.soft_thermal_limit_c
+            ));
+        } else if applied.soft_thermal_limit_c >= off {
+            // The range runs on to 105 °C, but at or above the card's limit the card holds itself:
+            // the value is kept, yet the software controller is off.
+            notes.push(format!(
+                "{NOTE_PREFIX} temperature limit {} °C is at or above this card's own limit ({off} °C) — left to the card.",
+                applied.soft_thermal_limit_c
             ));
         }
     }
@@ -1536,8 +1542,12 @@ impl TuningService {
         // The software temperature limit. The clock-range write above (every card that can lock its
         // clock gets one) put the user's own range, or the driver's, back on the card, so whatever
         // ceiling the limit held is gone from it: the next poll writes it again. A ceiling already
-        // worked out is kept, so re-applying does not start over from the top.
-        if caps.can_set_soft_thermal_limit && p.soft_thermal_limit_c > 0 {
+        // worked out is kept, so re-applying does not start over from the top. At or above the card's
+        // own limit (88 °C on a 5070 Ti) there is nothing for the software to do: the value is kept
+        // in the profile (the 105 °C top), but the controller is left off.
+        let off = caps.soft_thermal_off_c();
+        let active = p.soft_thermal_limit_c > 0 && p.soft_thermal_limit_c < off;
+        if caps.can_set_soft_thermal_limit && active {
             if drv.thermal.gpu != Some(gpu) || drv.thermal.ctl.is_stopped() {
                 drv.thermal.stop();
             }
@@ -1550,6 +1560,12 @@ impl TuningService {
             ));
         } else {
             drv.thermal.stop();
+            if caps.can_set_soft_thermal_limit && p.soft_thermal_limit_c > 0 {
+                a.log(format!(
+                    "Thermal limit (software): {} °C — at or above the card's own limit ({} °C); the card manages itself",
+                    p.soft_thermal_limit_c, off
+                ));
+            }
         }
         st.thermal_status = drv.thermal.status();
 

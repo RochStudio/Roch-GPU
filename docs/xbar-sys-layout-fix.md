@@ -4,7 +4,7 @@ The RTX 4070 / 591.86 rejection was an application layout bug, not proof that
 the hardware lacked clock-offset control. The temporary model/driver restriction
 has been removed.
 
-The user supplied mVolt+.exe (SHA-256
+The user supplied a reference executable (SHA-256
 `62D69815434BC52A8DF76B44DD54A69DF34D66154EDAF598B02128273F330416`). Read-only
 binary inspection of its layout selection and setter at image addresses
 0x140112057 and 0x140112F2F showed that the shared outer control version does
@@ -32,5 +32,5 @@ Regression cases cover both layouts, XBAR/SYS selection, preserving every byte
 outside the selected offset, unknown layouts, failed getters, rejected setters,
 ignored writes, unchanged-value no-ops, and offset restoration.
 
-Local test evidence is under `test-results/mvolt-*`. The reference executable
+Local test evidence is under `test-results/reference-*`. The reference executable
 is not included or linked into Roch GPU.

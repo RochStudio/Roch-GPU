@@ -62,7 +62,8 @@ pub enum Field {
     FixedFan,
     NvvddOcpAmps,
     MsvddOcpAmps,
-    /// The software temperature limit, in °C; the window's top is the card's own limit (stored as 0).
+    /// The software temperature limit, in °C; the card's own limit (88 °C on a 5070 Ti) is the
+    /// default/off point, and the window runs on to 105 °C.
     SoftTempLimit,
 }
 
@@ -683,24 +684,32 @@ impl MainViewModel {
     /// The software limit's tooltip: what it does, and what it cannot.
     pub fn soft_temp_range_text(&self) -> String {
         let (lo, hi) = self.caps.soft_thermal_limit_range();
+        let card = self.soft_temp_card_limit();
         format!(
-            "{lo} … {hi} °C. {hi} °C is this card's own limit (the default): the card holds that temperature by \
-             itself and Roch GPU does nothing. This card's driver offers no way to lower it, so below {hi} °C Roch \
-             GPU enforces the limit in software: when the GPU reaches it, the core clock is capped a step at a \
-             time and allowed to climb back as the card cools. That works only while Roch GPU is running, \
-             including from the tray; closing the app hands the clock back. The card's own slowdown at the \
-             hardware threshold always applies."
+            "{lo} … {hi} °C. The default is {card} °C — this card's own limit where the driver reports \
+             one, otherwise the top of the range. At or above it the card manages itself and Roch GPU \
+             does nothing. The slider runs on to {hi} °C; values from {card} °C up also leave it to the \
+             card. Below {card} °C Roch GPU enforces the limit in software: when the GPU reaches it, the \
+             core clock is capped a step at a time and allowed to climb back as the card cools. That \
+             works only while Roch GPU is running, including from the tray; closing the app hands the \
+             clock back. The card's own slowdown at the hardware threshold always applies."
         )
     }
 
-    /// The slider's top: the card's own limit, where the software has nothing to do.
+    /// The card's own limit (88 °C on a 5070 Ti), or the top of the range when the driver reports
+    /// none, for the tooltip.
     pub fn soft_temp_card_limit(&self) -> i32 {
-        self.caps.soft_thermal_limit_range().1
+        self.caps.soft_thermal_card_limit_c
+    }
+    /// The default/off value shown on the slider: the card's own limit (88 °C on a 5070 Ti),
+    /// falling back to the top of the window if the backend did not report one.
+    pub fn soft_temp_off_c(&self) -> i32 {
+        self.caps.soft_thermal_off_c()
     }
     /// The editor's software limit as a profile stores it: 0 at the card's own limit.
     pub fn soft_temp_limit_c(&self) -> i32 {
         let v = self.get(Field::SoftTempLimit);
-        if self.has_soft_temp_limit() && v < self.soft_temp_card_limit() { v } else { 0 }
+        if self.has_soft_temp_limit() && v != self.soft_temp_off_c() { v } else { 0 }
     }
 
     // ------------------------------------------------------------------ steps and ranges
@@ -883,13 +892,13 @@ impl MainViewModel {
     /// [`Self::input_text`] either way, so a clamped value replaces what was typed.
     pub fn commit_input(&mut self, f: Field, text: &str) {
         if f == Field::SoftTempLimit {
-            // "Off", "card" or 0 go back to the card's own limit; any number lands in the window.
-            let card = self.soft_temp_card_limit();
+            // "Off", "card" or 0 go to the card's own limit (88 °C); any number lands in the window.
+            let off = self.soft_temp_off_c();
             let t = text.trim();
             if t.eq_ignore_ascii_case("off") || t.eq_ignore_ascii_case("card") {
-                self.set(f, card);
+                self.set(f, off);
             } else if let Some(v) = super::format::parse_signed(text) {
-                self.set(f, if v <= 0 { card } else { v });
+                self.set(f, if v <= 0 { off } else { v });
             }
             return;
         }
@@ -1464,8 +1473,12 @@ impl MainViewModel {
         };
         let temp = if c.can_set_temp_limit {
             format!(" · temp {}{}", a.temp_limit_c, c.temp_limit_unit())
-        } else if self.has_soft_temp_limit() && p.soft_thermal_limit_c > 0 {
-            // Not on the card: the limit this process enforces.
+        } else if self.has_soft_temp_limit()
+            && p.soft_thermal_limit_c > 0
+            && p.soft_thermal_limit_c < self.soft_temp_off_c()
+        {
+            // Not on the card: the limit this process enforces. At or above the card's own limit the
+            // value is only the "leave it to the card" target, so it is not shown here.
             format!(" · temp {}°C (software)", p.soft_thermal_limit_c)
         } else {
             String::new()
@@ -1606,7 +1619,7 @@ impl MainViewModel {
             format!("power {}%", p.power_limit_percent),
             format!("temp {} {}", p.temp_limit_c, self.caps.temp_limit_unit()),
         ];
-        if self.has_soft_temp_limit() && p.soft_thermal_limit_c > 0 {
+        if self.has_soft_temp_limit() && p.soft_thermal_limit_c > 0 && p.soft_thermal_limit_c < self.soft_temp_off_c() {
             bits.push(format!("soft temp {} °C", p.soft_thermal_limit_c));
         }
         if p.target_voltage_mv > 0 {
@@ -1838,8 +1851,8 @@ impl MainViewModel {
         self.set(Field::MemoryOffset, p.memory_offset_mhz);
         self.set(Field::PowerLimit, p.power_limit_percent);
         self.set(Field::TempLimit, p.temp_limit_c);
-        // 0 is the card's own limit: the slider's top, never the bottom of the window.
-        let soft = if p.soft_thermal_limit_c > 0 { p.soft_thermal_limit_c } else { self.soft_temp_card_limit() };
+        // 0 is off: show the card's own limit (88 °C on a 5070 Ti), the default.
+        let soft = if p.soft_thermal_limit_c > 0 { p.soft_thermal_limit_c } else { self.soft_temp_off_c() };
         self.set(Field::SoftTempLimit, soft);
         self.set(Field::VoltageBoost, p.voltage_boost_percent);
         self.set(Field::VoltageOffset, p.voltage_offset_mv);

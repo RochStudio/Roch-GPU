@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use roch_core::util::{clamp_i32, round_even_i32};
-use roch_core::{GpuCapabilities, Result, soft_thermal_window};
+use roch_core::{GpuCapabilities, Result, soft_thermal_card_limit, soft_thermal_window};
 
 use super::{MIN_LOCKABLE_MHZ, NvidiaBackend, VOLTAGE_BOOST_HEADROOM_MV, VOLTAGE_RAIL_HEADROOM_MV};
 use crate::nvapi::{self, NvError};
@@ -211,17 +211,13 @@ impl NvidiaBackend {
 
         // Software temperature limit: offered where the clock can be capped and the driver has no
         // thermal limit of its own — every RTX 50 so far (no NVAPI thermal policy, and NVML refuses
-        // the target temperature). The window tops out at the card's own limit, its GPU-max
-        // threshold (88 °C on a 5070 Ti), and never reaches the slowdown (90 °C). Both are reads.
-        let soft_window = if max_lock > 0 && !can_temp {
-            soft_thermal_window(
-                crate::nvml::temperature_threshold_c(nvml_index, crate::nvml::THRESHOLD_GPU_MAX),
-                crate::nvml::temperature_threshold_c(nvml_index, crate::nvml::THRESHOLD_SLOWDOWN),
-            )
-        } else {
-            None
-        };
+        // the target temperature). The setting runs to 105 °C; the card's own GPU-max threshold
+        // (88 °C on a 5070 Ti) and slowdown (90 °C) are still reported for the tooltip.
+        let gpu_max_c = crate::nvml::temperature_threshold_c(nvml_index, crate::nvml::THRESHOLD_GPU_MAX);
+        let slowdown_c = crate::nvml::temperature_threshold_c(nvml_index, crate::nvml::THRESHOLD_SLOWDOWN);
+        let soft_window = if max_lock > 0 && !can_temp { soft_thermal_window(gpu_max_c, slowdown_c) } else { None };
         let (soft_min, soft_max) = soft_window.unwrap_or((0, 0));
+        let soft_card = if soft_window.is_some() { soft_thermal_card_limit(gpu_max_c, slowdown_c) } else { 0 };
 
         let caps = GpuCapabilities {
             can_set_core_offset: can_core,
@@ -283,6 +279,7 @@ impl NvidiaBackend {
             can_set_soft_thermal_limit: soft_window.is_some(),
             soft_thermal_limit_min_c: soft_min,
             soft_thermal_limit_max_c: soft_max,
+            soft_thermal_card_limit_c: soft_card,
             can_set_xbar_offset: can_xbar,
             xbar_offset_min_mhz: xbar_min,
             xbar_offset_max_mhz: xbar_max,

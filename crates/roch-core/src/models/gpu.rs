@@ -156,11 +156,14 @@ pub struct GpuCapabilities {
     /// and the driver has no settable thermal limit of its own (RTX 50). It acts only while the app
     /// runs; see `services::soft_thermal`.
     pub can_set_soft_thermal_limit: bool,
-    /// Its window in °C. The top is the card's own limit — the temperature it already holds
-    /// itself (NVML's GPU-max threshold, 88 °C on a 5070 Ti) — and a limit there means "leave it to
-    /// the card": nothing for the software to do. Anything below it is enforced by the app.
+    /// Its window in °C, `50..=105`. Values below the card's own limit are enforced by the app;
+    /// at or above it (see `soft_thermal_card_limit_c`) the value is kept but the card manages
+    /// itself, and 105 °C is the top of the selectable range.
     pub soft_thermal_limit_min_c: i32,
     pub soft_thermal_limit_max_c: i32,
+    /// The card's own limit (its GPU-max threshold, 88 °C on a 5070 Ti), shown in the tooltip.
+    /// Above it the card manages itself and the driver's slowdown still applies. 0 when unknown.
+    pub soft_thermal_card_limit_c: i32,
 
     pub can_set_xbar_offset: bool,
     pub xbar_offset_min_mhz: i32,
@@ -262,6 +265,7 @@ impl Default for GpuCapabilities {
             can_set_soft_thermal_limit: false,
             soft_thermal_limit_min_c: SOFT_THERMAL_MIN_C,
             soft_thermal_limit_max_c: SOFT_THERMAL_MAX_C,
+            soft_thermal_card_limit_c: 0,
             can_set_xbar_offset: false,
             xbar_offset_min_mhz: 0,
             xbar_offset_max_mhz: 0,
@@ -282,26 +286,35 @@ impl Default for GpuCapabilities {
     }
 }
 
-/// The generic window for a software temperature limit, in °C.
+/// The window a software temperature limit is offered in, in °C. The top is 105 °C; at or above
+/// the card's own limit (see [`soft_thermal_card_limit`]) the card manages itself, so the app caps
+/// nothing.
 pub const SOFT_THERMAL_MIN_C: i32 = 50;
-pub const SOFT_THERMAL_MAX_C: i32 = 95;
+pub const SOFT_THERMAL_MAX_C: i32 = 105;
 
-/// The software temperature limit's window, from the thresholds the card reports (when it does).
-/// The top is the card's own limit: its GPU-max operating temperature, where it already starts
-/// shedding clocks by itself (88 °C on a 5070 Ti), else one below its hardware slowdown, else the
-/// generic 95 °C — and never at or above the slowdown, where the driver's protection takes over.
-/// `None` when that leaves no room.
+/// The temperature where the card already manages itself: its reported GPU-max operating
+/// temperature (88 °C on a 5070 Ti), else one below its hardware slowdown. Every reported value is
+/// used as-is, capped only at the slider's 105 °C top, so cards with different limits get different
+/// defaults. When the driver reports no threshold at all the top is used, which means "leave it to
+/// the card": no limit is invented for it. The setting may go above the card's limit, but the
+/// card's own slowdown is never bypassed from user mode.
+pub fn soft_thermal_card_limit(gpu_max_c: Option<i32>, slowdown_c: Option<i32>) -> i32 {
+    let below_slowdown = slowdown_c.filter(|s| *s > 0).map(|s| s - 1);
+    let card = match gpu_max_c.filter(|g| *g > 0) {
+        Some(g) => g,
+        None => below_slowdown.unwrap_or(SOFT_THERMAL_MAX_C),
+    };
+    let card = below_slowdown.map_or(card, |below| card.min(below));
+    card.min(SOFT_THERMAL_MAX_C)
+}
+
+/// The software temperature limit's selectable window. The whole `50..=105` range is offered
+/// whenever the card has room to hold a temperature of its own; [`soft_thermal_card_limit`]
+/// reports where the card takes over, and values from there up leave it to the card. `None` when
+/// the card reports no room at all.
 pub fn soft_thermal_window(gpu_max_c: Option<i32>, slowdown_c: Option<i32>) -> Option<(i32, i32)> {
-    let below_slowdown = match slowdown_c {
-        Some(s) if s > 0 => s - 1,
-        _ => SOFT_THERMAL_MAX_C,
-    };
-    let card = match gpu_max_c {
-        Some(g) if g > 0 => g,
-        _ => below_slowdown,
-    };
-    let max = card.min(below_slowdown).min(SOFT_THERMAL_MAX_C);
-    (max > SOFT_THERMAL_MIN_C).then_some((SOFT_THERMAL_MIN_C, max))
+    (soft_thermal_card_limit(gpu_max_c, slowdown_c) > SOFT_THERMAL_MIN_C)
+        .then_some((SOFT_THERMAL_MIN_C, SOFT_THERMAL_MAX_C))
 }
 
 impl GpuCapabilities {
@@ -312,6 +325,17 @@ impl GpuCapabilities {
             (lo, hi)
         } else {
             (SOFT_THERMAL_MIN_C, SOFT_THERMAL_MAX_C)
+        }
+    }
+
+    /// The software limit's default/off value: the card's own reported limit, or the top of its
+    /// window when the backend did not report one. At or above it the card manages itself, so the
+    /// controller is not armed.
+    pub fn soft_thermal_off_c(&self) -> i32 {
+        if self.soft_thermal_card_limit_c > 0 {
+            self.soft_thermal_card_limit_c
+        } else {
+            self.soft_thermal_limit_range().1
         }
     }
 
@@ -487,14 +511,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn soft_thermal_window_stays_below_the_slowdown() {
-        assert_eq!(soft_thermal_window(Some(88), Some(90)), Some((50, 88)), "RTX 5070 Ti: its own limit is 88 °C");
-        assert_eq!(soft_thermal_window(None, Some(90)), Some((50, 89)), "no GPU max: one below the slowdown");
-        assert_eq!(soft_thermal_window(Some(92), Some(90)), Some((50, 89)), "never at or above the slowdown");
-        assert_eq!(soft_thermal_window(None, Some(105)), Some((50, 95)));
-        assert_eq!(soft_thermal_window(None, None), Some((50, 95)));
-        assert_eq!(soft_thermal_window(Some(0), Some(0)), Some((50, 95)), "0 is no reading");
+    fn soft_thermal_window_offers_the_105_ceiling() {
+        assert_eq!(soft_thermal_window(Some(88), Some(90)), Some((50, 105)), "RTX 5070 Ti: the 105 °C top");
+        assert_eq!(soft_thermal_card_limit(Some(88), Some(90)), 88, "its own limit is still 88 °C");
+        assert_eq!(soft_thermal_window(None, Some(90)), Some((50, 105)), "no GPU max: one below the slowdown");
+        assert_eq!(soft_thermal_card_limit(None, Some(90)), 89);
+        assert_eq!(soft_thermal_card_limit(Some(92), Some(90)), 89, "never at or above the slowdown");
+        assert_eq!(soft_thermal_card_limit(None, Some(105)), 104);
+        assert_eq!(soft_thermal_card_limit(None, None), SOFT_THERMAL_MAX_C, "no reading: leave it to the card");
+        assert_eq!(soft_thermal_window(Some(0), Some(0)), Some((50, 105)), "0 is no reading");
         assert_eq!(soft_thermal_window(None, Some(50)), None, "no room left");
+    }
+
+    #[test]
+    fn soft_thermal_card_limit_is_per_gpu() {
+        // Reported thresholds win, up to the slider's top; with none, the top is the off point.
+        for (gpu_max, slowdown, want) in [
+            (Some(85), Some(90), 85),
+            (Some(88), Some(90), 88),
+            (Some(93), Some(95), 93),
+            (Some(100), Some(105), 100),
+            (Some(110), Some(115), SOFT_THERMAL_MAX_C),
+            (Some(88), None, 88),
+            (Some(100), None, 100),
+            (None, Some(90), 89),
+            (None, Some(105), 104),
+            (None, None, SOFT_THERMAL_MAX_C),
+        ] {
+            assert_eq!(soft_thermal_card_limit(gpu_max, slowdown), want, "GPU max {gpu_max:?}, slowdown {slowdown:?}");
+        }
+    }
+
+    #[test]
+    fn soft_thermal_off_follows_the_card_or_the_window_top() {
+        let card = GpuCapabilities {
+            can_set_soft_thermal_limit: true,
+            soft_thermal_limit_min_c: 50,
+            soft_thermal_limit_max_c: 105,
+            soft_thermal_card_limit_c: 88,
+            ..Default::default()
+        };
+        assert_eq!(card.soft_thermal_off_c(), 88, "a reported limit is the off point");
+        let unknown = GpuCapabilities { soft_thermal_card_limit_c: 0, ..card.clone() };
+        assert_eq!(unknown.soft_thermal_off_c(), 105, "with no reported limit the top is off");
     }
 
     #[test]

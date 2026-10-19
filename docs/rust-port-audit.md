@@ -140,16 +140,23 @@ point hint moved into helpers so the dump reads the code the window draws), `277
 * **Software temperature limit (new feature, added after the audit; not in v1.1.0)** — on a card
   whose driver offers no settable temperature limit but can lock its graphics clock (every RTX 50
   so far: no NVAPI thermal policy, NVML's target temperature unsupported), the main window shows
-  "Temperature Limit (°C)" where v1.1.0 showed nothing, defaulting to the card's own limit, and
-  `info` prints an extra line, `Soft temp limit: 50..88 °C (88 °C is the card's own limit; below it
-  the app caps clocks while it runs)` on the 5070 Ti (the top is NVML's GPU-max threshold, 88 °C,
-  kept below the 90 °C slowdown). While the app runs, `TuningService` caps the core clock
-  through the NVML clock lock when the GPU passes the limit (`services/soft_thermal.rs`). Profiles
-  gain `SoftThermalLimitC` (0 = the card's own limit): additive, older profiles load with it off and v1.1.0 ignores
-  it. `apply --soft-temp N` and `--mock rtx50` (a simulated card without a hardware limit) are
-  new too. A card with its own temperature limit shows and prints exactly what v1.1.0 did, so the
-  audit's comparisons are unchanged there; on the 5070 Ti the `info` output and the main-window
-  slider list now differ from v1.1.0 by this one row.
+  "Temperature Limit (°C)" where v1.1.0 showed nothing, defaulting to the selected card's own
+  reported limit (its GPU-max threshold; 88 °C on a 5070 Ti, different on other cards) and running
+  from 50 °C to 105 °C, and
+  `info` prints an extra line, `Soft temp limit: 50..105 °C (default 88 °C — the card's own limit
+  where the driver reports one, otherwise the top of the range; at or above it the card manages
+  itself; below it the app caps clocks while it runs)` on
+  the 5070 Ti (the card's own limit is NVML's GPU-max threshold, 88 °C, kept below the 90 °C
+  slowdown). While the app runs,
+  `TuningService` caps the core clock through the NVML clock lock when the GPU passes a limit below
+  the card's own limit (`services/soft_thermal.rs`). Profiles gain `SoftThermalLimitC` (0 =
+  off/default): additive,
+  older profiles load with it off and v1.1.0 ignores it. `apply --soft-temp N` and `--mock rtx50` (a
+  simulated card without a hardware limit) are new too. A card with its own temperature limit shows
+  and prints exactly what v1.1.0 did, so the audit's comparisons are unchanged there; on the 5070 Ti
+  the `info` output and the main-window slider list now differ from v1.1.0 by this one row. Above
+  88 °C the card manages itself and the 90 °C slowdown still applies; 105 °C is a software top, not
+  a raised hardware limit.
 
 * **Offset slider ranges (deliberate, requested after the audit)** — v1.1.0 narrowed the core,
   memory, XBAR, SYS and video offsets to "practical" windows (core −150…+750, memory −250…+4000,

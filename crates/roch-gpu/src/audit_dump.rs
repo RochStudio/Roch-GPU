@@ -161,6 +161,8 @@ fn caps(o: &mut Out, prefix: &str, c: &GpuCapabilities) {
         core_offset_step_mhz, memory_clock_unit, temp_limit_is_percent, can_edit_vf_curve,
         can_read_hardware_fan_curve, vf_curve_step_mhz, vf_curve_min_mhz, vf_curve_max_mhz,
         can_set_core_offset, can_set_memory_offset, can_set_power_limit, can_set_temp_limit,
+        can_set_soft_thermal_limit, soft_thermal_limit_min_c, soft_thermal_limit_max_c,
+        soft_thermal_card_limit_c,
         can_set_fan_speed, can_read_voltage, can_set_voltage_boost, voltage_boost_min_percent,
         voltage_boost_max_percent, voltage_boost_default_percent, can_set_voltage_curve,
         voltage_offset_min_mv, voltage_offset_max_mv, stock_max_voltage_mv, curve_unavailable_reason,

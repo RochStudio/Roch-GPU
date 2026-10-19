@@ -444,15 +444,32 @@ fn soft_temp_row_replaces_a_missing_hardware_limit() {
     assert!(!vm.has_temp_limit() && vm.has_soft_temp_limit());
     assert_eq!(vm.soft_temp_label(), "Temperature Limit (°C)");
     let tip = vm.range_text(Field::SoftTempLimit);
-    assert!(tip.starts_with("50 … 88 °C. 88 °C is this card's own limit (the default)"), "{tip}");
+    assert!(tip.starts_with("50 … 105 °C. The default is 88 °C"), "{tip}");
     for words in ["only while Roch GPU is running", "from the tray", "core clock is capped", "slowdown"] {
         assert!(tip.contains(words), "tooltip says {words:?}: {tip}");
     }
-    // Nothing applied yet: the card's own limit, at the slider's top.
+    // Nothing applied yet: the card's own limit, the default/off point.
     assert_eq!(vm.input_text(Field::SoftTempLimit), "88");
-    assert_eq!(vm.slider_range(Field::SoftTempLimit), (50, 88));
+    assert_eq!(vm.slider_range(Field::SoftTempLimit), (50, 105));
     assert_eq!(vm.step(Field::SoftTempLimit), 1);
     assert_eq!(vm.build_profile_from_editor("x").soft_thermal_limit_c, 0);
+}
+
+#[test]
+fn soft_temp_default_follows_each_cards_own_limit() {
+    let f = rtx50_fixture();
+    let mut vm = vm(&f);
+    for card in [85, 88, 89, 93, 100, 105] {
+        vm.caps.soft_thermal_card_limit_c = card;
+        vm.load_into_editor(&TuningProfile::default());
+        assert_eq!(vm.input_text(Field::SoftTempLimit), card.to_string(), "default on a {card} °C card");
+        assert_eq!(vm.soft_temp_off_c(), card);
+        assert_eq!(
+            vm.build_profile_from_editor("x").soft_thermal_limit_c,
+            0,
+            "the displayed default is stored as off on a {card} °C card"
+        );
+    }
 }
 
 #[test]
@@ -465,24 +482,31 @@ fn soft_temp_value_box_and_nudges() {
     };
     assert_eq!(typed(&mut vm, "83"), ("83".into(), 83));
     assert!(vm.pending_changes());
-    assert_eq!(typed(&mut vm, "0"), ("88".into(), 0), "0 is the card's own limit");
+    assert_eq!(typed(&mut vm, "0"), ("88".into(), 0), "0 is off, the card's own limit");
     assert_eq!(typed(&mut vm, "75"), ("75".into(), 75));
     assert_eq!(typed(&mut vm, "off"), ("88".into(), 0));
     assert_eq!(typed(&mut vm, "70"), ("70".into(), 70));
     assert_eq!(typed(&mut vm, "card"), ("88".into(), 0));
     assert_eq!(typed(&mut vm, "30"), ("50".into(), 50), "below the window is its bottom");
-    assert_eq!(typed(&mut vm, "99"), ("88".into(), 0), "above the card's limit is the card's limit");
-    assert_eq!(typed(&mut vm, "abc"), ("88".into(), 0), "garbage leaves it alone");
+    assert_eq!(typed(&mut vm, "99"), ("99".into(), 99), "above the card's limit, below the 105 °C top");
+    assert_eq!(typed(&mut vm, "abc"), ("99".into(), 99), "garbage leaves it alone");
     assert_eq!(typed(&mut vm, "87"), ("87".into(), 87), "one below the card's limit is enforced");
     vm.nudge(Field::SoftTempLimit, 1);
     assert_eq!(vm.input_text(Field::SoftTempLimit), "88", "one step up from 87 is the card's own limit");
     assert_eq!(vm.build_profile_from_editor("x").soft_thermal_limit_c, 0);
     vm.nudge(Field::SoftTempLimit, 1);
-    assert_eq!(vm.input_text(Field::SoftTempLimit), "88", "the card's limit is the top");
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "89", "the window keeps going to 105");
+    vm.nudge(Field::SoftTempLimit, 1);
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "90");
     vm.nudge(Field::SoftTempLimit, -1);
-    assert_eq!(vm.input_text(Field::SoftTempLimit), "87");
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "89");
     vm.nudge_spec("softtemp:-1");
-    assert_eq!(vm.get(Field::SoftTempLimit), 86);
+    assert_eq!(vm.get(Field::SoftTempLimit), 88);
+    assert_eq!(vm.build_profile_from_editor("x").soft_thermal_limit_c, 0);
+    vm.set(Field::SoftTempLimit, 105);
+    assert_eq!(vm.build_profile_from_editor("x").soft_thermal_limit_c, 105, "105 is kept");
+    vm.nudge(Field::SoftTempLimit, 1);
+    assert_eq!(vm.input_text(Field::SoftTempLimit), "105", "105 °C is the top");
 }
 
 #[test]

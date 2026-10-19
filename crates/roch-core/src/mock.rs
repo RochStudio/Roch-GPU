@@ -116,7 +116,7 @@ impl MockBackend {
     }
 
     /// A card like an RTX 5070 Ti: no settable temperature limit, so the software one is offered,
-    /// with a driver slowdown at 90 °C (window 50..89 °C).
+    /// with a driver slowdown at 90 °C (own limit 88 °C, window 50..105 °C).
     pub fn without_hardware_temp_limit() -> Self {
         let mut m = Self { hardware_temp_limit: false, ..Self::new() };
         if let Some(d) = m.devices.first_mut() {
@@ -171,6 +171,7 @@ impl GpuBackend for MockBackend {
         let hw_temp = self.hardware_temp_limit;
         // The thresholds an RTX 5070 Ti reports: GPU max 88 °C, slowdown 90 °C.
         let (soft_min, soft_max) = soft_thermal_window(Some(88), Some(90)).unwrap_or((0, 0));
+        let soft_card = soft_thermal_card_limit(Some(88), Some(90));
         Ok(GpuCapabilities {
             can_set_core_offset: true,
             can_set_memory_offset: true,
@@ -180,6 +181,7 @@ impl GpuBackend for MockBackend {
             can_set_soft_thermal_limit: !hw_temp,
             soft_thermal_limit_min_c: soft_min,
             soft_thermal_limit_max_c: soft_max,
+            soft_thermal_card_limit_c: if hw_temp { 0 } else { soft_card },
             can_set_fan_speed: true,
             can_read_voltage: true,
             can_set_voltage_boost: true,

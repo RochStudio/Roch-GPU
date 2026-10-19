@@ -146,12 +146,14 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
   `vm.has_soft_temp_limit()` (no `can_set_temp_limit`, but `can_set_soft_thermal_limit`). Label
   `soft_temp_label()` ("Temperature Limit (°C)"); tooltip on the label and the value box:
   `soft_temp_range_text()`.
-* `Field::SoftTempLimit` spans the card's window; its top is the card's own limit
-  (`soft_temp_card_limit()`, NVML GPU max, 88 °C on a 5070 Ti) and is the default: the value box
-  shows the number, and `soft_temp_limit_c()` stores 0 there, so the software does nothing. Typing
-  "off", "card" or 0 returns to it; any number lands inside the window, and anything at or above
-  the card's limit is the card's limit. `build_profile_from_editor` / `load_into_editor` carry it as
-  `soft_thermal_limit_c`, so slots, named profiles, the logon task and Apply treat it like any field.
+* `Field::SoftTempLimit` spans 50…105 °C. It defaults to the selected card's own reported limit
+  (NVML GPU max, 88 °C on a 5070 Ti; different on other cards) and `soft_temp_limit_c()` stores 0
+  there, so the software does nothing. The slider
+  runs on to 105 °C, the top of the selectable range; values from the card's own limit up are kept in the profile
+  but leave the controller off — the card manages itself and the 90 °C slowdown still applies.
+  Typing "off", "card" or 0 returns to the card's own limit; any number lands inside the window.
+  `build_profile_from_editor` / `load_into_editor` carry it as `soft_thermal_limit_c`, so slots,
+  named profiles, the logon task and Apply treat it like any field.
 * Live state comes from the service, not from samples (the controller runs in background mode
   too): `soft_thermal_active_text()` takes over the limiter line ("Thermal limit active: capped at
   N MHz", warn colour), and `soft_thermal_clock_range_note()` adds a line under the XOC Clock Range.

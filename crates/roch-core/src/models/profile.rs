@@ -183,8 +183,10 @@ pub struct TuningProfile {
 
     /// Software temperature limit in °C; 0 = off. Not a driver setting: while the app runs, the
     /// service caps the graphics clock whenever the GPU passes it (see `services::soft_thermal`).
-    /// For cards whose driver offers no settable thermal limit (RTX 50). Not in v1.1.0, whose
-    /// profile reader ignores the field; profiles without it load as off.
+    /// For cards whose driver offers no settable thermal limit (RTX 50). The window runs to 105 °C,
+    /// but the default/off point is the card's own limit (88 °C): values at or above it leave the
+    /// card to manage itself. Not in v1.1.0, whose profile reader ignores the field; profiles
+    /// without it load as off.
     #[serde(rename = "SoftThermalLimitC")]
     pub soft_thermal_limit_c: i32,
 
@@ -352,11 +354,12 @@ impl TuningProfile {
                 clamp_i32(self.memory_timing_level, 0, caps.memory_timing_options.len() as i32 - 1);
         }
         self.fan_curve.normalize();
-        // 0 (or less) means the card's own limit, and so does anything at or above it: the top of
-        // the window is the temperature the card already holds itself, so there is nothing for the
-        // software to do there. A real request below it lands in the window.
+        // 0 (or less) means off and shows the card's own limit (88 °C on a 5070 Ti). The slider runs
+        // on to 105 °C; values at or above the card's own limit are stored but leave the card to
+        // manage itself (the service only arms the controller below that limit). Above the top of
+        // the window is off again.
         let (lo, hi) = caps.soft_thermal_limit_range();
-        if self.soft_thermal_limit_c <= 0 || self.soft_thermal_limit_c >= hi {
+        if self.soft_thermal_limit_c <= 0 || self.soft_thermal_limit_c > hi {
             self.soft_thermal_limit_c = 0;
         } else {
             self.soft_thermal_limit_c = clamp_i32(self.soft_thermal_limit_c, lo, hi);
@@ -432,7 +435,7 @@ mod tests {
             can_lock_clocks: true,
             can_set_soft_thermal_limit: true,
             soft_thermal_limit_min_c: 50,
-            soft_thermal_limit_max_c: 88,
+            soft_thermal_limit_max_c: 105,
             ..Default::default()
         };
         let clamp = |v: i32, caps: &GpuCapabilities| {
@@ -440,13 +443,14 @@ mod tests {
             p.clamp_to(caps);
             p.soft_thermal_limit_c
         };
-        assert_eq!(clamp(0, &caps), 0, "0 is the card's own limit");
+        assert_eq!(clamp(0, &caps), 0, "0 is off and shows the card's own limit");
         assert_eq!(clamp(-5, &caps), 0);
         assert_eq!(clamp(30, &caps), 50);
         assert_eq!(clamp(83, &caps), 83);
-        assert_eq!(clamp(87, &caps), 87);
-        assert_eq!(clamp(88, &caps), 0, "the card's own limit needs no software");
-        assert_eq!(clamp(95, &caps), 0, "above the card's limit is the card's limit");
+        assert_eq!(clamp(88, &caps), 88, "the card's own limit is a valid value");
+        assert_eq!(clamp(104, &caps), 104, "above the card's limit, below the 105 °C top");
+        assert_eq!(clamp(105, &caps), 105, "the 105 °C top is selectable");
+        assert_eq!(clamp(106, &caps), 0, "beyond the window is off");
         // A card without the feature still keeps the value sane.
         assert_eq!(clamp(300, &GpuCapabilities::default()), 0);
     }

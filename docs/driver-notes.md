@@ -12,8 +12,8 @@ began as an attempt to add a feature that turned out not to be there.
 [docs/diag-rtx5070ti.txt](diag-rtx5070ti.txt) is a sample dump from the card these were taken on.
 
 RTX 4070 / 591.86 supports XBAR and SYS offsets. Earlier failures came from
-using the layout-15 offset field (+0x114) on layout 10 (+0x10C). Comparing the
-user-supplied mVolt+ executable exposed the layout selection. Roch GPU now
+using the layout-15 offset field (+0x114) on layout 10 (+0x10C). Comparing a
+user-supplied reference executable exposed the layout selection. Roch GPU now
 reads the leading block tag and uses the corresponding field; unknown tags
 fail closed. Both domains passed +15 -> 0 -> +15 MHz writes and exact offset
 readback on this card. Idle frequency counters are not expected to track offsets.
