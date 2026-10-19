@@ -4,7 +4,7 @@ Scope: Windows Arc Pro B60 (8086:E211), driver 32.0.101.9030. All probes for thi
 
 ## Memory voltage
 
-Not adjustable through this card's current public IGCL interface. `ctlOverclockGetProperties` reports the VRAM voltage capability unsupported, with all-zero limits. `ctlOverclockVramVoltageOffsetGet` returns `0x4000000A` (unsupported feature). The approximately 1.352 V sensor is a measurement, not an editable target. Intel marks the old VRAM voltage/frequency-offset properties as deprecated. This does not establish that every possible board-level or firmware method is impossible; it establishes that Roch GPU has no verified supported control on this configuration.
+Not adjustable through this card's current public IGCL interface. `ctlOverclockGetProperties` reports the VRAM voltage capability unsupported, with all-zero limits, and the VRAM voltage-offset query returns `0x4000000A` (unsupported feature). The approximately 1.352 V sensor is a measurement, not an editable target. Intel marks the old VRAM voltage/frequency-offset properties as deprecated. This does not establish that every possible board-level or firmware method is impossible; it establishes that Roch GPU has no verified supported control on this configuration.
 
 ## Additional features
 
