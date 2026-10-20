@@ -608,14 +608,10 @@ impl MainViewModel {
         }
     }
     pub fn temp_label(&self) -> String {
-        if self.caps.temp_limit_is_percent {
-            "Temperature Limit".into()
-        } else {
-            format!("Temperature Limit ({})", self.caps.temp_limit_unit())
-        }
+        "Temperature Limit".into()
     }
     pub fn soft_temp_label(&self) -> &'static str {
-        "Temperature Limit (°C)"
+        "Temperature Limit"
     }
     pub fn voltage_boost_label(&self) -> &'static str {
         if self.caps.voltage_style == VoltageControlStyle::Percent { "Voltage Limit" } else { "Voltage Boost" }
@@ -630,7 +626,7 @@ impl MainViewModel {
         if self.caps.power_limit_is_offset { "Power Limit Offset" } else { "Power Limit" }
     }
     /// The unit drawn beside the value box for fields whose unit is not in the label. `""` keeps
-    /// the unit in the label (mV, A, °C, Mbps).
+    /// the unit in the label (mV, A, Mbps).
     pub fn field_unit(&self, f: Field) -> &'static str {
         match f {
             Field::CoreOffset
@@ -647,7 +643,8 @@ impl MainViewModel {
                 }
             }
             Field::PowerLimit | Field::VoltageBoost => "%",
-            Field::TempLimit if self.caps.temp_limit_is_percent => "%",
+            Field::TempLimit => self.caps.temp_limit_unit(),
+            Field::SoftTempLimit => "°C",
             _ => "",
         }
     }

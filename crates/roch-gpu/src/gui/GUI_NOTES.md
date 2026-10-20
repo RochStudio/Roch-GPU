@@ -144,7 +144,8 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
 
 * Shown by `main_window::sliders` in the hardware Temperature Limit's place when
   `vm.has_soft_temp_limit()` (no `can_set_temp_limit`, but `can_set_soft_thermal_limit`). Label
-  `soft_temp_label()` ("Temperature Limit (°C)"); tooltip on the label and the value box:
+  `soft_temp_label()` ("Temperature Limit", with the `°C` beside the value box); tooltip on the
+  label and the value box:
   `soft_temp_range_text()`.
 * `Field::SoftTempLimit` spans 50…105 °C. It defaults to the selected card's own reported limit
   (NVML GPU max, 88 °C on a 5070 Ti; different on other cards) and `soft_temp_limit_c()` stores 0

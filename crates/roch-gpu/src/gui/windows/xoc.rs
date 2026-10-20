@@ -164,7 +164,7 @@ fn range_lever(
             if !unit.is_empty() {
                 let color = if armed { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
                 ui.label(RichText::new(unit).font(theme::regular(BODY)).color(color));
-                ui.add_space(2.0);
+                ui.add_space(5.0);
             }
             widgets::value_box(ui, vm, hi, vec2(46.0, 20.0), armed).on_hover_text(vm.range_text(hi));
             widgets::value_box(ui, vm, lo, vec2(46.0, 20.0), armed).on_hover_text(vm.range_text(lo));

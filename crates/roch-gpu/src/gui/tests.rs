@@ -442,7 +442,7 @@ fn soft_temp_row_replaces_a_missing_hardware_limit() {
     let f = rtx50_fixture();
     let vm = vm(&f);
     assert!(!vm.has_temp_limit() && vm.has_soft_temp_limit());
-    assert_eq!(vm.soft_temp_label(), "Temperature Limit (°C)");
+    assert_eq!(vm.soft_temp_label(), "Temperature Limit");
     let tip = vm.range_text(Field::SoftTempLimit);
     assert!(tip.starts_with("50 … 105 °C. The default is 88 °C"), "{tip}");
     for words in ["only while Roch GPU is running", "from the tray", "core clock is capped", "slowdown"] {
@@ -513,10 +513,11 @@ fn soft_temp_value_box_and_nudges() {
 fn percent_and_mhz_units_sit_beside_the_value() {
     let f = fixture();
     let vm = vm(&f);
-    // MHz and % leave the labels and are drawn next to the number.
+    // MHz, % and °C leave the labels and are drawn next to the number.
     assert_eq!(vm.core_label(), "Core Offset");
     assert_eq!(vm.memory_label(), "Memory Clock Offset");
     assert_eq!(vm.power_label(), "Power Limit");
+    assert_eq!(vm.temp_label(), "Temperature Limit");
     assert_eq!(vm.voltage_boost_label(), "Voltage Boost");
     for f in [
         Field::CoreOffset,
@@ -532,9 +533,10 @@ fn percent_and_mhz_units_sit_beside_the_value() {
     for f in [Field::PowerLimit, Field::VoltageBoost] {
         assert_eq!(vm.field_unit(f), "%", "{f:?}");
     }
+    assert_eq!(vm.field_unit(Field::TempLimit), "°C");
+    assert_eq!(vm.field_unit(Field::SoftTempLimit), "°C");
     // Units still shown in their labels.
     assert_eq!(vm.field_unit(Field::VoltageOffset), "");
-    assert_eq!(vm.field_unit(Field::SoftTempLimit), "");
 }
 
 #[test]

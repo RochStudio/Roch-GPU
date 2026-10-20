@@ -18,7 +18,7 @@ const TITLE_H: f32 = 30.0;
 /// The value box and the unit column beside it, so `%` and `MHz` sit next to the number.
 const VALUE_BOX_W: f32 = 60.0;
 const UNIT_COL_W: f32 = 26.0;
-const VALUE_COL_W: f32 = VALUE_BOX_W + 2.0 + UNIT_COL_W;
+const VALUE_COL_W: f32 = VALUE_BOX_W + 5.0 + UNIT_COL_W;
 
 /// What the main window asks the app to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,7 +192,7 @@ fn slider_row_with_tip(
             widgets::value_box(ui, vm, f, vec2(VALUE_BOX_W, 30.0), enabled).on_hover_text(tip);
             let unit = vm.field_unit(f);
             if !unit.is_empty() {
-                ui.add_space(2.0);
+                ui.add_space(5.0);
                 let color = if enabled { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
                 ui.allocate_ui_with_layout(vec2(UNIT_COL_W, 30.0), Layout::left_to_right(Align::Center), |ui| {
                     ui.label(RichText::new(unit).font(theme::regular(BODY)).color(color));
@@ -300,7 +300,7 @@ fn intel_clock_range(ui: &mut Ui, vm: &mut MainViewModel, busy: bool) {
         ui.add_space(8.0);
         ui.label("Maximum");
         widgets::value_box(ui, vm, Field::ClockLockMax, vec2(80.0, 22.0), enabled).on_hover_text(&tip);
-        ui.add_space(2.0);
+        ui.add_space(5.0);
         let color = if enabled { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
         ui.label(RichText::new("MHz").font(theme::regular(BODY)).color(color));
     });
