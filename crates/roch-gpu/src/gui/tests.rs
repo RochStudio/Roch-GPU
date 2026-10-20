@@ -510,6 +510,34 @@ fn soft_temp_value_box_and_nudges() {
 }
 
 #[test]
+fn percent_and_mhz_units_sit_beside_the_value() {
+    let f = fixture();
+    let vm = vm(&f);
+    // MHz and % leave the labels and are drawn next to the number.
+    assert_eq!(vm.core_label(), "Core Offset");
+    assert_eq!(vm.memory_label(), "Memory Clock Offset");
+    assert_eq!(vm.power_label(), "Power Limit");
+    assert_eq!(vm.voltage_boost_label(), "Voltage Boost");
+    for f in [
+        Field::CoreOffset,
+        Field::XbarOffset,
+        Field::SysOffset,
+        Field::VideoOffset,
+        Field::MemoryOffset,
+        Field::ClockLockMin,
+        Field::ClockLockMax,
+    ] {
+        assert_eq!(vm.field_unit(f), "MHz", "{f:?}");
+    }
+    for f in [Field::PowerLimit, Field::VoltageBoost] {
+        assert_eq!(vm.field_unit(f), "%", "{f:?}");
+    }
+    // Units still shown in their labels.
+    assert_eq!(vm.field_unit(Field::VoltageOffset), "");
+    assert_eq!(vm.field_unit(Field::SoftTempLimit), "");
+}
+
+#[test]
 fn soft_temp_applies_shows_live_state_and_saves_in_slots() {
     let f = rtx50_fixture();
     let mut vm = vm(&f);

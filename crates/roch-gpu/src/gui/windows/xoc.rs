@@ -94,7 +94,7 @@ fn body(ui: &mut Ui, vm: &mut MainViewModel) {
             range_lever(
                 ui,
                 vm,
-                "Clock Range (MHz)",
+                "Clock Range",
                 (Field::ClockLockMin, Field::ClockLockMax),
                 XocLever::CLOCK_RANGE,
                 "Pin the graphics clock inside this window now, or put it back",
@@ -160,6 +160,12 @@ fn range_lever(
         row_label(ui, title);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
+            let unit = vm.field_unit(hi);
+            if !unit.is_empty() {
+                let color = if armed { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
+                ui.label(RichText::new(unit).font(theme::regular(BODY)).color(color));
+                ui.add_space(2.0);
+            }
             widgets::value_box(ui, vm, hi, vec2(46.0, 20.0), armed).on_hover_text(vm.range_text(hi));
             widgets::value_box(ui, vm, lo, vec2(46.0, 20.0), armed).on_hover_text(vm.range_text(lo));
         });

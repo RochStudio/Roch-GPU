@@ -15,6 +15,10 @@ use crate::gui::widgets::{self, ButtonKind};
 pub const WIDTH: f32 = 660.0;
 pub const MIN_HEIGHT: f32 = 640.0;
 const TITLE_H: f32 = 30.0;
+/// The value box and the unit column beside it, so `%` and `MHz` sit next to the number.
+const VALUE_BOX_W: f32 = 60.0;
+const UNIT_COL_W: f32 = 26.0;
+const VALUE_COL_W: f32 = VALUE_BOX_W + 2.0 + UNIT_COL_W;
 
 /// What the main window asks the app to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,17 +184,21 @@ fn slider_row_with_tip(
             resp.on_hover_text(tip);
         }
         ui.add_space(8.0);
-        let slider_w = w - 180.0 - 88.0 - 8.0 - 18.0;
+        let slider_w = w - 180.0 - VALUE_COL_W - 8.0 - 18.0;
         widgets::nudged_slider(ui, vm, f, slider_w, enabled, false);
         ui.add_space(18.0);
-        ui.allocate_ui_with_layout(
-            vec2(88.0, 30.0),
-            Layout::centered_and_justified(egui::Direction::LeftToRight),
-            |ui| {
-                let tip = vm.range_text(f);
-                widgets::value_box(ui, vm, f, vec2(60.0, 30.0), enabled).on_hover_text(tip);
-            },
-        );
+        ui.allocate_ui_with_layout(vec2(VALUE_COL_W, 30.0), Layout::left_to_right(Align::Center), |ui| {
+            let tip = vm.range_text(f);
+            widgets::value_box(ui, vm, f, vec2(VALUE_BOX_W, 30.0), enabled).on_hover_text(tip);
+            let unit = vm.field_unit(f);
+            if !unit.is_empty() {
+                ui.add_space(2.0);
+                let color = if enabled { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
+                ui.allocate_ui_with_layout(vec2(UNIT_COL_W, 30.0), Layout::left_to_right(Align::Center), |ui| {
+                    ui.label(RichText::new(unit).font(theme::regular(BODY)).color(color));
+                });
+            }
+        });
     });
     ui.add_space(margin_y);
 }
@@ -246,13 +254,13 @@ fn sliders(ui: &mut Ui, vm: &mut MainViewModel, actions: &mut Vec<MainAction>) {
             let can_core = vm.caps.can_set_core_offset && !busy;
             slider_row(ui, vm, vm.core_label(), Field::CoreOffset, can_core, 12.0);
             if vm.has_xbar() {
-                slider_row(ui, vm, "XBAR Clock (MHz offset)", Field::XbarOffset, !busy, 5.0);
+                slider_row(ui, vm, "XBAR Clock Offset", Field::XbarOffset, !busy, 5.0);
             }
             if vm.has_sys() {
-                slider_row(ui, vm, "SYS Clock (MHz offset)", Field::SysOffset, !busy, 5.0);
+                slider_row(ui, vm, "SYS Clock Offset", Field::SysOffset, !busy, 5.0);
             }
             if vm.has_video() {
-                slider_row(ui, vm, "Video Clock (MHz offset)", Field::VideoOffset, !busy, 5.0);
+                slider_row(ui, vm, "Video Clock Offset", Field::VideoOffset, !busy, 5.0);
             }
             let can_mem = vm.caps.can_set_memory_offset && !busy;
             slider_row(ui, vm, vm.memory_label(), Field::MemoryOffset, can_mem, 12.0);
@@ -279,7 +287,7 @@ fn sliders(ui: &mut Ui, vm: &mut MainViewModel, actions: &mut Vec<MainAction>) {
 fn intel_clock_range(ui: &mut Ui, vm: &mut MainViewModel, busy: bool) {
     ui.add_space(8.0);
     let mut on = vm.intel_clock_range_enabled();
-    if widgets::checkbox(ui, &mut on, "Core Clock Range (MHz)", !busy).changed() {
+    if widgets::checkbox(ui, &mut on, "Core Clock Range", !busy).changed() {
         vm.set_intel_clock_range_enabled(on);
     }
     ui.add_space(6.0);
@@ -292,6 +300,9 @@ fn intel_clock_range(ui: &mut Ui, vm: &mut MainViewModel, busy: bool) {
         ui.add_space(8.0);
         ui.label("Maximum");
         widgets::value_box(ui, vm, Field::ClockLockMax, vec2(80.0, 22.0), enabled).on_hover_text(&tip);
+        ui.add_space(2.0);
+        let color = if enabled { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
+        ui.label(RichText::new("MHz").font(theme::regular(BODY)).color(color));
     });
     ui.add_space(5.0);
     ui.add(egui::Label::new("Apply to set limits. Uncheck and Apply to restore driver defaults.").wrap());

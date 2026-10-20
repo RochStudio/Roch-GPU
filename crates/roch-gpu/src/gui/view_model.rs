@@ -602,28 +602,54 @@ impl MainViewModel {
         if self.caps.memory_clock_unit == "Mbps" {
             "Memory Speed (Mbps)"
         } else if self.caps.memory_clock_is_absolute {
-            "Memory Clock (MHz)"
+            "Memory Clock"
         } else {
-            "Memory Clock (MHz offset)"
+            "Memory Clock Offset"
         }
     }
     pub fn temp_label(&self) -> String {
-        format!("Temperature Limit ({})", self.caps.temp_limit_unit())
+        if self.caps.temp_limit_is_percent {
+            "Temperature Limit".into()
+        } else {
+            format!("Temperature Limit ({})", self.caps.temp_limit_unit())
+        }
     }
     pub fn soft_temp_label(&self) -> &'static str {
         "Temperature Limit (°C)"
     }
     pub fn voltage_boost_label(&self) -> &'static str {
-        if self.caps.voltage_style == VoltageControlStyle::Percent { "Voltage Limit (%)" } else { "Voltage Boost (%)" }
+        if self.caps.voltage_style == VoltageControlStyle::Percent { "Voltage Limit" } else { "Voltage Boost" }
     }
     pub fn core_label(&self) -> &'static str {
-        "Core Offset (MHz)"
+        "Core Offset"
     }
     pub fn voltage_label(&self) -> &'static str {
         if self.is_voltage_offset() { "Voltage Offset (mV)" } else { "Core Voltage (mV)" }
     }
     pub fn power_label(&self) -> &'static str {
-        if self.caps.power_limit_is_offset { "Power Limit (% offset)" } else { "Power Limit (%)" }
+        if self.caps.power_limit_is_offset { "Power Limit Offset" } else { "Power Limit" }
+    }
+    /// The unit drawn beside the value box for fields whose unit is not in the label. `""` keeps
+    /// the unit in the label (mV, A, °C, Mbps).
+    pub fn field_unit(&self, f: Field) -> &'static str {
+        match f {
+            Field::CoreOffset
+            | Field::XbarOffset
+            | Field::SysOffset
+            | Field::VideoOffset
+            | Field::ClockLockMin
+            | Field::ClockLockMax => "MHz",
+            Field::MemoryOffset => {
+                if self.caps.memory_clock_is_absolute {
+                    if self.caps.memory_clock_unit == "MHz" { "MHz" } else { "" }
+                } else {
+                    "MHz"
+                }
+            }
+            Field::PowerLimit | Field::VoltageBoost => "%",
+            Field::TempLimit if self.caps.temp_limit_is_percent => "%",
+            _ => "",
+        }
     }
     pub fn memory_timing_options(&self) -> &[String] {
         &self.caps.memory_timing_options
@@ -2107,9 +2133,9 @@ fn lever_label(lever: XocLever) -> String {
     match lever {
         XocLever::NVVDD => "NVVDD range".into(),
         XocLever::MSVDD => "MSVDD range".into(),
-        XocLever::XBAR => "XBAR clock".into(),
-        XocLever::SYS => "SYS clock".into(),
-        XocLever::VIDEO => "Video clock".into(),
+        XocLever::XBAR => "XBAR clock offset".into(),
+        XocLever::SYS => "SYS clock offset".into(),
+        XocLever::VIDEO => "Video clock offset".into(),
         XocLever::CLOCK_RANGE => "Clock range".into(),
         other => other.to_string(),
     }
