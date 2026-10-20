@@ -120,14 +120,14 @@ fn header(ui: &mut Ui, vm: &MainViewModel, actions: &mut Vec<MainAction>) {
                 |ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
                     ui.add_space(2.0);
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(format!("GPU: {}", vm.device_display_name()))
-                                .font(theme::bold(BODY))
-                                .color(p.accent),
-                        )
-                        .wrap(),
-                    );
+                    // "GPU:" in the normal text colour, the card's name in the accent.
+                    let mut job = egui::text::LayoutJob::default();
+                    let fmt =
+                        |color: Color32| egui::TextFormat { font_id: theme::bold(BODY), color, ..Default::default() };
+                    job.append("GPU: ", 0.0, fmt(p.text));
+                    job.append(&vm.device_display_name(), 0.0, fmt(p.accent));
+                    job.wrap.max_width = ui.available_width();
+                    ui.add(egui::Label::new(job).selectable(false));
                     widgets::info_line(ui, &vm.driver_line());
                 },
             );
