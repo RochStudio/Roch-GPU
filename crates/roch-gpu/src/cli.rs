@@ -2,14 +2,15 @@
 //! engine, no window. See `main.rs` for which half runs.
 //!
 //! ```text
-//!   RochGPU.exe info                       show GPUs, capabilities, current tuning
-//!   RochGPU.exe monitor [--interval 1000]  live telemetry until Ctrl+C
+//!   RochGPU.exe info [--gpu 0]             show GPUs, capabilities, current tuning
+//!   RochGPU.exe monitor [--gpu 0] [--interval 1000]  live telemetry until Ctrl+C
 //!   RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83] [--fan 60|auto]
 //!   RochGPU.exe apply-profile <name> [--gpu 0]     apply a saved GUI profile
 //!   RochGPU.exe list-profiles
 //!   RochGPU.exe reset [--gpu 0]
 //!   RochGPU.exe startup --enable <profile> | --disable | --status
-//!   add --mock anywhere to use the simulated GPU (--mock rtx50: one without a hardware temp limit)
+//!   add --mock anywhere to use the simulated GPU (--mock rtx50: one without a hardware temp limit;
+//!   --mock multi: a two-card machine)
 //! ```
 
 use std::collections::BTreeMap;
@@ -887,9 +888,9 @@ impl Opts {
 pub const USAGE: &str = "\
 RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
 
-  RochGPU.exe info
-  RochGPU.exe sensors                    list supplemental native sensor readings
-  RochGPU.exe monitor [--interval 1000]
+  RochGPU.exe info [--gpu 0]
+  RochGPU.exe sensors [--gpu 0]          list supplemental native sensor readings
+  RochGPU.exe monitor [--gpu 0] [--interval 1000]
   RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83|card] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
     each gated flag arms its own lever for that apply; a lever you do not name goes back to the driver's own value
     --soft-temp: a software temperature limit below the card's own (RTX 50); 'card' leaves it to the card; only enforced while the app runs
@@ -898,7 +899,8 @@ RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
   RochGPU.exe reset [--gpu 0]
   RochGPU.exe diag                       dump everything the driver reports (for bug reports)
   RochGPU.exe startup --enable <profile> | --disable | --status
-  (add --mock to any command to use a simulated GPU; --mock rtx50 for one without a hardware temp limit)";
+  (add --mock to any command to use a simulated GPU; --mock rtx50 for one without a hardware temp limit;
+   --mock multi for a two-card machine)";
 
 fn usage(out: &mut dyn Write) {
     outln!(out, "{USAGE}");

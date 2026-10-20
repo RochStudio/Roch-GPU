@@ -36,13 +36,18 @@ pub fn create_and_initialize() -> Result<(Box<dyn GpuBackend>, Vec<Attempt>)> {
 /// The word after `--mock` that picks the simulated RTX 50: a card whose driver offers no
 /// temperature limit, so the software one is shown instead.
 pub const MOCK_RTX50: &str = "rtx50";
+/// The word after `--mock` that simulates a two-card machine, so the GPU picker can be tried
+/// without one.
+pub const MOCK_MULTI: &str = "multi";
 
 /// The simulated GPU for `--mock [variant]`, uninitialised like a real one fresh from its
-/// constructor. `rtx50` (any case) is the card without a hardware
-/// temperature limit; anything else, or nothing, the default card.
+/// constructor. `rtx50` (any case) is the card without a hardware temperature limit; `multi` is
+/// a two-card machine; anything else, or nothing, the default card.
 pub fn mock_variant(variant: Option<&str>) -> Box<dyn GpuBackend> {
     if variant.is_some_and(|v| v.trim().eq_ignore_ascii_case(MOCK_RTX50)) {
         Box::new(MockBackend::without_hardware_temp_limit())
+    } else if variant.is_some_and(|v| v.trim().eq_ignore_ascii_case(MOCK_MULTI)) {
+        Box::new(MockBackend::with_second_gpu())
     } else {
         Box::new(MockBackend::new())
     }
@@ -158,6 +163,14 @@ mod tests {
             err.message,
             "No supported GPU found. Tried:\n  A: no dll\n  B: initialised but reported no GPUs\n  unknown: the backend panicked"
         );
+    }
+
+    #[test]
+    fn mock_multi_reports_two_cards() {
+        let b = mock_variant(Some("MULTI"));
+        assert_eq!(b.devices().len(), 2);
+        assert_eq!(b.devices()[1].index, 1);
+        assert!(b.devices()[1].bus_id.contains("2"));
     }
 
     #[test]

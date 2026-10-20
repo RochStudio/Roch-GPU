@@ -86,6 +86,16 @@ impl MonitorWindow {
         self.chrome.request_focus();
     }
 
+    /// The selected card changed: its sensor list, running figures and elapsed time belong to the
+    /// old one. The subscription itself is to the service, so it carries on and repopulates.
+    pub fn reset_for_new_gpu(&mut self) {
+        self.table = None;
+        self.stats_since = Instant::now();
+        self.last_stamp = None;
+        self.summary = ["—".into(), "—".into(), "—".into()];
+        self.elapsed = "Waiting for sensors…".into();
+    }
+
     /// Subscribe on first show, and draw the last sample at once instead of waiting a poll.
     fn ensure_tap(&mut self, ctx: &Context, w: &WinCtx) {
         if self.tap.is_some() {

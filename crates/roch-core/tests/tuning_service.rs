@@ -1041,6 +1041,19 @@ fn bad_gpu_index_is_refused() {
     assert_eq!(svc.devices().len(), 1, "devices are known even when the index is not");
 }
 
+/// A saved GPU that is no longer there falls back to the first card; a saved one that is stays.
+#[test]
+fn preferred_gpu_falls_back_to_the_first_when_missing() {
+    let one = TuningService::new(Box::new(MockBackend::new()));
+    one.initialize_preferred(9).unwrap();
+    assert_eq!(one.gpu_index(), 0);
+
+    let two = TuningService::new(Box::new(MockBackend::with_second_gpu()));
+    two.initialize_preferred(1).unwrap();
+    assert_eq!(two.gpu_index(), 1);
+    assert!(two.device().name.contains("(2)"), "{}", two.device().name);
+}
+
 /// Dropping a polling service stops the thread (C# Dispose).
 #[test]
 fn drop_stops_polling() {

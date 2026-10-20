@@ -75,8 +75,50 @@ fn fixture() -> Fixture {
     Fixture { _dir: dir, shared, startup }
 }
 
+fn multi_fixture() -> Fixture {
+    let dir = TempDir::new();
+    let store = Arc::new(ProfileStore::new(Some(dir.0.clone())).unwrap());
+    let service = Arc::new(TuningService::new(Box::new(MockBackend::with_second_gpu())));
+    service.initialize(0).unwrap();
+    let startup = Arc::new(FakeStartup::default());
+    let shared = Shared::new(service, store, AppSettings::default(), startup.clone());
+    let recovery = shared.open_recovery().unwrap();
+    shared.set_recovery(Some(recovery));
+    Fixture { _dir: dir, shared, startup }
+}
+
 fn vm(f: &Fixture) -> MainViewModel {
     MainViewModel::new(f.shared.clone())
+}
+
+#[test]
+fn switching_gpu_rebuilds_the_editor_and_persists_the_choice() {
+    let f = multi_fixture();
+    let mut vm = vm(&f);
+    assert_eq!(vm.gpu_count(), 2);
+    assert_eq!(vm.gpu_index(), 0);
+    assert!(vm.gpu_choice_label(1).contains("Simulated RTX 4070 SUPER (2)"), "{}", vm.gpu_choice_label(1));
+    let second = f.shared.service.devices()[1].name.clone();
+
+    // A fixed fan duty is handed back before the switch: it belongs to the old card.
+    f.shared.service.set_fans(FanMode::Fixed, 70, &[], &FanCurve::default(), None);
+    assert!(f.shared.service.with_backend(|b| b.read_tuning_state(0)).unwrap().fan_manual);
+
+    vm.switch_gpu(1).unwrap();
+    assert_eq!(vm.gpu_index(), 1);
+    assert_eq!(vm.device.name, second);
+    assert_eq!(f.shared.service.gpu_index(), 1);
+    assert_eq!(f.shared.settings().gpu_index, 1, "choice is persisted");
+    assert!(!f.shared.service.with_backend(|b| b.read_tuning_state(0)).unwrap().fan_manual, "old fans back to auto");
+
+    // An index the backend did not report leaves the editor on the current card.
+    assert!(vm.switch_gpu(9).is_err());
+    assert_eq!(vm.gpu_index(), 1);
+    assert_eq!(vm.device.name, second);
+
+    vm.switch_gpu(0).unwrap();
+    assert_eq!(vm.gpu_index(), 0);
+    assert_eq!(f.shared.settings().gpu_index, 0);
 }
 
 #[test]

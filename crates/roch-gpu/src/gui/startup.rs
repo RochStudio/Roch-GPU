@@ -68,6 +68,7 @@ pub fn start(
     let mut minimized = flags.minimized || settings.start_minimized;
     let mut apply_profile = flags.apply_profile.clone();
     let history = settings.history_seconds.max(1) as usize;
+    let wanted_gpu = settings.gpu_index;
 
     // NVIDIA, AMD or Intel, whichever initialises. One binary, any card.
     let mut backend: Box<dyn GpuBackend> = backends::mock_variant(flags.mock_variant.as_deref());
@@ -93,7 +94,7 @@ pub fn start(
     let mut service = make_service(backend);
     let init = match detect_error {
         Some(e) => Err(e),
-        None => service.initialize(0),
+        None => service.initialize_preferred(wanted_gpu),
     };
     if let Err(e) = init {
         log(&format!("Init failed: {}", e.message));
@@ -102,10 +103,16 @@ pub fn start(
         }
         drop(service);
         service = make_service(backends::mock_variant(flags.mock_variant.as_deref()));
-        if let Err(e) = service.initialize(0) {
+        if let Err(e) = service.initialize_preferred(wanted_gpu) {
             log(&format!("Init failed: {}", e.message));
             return Started::Exit(1);
         }
+    }
+    // A missing saved index (card removed, or a driver that reordered) is not fatal: the service
+    // stays on the first card rather than refusing to start.
+    let count = service.devices().len();
+    if wanted_gpu >= count {
+        log(&format!("Saved GPU {} is not present ({count} found); using the first.", wanted_gpu + 1));
     }
 
     let mut shared = Shared::new(service.clone(), store, settings, startup);

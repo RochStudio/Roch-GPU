@@ -15,6 +15,7 @@ This is a Rust rewrite of [Roch GPU 1.1.0](https://github.com/RochStudio/Roch-GP
 - **Full driver ranges.** Core, memory, XBAR, SYS and video offsets offer the whole range the driver reports (e.g. −1000…+1000 MHz core on an RTX 5070 Ti), with both ends reachable; v1.1.0 narrowed them to a "practical" window.
 - **`--mock` skips the UAC prompt** (the simulated GPU writes nothing). Real launches of the window still elevate themselves.
 - **Software temperature limit** (new; not in v1.1.0). RTX 50 drivers offer no settable temperature limit (no NVAPI thermal policy, and NVML refuses the target temperature), so the hardware Temperature Limit row is hidden there. In its place the window shows **Temperature Limit (°C)**, defaulting to the selected card's own reported limit (its GPU-max temperature; 88 °C on a 5070 Ti) and running on to **105 °C**. Different GPUs therefore get different defaults. At or above the card's own limit the card manages itself and the software does nothing; 105 °C is just the top of the selectable range. Set it below the card's own limit and, while Roch GPU runs (window or tray), it caps the core clock through the same NVML clock lock as the XOC Clock Range whenever the GPU reaches the limit, a 15–45 MHz step a second, and lets the clock climb back once the card is 3 °C below it. It never caps below half the card's maximum clock or the user's own Clock Range floor, never lifts the user's Clock Range ceiling, and hands the clock back (to that range, or to the driver) on exit, Reset or an Apply without it. The card's own slowdown (90 °C on a 5070 Ti) still applies and cannot be raised from user mode; Roch GPU's limit uses the same NVML clock lock, not a hardware thermal write. Saved in profiles as `SoftThermalLimitC` (0 = off/default), which the C# build ignores.
+- **Multiple GPUs** (new). When the active backend reports more than one card, the header's GPU menu switches the whole window — editor, profiles, telemetry, fan/curve windows and the CLI-equivalent state — to another card of that vendor. The choice is saved and restored at the next launch (falling back to the first card if it is gone). Before switching, a software fan curve and temperature limit are handed back to the card they were started on, and each card's recovery journal is opened separately. Same-vendor multi-GPU only: the app still binds to the first backend that initialises, so an NVIDIA + Intel machine shows the NVIDIA card, not both.
 
 ## Install / run
 
@@ -35,6 +36,8 @@ The same executable is the command line:
 .\RochGPU.exe startup --status
 .\RochGPU.exe info --mock     # any verb against a simulated GPU
 .\RochGPU.exe info --mock rtx50   # ...one without a hardware temperature limit
+.\RochGPU.exe info --mock multi   # ...a two-card machine (pick one in the window's GPU menu)
+.\RochGPU.exe info --gpu 1    # the second card of the same vendor
 ```
 
 ## Build
@@ -61,7 +64,7 @@ Each vendor crate loads its driver DLL from System32 only, and builds and tests 
 
 ## Verification status
 
-- **Tests:** 225 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver.
+- **Tests:** 232 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver.
 - **NVIDIA:** on an RTX 5070 Ti with driver 616.92, read-only output matches the C# 1.1.0 build. That covers `info`, `sensors` and `domains`, and the full `diag` dump is byte-identical apart from live readings.
 - **Write paths:** the code that writes to the GPU (apply, reset, fans, V/F curve, XOC levers) is a faithful port, but it has **not yet been validated on hardware** in the Rust build. Test carefully before relying on it. The same goes for the software temperature limit: its controller is tested only against the simulated GPU, and its read side (`info` reports `Soft temp limit: 50..105 °C` on the 5070 Ti, with 88 °C as the card's own limit) is the only part run on the card.
 - **AMD and Intel:** ported with their unit tests, but not yet run on an AMD or Arc card.

@@ -164,6 +164,9 @@ pub struct AppSettings {
     pub use_mock_backend: bool,
     /// Fresh settings open in light mode; an explicitly saved theme is retained.
     pub dark_mode: bool,
+    /// The GPU the window last tuned, as an index into the backend's device list. Clamped to the
+    /// enumerated list at startup, so a removed card or a driver that reorders falls back to 0.
+    pub gpu_index: usize,
     /// Last applied profile per GPU (by name), restored into the sliders on launch.
     pub last_profile_by_gpu: BTreeMap<String, String>,
     /// Highest core voltage seen under load, per GPU.
@@ -191,6 +194,7 @@ impl Default for AppSettings {
             history_seconds: 120,
             use_mock_backend: false,
             dark_mode: false,
+            gpu_index: 0,
             last_profile_by_gpu: BTreeMap::new(),
             observed_max_voltage_by_gpu: BTreeMap::new(),
             observed_max_boosted_voltage_by_gpu: BTreeMap::new(),

@@ -11,7 +11,8 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 
 * `CARGO_TARGET_DIR=target/gui cargo run -p roch-gpu -- --mock` — simulated GPU.
   `--mock rtx50` simulates a card without a hardware temperature limit (as an RTX 50), which shows
-  the software Temperature Limit row instead.
+  the software Temperature Limit row instead; `--mock multi` simulates two cards to try the header
+  GPU menu.
 * Beside a resident (real, elevated) Roch GPU: `ROCH_TRACE=<file> ROCH_TRACE_BENCH=1` with `--mock`
   makes the run *isolated* (`trace::isolated`): no single-instance claim or show request, so the
   resident copy is neither signalled nor asked to come forward. The bench script then exits by
@@ -162,6 +163,24 @@ controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
   logs every ceiling it moves, so the line updates in an idle window.
 * `on_exit` and `gui::run`'s belt-and-braces path call `release_soft_thermal_limit()` beside
   `release_fan_control()`; `TuningService::drop` does it too.
+
+## Multiple GPUs
+
+* The header shows a ComboBox instead of the plain card name when `vm.gpu_count() > 1`; the menu
+  labels come from `gpu_choice_label()` (number, name, bus id) so two identical cards are
+  distinguishable. It is disabled while a job is running and the app refuses a switch while the
+  editor has unapplied changes, so nothing is silently discarded.
+* `MainViewModel::switch_gpu` calls `TuningService::select_gpu`, then reopens the recovery journal
+  for the new card, saves `AppSettings.gpu_index`, and rebuilds itself with `MainViewModel::new`
+  (capabilities, current tuning, last profile, slots). `select_gpu` releases the software fan
+  curve and temperature limit on the old card before moving; `RochApp::select_gpu` drops the
+  Fan/Curve/XOC/Graphics windows built for the old capabilities and resets the Telemetry table.
+* At launch, `startup::start` uses `TuningService::initialize_preferred(settings.gpu_index)`:
+  an index that no longer exists falls back to the first card instead of refusing to start.
+  The CLI's `--gpu` remains strict.
+* Same-vendor only: the app binds to the first backend that initialises (NVIDIA, then AMD, then
+  Intel). Cross-vendor cards in one window would need one service per backend.
+* `--mock multi` enumerates two simulated cards for trying the picker.
 
 ## Part 2 windows
 

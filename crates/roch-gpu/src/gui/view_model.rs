@@ -250,6 +250,9 @@ pub struct MainViewModel {
     pub caps: GpuCapabilities,
     pub device: GpuDevice,
     pub backend_name: String,
+    /// Every card the active backend reported, and the one this editor is bound to.
+    devices: Vec<GpuDevice>,
+    gpu_index: usize,
     graphics_info: GpuGraphicsInfo,
 
     vals: [i32; FIELD_COUNT],
@@ -291,6 +294,8 @@ impl MainViewModel {
         let caps = svc.capabilities();
         let device = svc.device();
         let backend_name = svc.backend_name();
+        let devices = svc.devices();
+        let gpu_index = svc.gpu_index();
         let graphics_info = svc.read_graphics_info();
 
         let mut vm = Self {
@@ -298,6 +303,8 @@ impl MainViewModel {
             caps,
             device,
             backend_name,
+            devices,
+            gpu_index,
             graphics_info,
             vals: [0; FIELD_COUNT],
             zero_rpm: true,
@@ -426,11 +433,56 @@ impl MainViewModel {
         vm
     }
 
+    /// Switch to another card of this backend. The service hands the old card's software fan
+    /// curve and temperature limit back; this rebuilds the editor from the new card's
+    /// capabilities, current settings and last profile.
+    pub fn switch_gpu(&mut self, index: usize) -> Result<()> {
+        if index == self.gpu_index {
+            return Ok(());
+        }
+        let mut shared = self.shared.clone();
+        // The startup notice belonged to the card selected when the window opened.
+        shared.recovery_notice = None;
+        shared.service.select_gpu(index)?;
+        // Recovery, and its startup confirmation, are per card.
+        match shared.open_recovery() {
+            Ok(recovery) => shared.set_recovery(Some(recovery)),
+            Err(e) => {
+                shared.set_recovery(None);
+                shared.log(&format!("Recovery unavailable for the selected GPU: {}", e.message));
+            }
+        }
+        shared.settings().gpu_index = index;
+        shared.save_settings();
+        *self = Self::new(shared);
+        Ok(())
+    }
+
     pub fn shared(&self) -> &Shared {
         &self.shared
     }
 
     // ------------------------------------------------------------------ identity lines
+
+    /// How many cards the active backend reported (normally 1).
+    pub fn gpu_count(&self) -> usize {
+        self.devices.len()
+    }
+
+    pub fn gpu_index(&self) -> usize {
+        self.gpu_index
+    }
+
+    /// A menu line that distinguishes two cards of the same model by their bus address.
+    pub fn gpu_choice_label(&self, index: usize) -> String {
+        let Some(d) = self.devices.get(index) else { return String::new() };
+        let number = index + 1;
+        if d.bus_id.trim().is_empty() {
+            format!("{number}  ·  {}", d.name)
+        } else {
+            format!("{number}  ·  {}  ({})", d.name, d.bus_id)
+        }
+    }
 
     pub fn vram_text(&self) -> String {
         if self.device.vram_megabytes > 0 {

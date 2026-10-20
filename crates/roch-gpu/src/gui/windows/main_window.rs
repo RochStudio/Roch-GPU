@@ -33,6 +33,8 @@ pub enum MainAction {
     Minimize,
     Close,
     OpenUrl(&'static str),
+    /// Pick another card of the same backend (the header's GPU menu).
+    SelectGpu(usize),
     /// Right-click on an occupied slot: confirm, then clear.
     ConfirmClearSlot(i32),
 }
@@ -114,20 +116,49 @@ fn header(ui: &mut Ui, vm: &MainViewModel, actions: &mut Vec<MainAction>) {
         ui.spacing_mut().item_spacing.y = 1.0;
         ui.horizontal_top(|ui| {
             let right_w = 80.0 + 80.0 + 64.0 + 3.0 * 6.0;
+            // A picker is taller than the plain label; give the header row room for it.
+            let gpu_row_h = if vm.gpu_count() > 1 { 38.0 } else { 30.0 };
             ui.allocate_ui_with_layout(
-                vec2(ui.available_width() - right_w - 8.0, 30.0),
+                vec2(ui.available_width() - right_w - 8.0, gpu_row_h),
                 Layout::top_down(Align::Min),
                 |ui| {
                     ui.spacing_mut().item_spacing.y = 1.0;
                     ui.add_space(2.0);
-                    // "GPU:" in the normal text colour, the card's name in the accent.
-                    let mut job = egui::text::LayoutJob::default();
-                    let fmt =
-                        |color: Color32| egui::TextFormat { font_id: theme::bold(BODY), color, ..Default::default() };
-                    job.append("GPU: ", 0.0, fmt(p.text));
-                    job.append(&vm.device_display_name(), 0.0, fmt(p.accent));
-                    job.wrap.max_width = ui.available_width();
-                    ui.add(egui::Label::new(job).selectable(false));
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        // "GPU:" in the normal text colour, the card's name in the accent.
+                        ui.label(RichText::new("GPU:").font(theme::bold(BODY)).color(p.text));
+                        if vm.gpu_count() > 1 {
+                            let current = vm.gpu_index();
+                            let mut picked = None;
+                            ui.add_enabled_ui(!vm.busy(), |ui| {
+                                egui::ComboBox::from_id_salt("gpu_selector")
+                                    .width(ui.available_width())
+                                    .selected_text(
+                                        RichText::new(vm.device_display_name()).font(theme::bold(BODY)).color(p.accent),
+                                    )
+                                    .show_ui(ui, |ui| {
+                                        for i in 0..vm.gpu_count() {
+                                            if ui.selectable_label(i == current, vm.gpu_choice_label(i)).clicked() {
+                                                picked = Some(i);
+                                            }
+                                        }
+                                    })
+                                    .response
+                                    .on_hover_text("Choose the card Roch GPU tunes and monitors");
+                            });
+                            if let Some(i) = picked {
+                                actions.push(MainAction::SelectGpu(i));
+                            }
+                        } else {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(vm.device_display_name()).font(theme::bold(BODY)).color(p.accent),
+                                )
+                                .wrap(),
+                            );
+                        }
+                    });
                     widgets::info_line(ui, &vm.driver_line());
                 },
             );

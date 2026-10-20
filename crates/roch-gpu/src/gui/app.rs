@@ -375,8 +375,39 @@ impl RochApp {
                     self.vm.report(format!("Could not open {url}: {e}"), true);
                 }
             }
+            MainAction::SelectGpu(index) => self.select_gpu(ctx, index),
             MainAction::ConfirmClearSlot(n) => self.dialog = Some(Dialog::ClearSlot(n)),
         }
+    }
+
+    /// Move the whole window to another card of the same backend.
+    fn select_gpu(&mut self, ctx: &Context, index: usize) {
+        if index == self.vm.gpu_index() {
+            return;
+        }
+        if self.vm.busy() {
+            self.vm.report("Wait for the current apply to finish before switching GPU.", true);
+            return;
+        }
+        if self.vm.pending_changes() {
+            self.vm.report("Apply or Reset your changes before switching GPU.", true);
+            return;
+        }
+        if let Err(e) = self.vm.switch_gpu(index) {
+            self.vm.report(format!("Could not switch GPU: {e}"), true);
+            return;
+        }
+        // These were built around the old card's sensors, capabilities or curve.
+        self.fan = None;
+        self.curve = None;
+        self.xoc = None;
+        self.graphics = None;
+        if let Some(monitor) = &mut self.monitor {
+            monitor.reset_for_new_gpu();
+        }
+        self.update_poll_detail();
+        self.vm.report(format!("Switched to {}", self.vm.device_display_name()), false);
+        ctx.request_repaint();
     }
 
     fn show_children(&mut self, ctx: &Context) {

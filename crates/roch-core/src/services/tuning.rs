@@ -1126,20 +1126,49 @@ impl TuningService {
 
     /// Initialise the vendor API, then select `gpu_index`.
     pub fn initialize(&self, gpu_index: usize) -> Result<()> {
-        {
-            let mut drv = lock(&self.inner.driver);
-            drv.backend.initialize()?;
-            let devices = drv.backend.devices().to_vec();
-            let name = drv.backend.backend_name();
-            let mut st = self.state();
-            st.devices = devices;
-            st.backend_name = name;
-        }
-        self.select_gpu(gpu_index)
+        self.initialize_backend()?;
+        // The first selection has no old card to hand anything back from.
+        self.select_gpu_inner(gpu_index, false)
+    }
+
+    /// Initialise and select `gpu_index`, falling back to the first card when a saved index no
+    /// longer exists (a card was removed, or the driver reordered). The CLI's `--gpu` stays strict.
+    pub fn initialize_preferred(&self, gpu_index: usize) -> Result<()> {
+        self.initialize_backend()?;
+        let count = self.devices().len();
+        self.select_gpu_inner(if gpu_index < count { gpu_index } else { 0 }, false)
+    }
+
+    /// Initialise the vendor API and enumerate its cards without selecting one.
+    fn initialize_backend(&self) -> Result<()> {
+        let mut drv = lock(&self.inner.driver);
+        drv.backend.initialize()?;
+        let devices = drv.backend.devices().to_vec();
+        let name = drv.backend.backend_name();
+        let mut st = self.state();
+        st.devices = devices;
+        st.backend_name = name;
+        Ok(())
     }
 
     /// Switch to another GPU of the same backend. Fails for an index the backend did not report.
     pub fn select_gpu(&self, index: usize) -> Result<()> {
+        self.select_gpu_inner(index, true)
+    }
+
+    fn select_gpu_inner(&self, index: usize, release_fans: bool) -> Result<()> {
+        // Validate before touching the old card: a bad index must not change anything.
+        let count = self.devices().len();
+        if index >= count {
+            return Err(GpuError::new(format!("No GPU at index {index} ({count} found).")));
+        }
+        // Both controllers belong to the card they were started on. The software temperature limit
+        // is released below while the old capabilities are still in state; the fan curve has to be
+        // handed back first so its next poll cannot step the new card with the old card's curve.
+        if release_fans {
+            self.release_fan_control();
+        }
+
         let message;
         let mut logs = Vec::new();
         {
@@ -1160,6 +1189,8 @@ impl TuningService {
             self.inner.gpu_index.store(index, Ordering::SeqCst);
             st.caps = drv.backend.capabilities(index)?;
             self.inner.history.clear();
+            // Do not show the previous card's last reading while the first new sample is pending.
+            st.latest = None;
             // Whatever the card is already carrying — possibly from an earlier run — decides
             // whether its live voltage can be trusted as "stock".
             refresh_live_voltage_state(drv.backend.as_mut(), index, &mut st);

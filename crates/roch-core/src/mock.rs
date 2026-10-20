@@ -126,6 +126,18 @@ impl MockBackend {
         m
     }
 
+    /// A machine with two cards, for the multi-GPU selection tests and `--mock multi`. The mock
+    /// ignores the index for reads and writes, but enumerates both so selection can be exercised.
+    pub fn with_second_gpu() -> Self {
+        let mut m = Self::new();
+        let mut second = m.devices[0].clone();
+        second.index = 1;
+        second.name = "Simulated RTX 4070 SUPER (2)".into();
+        second.bus_id = "PCI bus 2, slot 0".into();
+        m.devices.push(second);
+        m
+    }
+
     /// The simulated temperature right now, before the next reading moves it.
     pub fn sim_temp_c(&self) -> f64 {
         self.sim_temp
