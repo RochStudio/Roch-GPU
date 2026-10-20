@@ -122,7 +122,9 @@ fn header(ui: &mut Ui, vm: &MainViewModel, actions: &mut Vec<MainAction>) {
                     ui.add_space(2.0);
                     ui.add(
                         egui::Label::new(
-                            RichText::new(vm.device_display_name()).font(theme::bold(BODY)).color(p.accent),
+                            RichText::new(format!("GPU: {}", vm.device_display_name()))
+                                .font(theme::bold(BODY))
+                                .color(p.accent),
                         )
                         .wrap(),
                     );
