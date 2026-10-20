@@ -107,11 +107,10 @@ fn dispatch(
         }
         "sensors" => {
             start(&svc, &store, gpu)?;
-            let g = svc.gpu_index();
-            let telemetry = svc.with_backend(|b| b.read_telemetry(g))?;
+            let telemetry = sample_telemetry(&svc)?;
             outln!(out, "{}", fmt_telemetry(&telemetry));
             for sensor in &telemetry.supplemental_sensors {
-                outln!(out, "{}: {} {}", sensor.name, reading(sensor.value, 3), sensor.unit);
+                outln!(out, "{}: {}", sensor.name, fmt_sensor(sensor.value, &sensor.unit));
             }
             Ok(0)
         }
@@ -386,25 +385,63 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
         uv_mv = if lock_mv > 0 && ceiling > 0 { lock_mv - ceiling } else { 0 };
     }
     let rail = |floor: i32, max: i32| if max > 0 { format!("{floor}-{max} mV") } else { "n/a".into() };
-    outln!(
-        out,
-        "Current: core {} MHz, mem {} {}, power {}%, temp {temp_limit}, vboost {}%, uv {uv_mv} mV, rail {}, msvdd {}, \
-         xbar {} MHz, sys {} MHz, video {} MHz, fan {fan}",
-        signed(s.core_offset_mhz),
-        s.memory_offset_mhz,
-        c.memory_clock_unit,
-        s.power_limit_percent,
-        s.voltage_boost_percent,
-        rail(s.voltage_rail_floor_mv, s.voltage_rail_max_mv),
-        rail(s.msvdd_rail_floor_mv, s.msvdd_rail_max_mv),
-        signed(s.xbar_offset_mhz),
-        signed(s.sys_offset_mhz),
-        signed(s.video_offset_mhz)
-    );
-    let g = svc.gpu_index();
-    let t = svc.with_backend(|b| b.read_telemetry(g))?;
+    // Only the controls this card has, gated as the capability lines above are: a 0 for a lever
+    // the card does not offer reads as a setting.
+    let mut current = vec![
+        format!("core {} MHz", signed(s.core_offset_mhz)),
+        format!("mem {} {}", s.memory_offset_mhz, c.memory_clock_unit),
+        format!("power {}%", s.power_limit_percent),
+        format!("temp {temp_limit}"),
+    ];
+    if c.can_set_voltage_boost {
+        let key = if c.voltage_style == VoltageControlStyle::Percent { "vlimit" } else { "vboost" };
+        current.push(format!("{key} {}%", s.voltage_boost_percent));
+    }
+    if can_undervolt {
+        current.push(format!("uv {uv_mv} mV"));
+    }
+    if c.can_set_voltage_rail {
+        current.push(format!("rail {}", rail(s.voltage_rail_floor_mv, s.voltage_rail_max_mv)));
+    }
+    if c.can_set_msvdd_rail {
+        current.push(format!("msvdd {}", rail(s.msvdd_rail_floor_mv, s.msvdd_rail_max_mv)));
+    }
+    if c.can_set_xbar_offset {
+        current.push(format!("xbar {} MHz", signed(s.xbar_offset_mhz)));
+    }
+    if c.can_set_sys_offset {
+        current.push(format!("sys {} MHz", signed(s.sys_offset_mhz)));
+    }
+    if c.can_set_video_offset {
+        current.push(format!("video {} MHz", signed(s.video_offset_mhz)));
+    }
+    current.push(format!("fan {fan}"));
+    outln!(out, "Current: {}", current.join(", "));
+    let t = sample_telemetry(svc)?;
     outln!(out, "{}", fmt_telemetry(&t));
     Ok(0)
+}
+
+/// One telemetry sample for the one-shot commands. Intel derives power and load from counters,
+/// so its first reading has nothing to difference against; when either is missing, a second
+/// reading half a second later fills them in (the GUI and `monitor` get this from polling).
+fn sample_telemetry(svc: &TuningService) -> CliResult<GpuTelemetry> {
+    let g = svc.gpu_index();
+    let first = svc.with_backend(|b| b.read_telemetry(g))?;
+    if !first.power_watts.is_nan() && !first.gpu_load_percent.is_nan() {
+        return Ok(first);
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    Ok(svc.with_backend(|b| b.read_telemetry(g))?)
+}
+
+/// A supplemental reading as `sensors` prints it: a 0/1 "state" flag as No/Yes, as the
+/// Telemetry window shows it, otherwise the value and its unit.
+fn fmt_sensor(value: f64, unit: &str) -> String {
+    if unit == "state" && (value == 0.0 || value == 1.0) {
+        return if value == 1.0 { "Yes".into() } else { "No".into() };
+    }
+    format!("{} {unit}", reading(value, 3))
 }
 
 fn monitor(svc: &TuningService, store: &ProfileStore, o: &Opts, out: &mut dyn Write) -> CliResult<i32> {
@@ -839,10 +876,16 @@ pub fn fmt_telemetry(t: &GpuTelemetry) -> String {
     let mem =
         if t.memory_temperature_c.is_nan() { String::new() } else { format!(" mem{}", num(t.memory_temperature_c, 0)) };
     let volt = if t.voltage_mv.is_nan() { "   -".to_string() } else { format!("{:>4} mV", num(t.voltage_mv, 0)) };
+    // A card whose memory control is a data rate (Intel) reports in the editor's unit.
+    let (mem_value, mem_unit) = if t.memory_speed_mbps.is_finite() {
+        (t.memory_speed_mbps, "Mbps")
+    } else {
+        (t.memory_clock_mhz, "MHz")
+    };
     format!(
-        "{time}  {:>5} MHz core  {:>6} MHz mem  {:>4}°C{hs}{mem}  {volt}  {:>5}% TDP  load {:>3}%  fan {:>3}% ({} rpm)  {} {}",
+        "{time}  {:>5} MHz core  {:>6} {mem_unit} mem  {:>4}°C{hs}{mem}  {volt}  {:>5}% TDP  load {:>3}%  fan {:>3}% ({} rpm)  {} {}",
         num(t.core_clock_mhz, 0),
-        num(t.memory_clock_mhz, 0),
+        num(mem_value, 0),
         num(t.temperature_c, 1),
         reading(t.power_percent, 1),
         reading(t.gpu_load_percent, 0),
@@ -968,6 +1011,10 @@ mod tests {
         assert_eq!(signed(150), "+150");
         assert_eq!(signed(-15), "-15");
         assert_eq!(signed(0), "0");
+        assert_eq!(fmt_sensor(0.0, "state"), "No");
+        assert_eq!(fmt_sensor(1.0, "state"), "Yes");
+        assert_eq!(fmt_sensor(f64::NAN, "state"), "— state");
+        assert_eq!(fmt_sensor(1.3524, "V"), "1.352 V");
     }
 
     #[test]
@@ -993,6 +1040,8 @@ mod tests {
             rest,
             "   2610 MHz core   10501 MHz mem  39.5°C hs52   998 mV   36.3% TDP  load   8%  fan  30% (— rpm)  P0 None"
         );
+        let intel = fmt_telemetry(&GpuTelemetry { memory_clock_mhz: 2375.0, memory_speed_mbps: 19000.0, ..t.clone() });
+        assert!(intel.contains("   19000 Mbps mem  "), "a memory speed replaces the clock: {intel}");
         let no_volt = fmt_telemetry(&GpuTelemetry { voltage_mv: f64::NAN, ..t });
         assert!(no_volt.contains("°C hs52     -   36.3% TDP"), "{no_volt}");
     }

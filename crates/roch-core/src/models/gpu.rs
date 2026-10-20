@@ -370,6 +370,9 @@ pub struct GpuTelemetry {
     pub timestamp: DateTime<Utc>,
     pub core_clock_mhz: f64,
     pub memory_clock_mhz: f64,
+    /// Effective memory data rate per pin, in Mbps, for cards whose memory control is a speed
+    /// (Intel). Shown in place of the memory clock so it matches the editor. NaN when unavailable.
+    pub memory_speed_mbps: f64,
     /// NaN when unavailable.
     pub fabric_clock_mhz: f64,
     /// NaN when unavailable.
@@ -405,13 +408,14 @@ pub struct GpuTelemetry {
 }
 
 impl Default for GpuTelemetry {
-    /// The C# record's defaults: zeros except the fabric/SoC clocks and rail voltages, which are
-    /// NaN until a backend reads them.
+    /// The C# record's defaults: zeros except the memory speed, fabric/SoC clocks and rail
+    /// voltages, which are NaN until a backend reads them.
     fn default() -> Self {
         Self {
             timestamp: Utc::now(),
             core_clock_mhz: 0.0,
             memory_clock_mhz: 0.0,
+            memory_speed_mbps: f64::NAN,
             fabric_clock_mhz: f64::NAN,
             soc_clock_mhz: f64::NAN,
             supplemental_sensors: Vec::new(),

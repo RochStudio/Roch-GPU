@@ -600,6 +600,8 @@ impl IntelBackend {
         Ok(GpuTelemetry {
             core_clock_mhz: sensor(b, 80),
             memory_clock_mhz: sensor(b, 256),
+            // vramCurrentEffectiveFrequency, reported in Gbps: the unit the memory control uses.
+            memory_speed_mbps: sensor(b, 280) * 1000.0,
             temperature_c: sensor(b, 104),
             voltage_mv: sensor(b, 56) * 1000.0,
             hot_spot_c: f64::NAN,

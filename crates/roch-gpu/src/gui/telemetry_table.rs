@@ -158,7 +158,12 @@ impl TelemetryTable {
         if !caps.power_limit_is_offset && caps.voltage_style != VoltageControlStyle::Percent {
             t.sensor("coremeasured", "GPU core (measured)", "MHz", 0);
         }
-        t.sensor("mem", "Memory", "MHz", 0);
+        // A card whose memory control is a data rate (Intel) reports in the editor's unit.
+        if first.memory_speed_mbps.is_finite() {
+            t.sensor("memspeed", "Memory", "Mbps", 0);
+        } else {
+            t.sensor("mem", "Memory", "MHz", 0);
+        }
         if !first.fabric_clock_mhz.is_nan() {
             t.sensor("fclk", "Fabric (FCLK)", "MHz", 0);
         }
@@ -293,6 +298,7 @@ impl TelemetryTable {
         self.put("msvdd", t.msvdd_mv);
         self.put("core", t.core_clock_mhz);
         self.put("mem", t.memory_clock_mhz);
+        self.put("memspeed", t.memory_speed_mbps);
         self.put("fclk", t.fabric_clock_mhz);
         self.put("socclk", t.soc_clock_mhz);
         self.put("load", t.gpu_load_percent);
@@ -554,6 +560,17 @@ mod tests {
         assert!(t.rows().iter().any(|r| r.is_header && r.name == "MEMORY BANDWIDTH"), "bandwidth gets its own group");
         assert_eq!(row(&t, "Memory voltage").current, "1.352 V", "memory voltage retains precision");
         assert_eq!(row(&t, "GPU power").current, "110.2 W", "GPU power rendered");
+    }
+
+    #[test]
+    fn memory_speed_replaces_the_memory_clock() {
+        let first = GpuTelemetry { memory_clock_mhz: 2375.0, memory_speed_mbps: 19000.0, ..empty() };
+        let mut t = TelemetryTable::new(&first, &GpuCapabilities::default(), []);
+        t.add(&first, None);
+        assert_eq!(row(&t, "Memory").current, "19000 Mbps", "Intel memory in the editor's unit");
+        let mut t = TelemetryTable::new(&empty(), &GpuCapabilities::default(), []);
+        t.add(&GpuTelemetry { memory_clock_mhz: 10501.0, ..empty() }, None);
+        assert_eq!(row(&t, "Memory").current, "10501 MHz", "other cards keep the clock");
     }
 
     #[test]
