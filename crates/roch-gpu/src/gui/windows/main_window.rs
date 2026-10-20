@@ -17,7 +17,7 @@ pub const MIN_HEIGHT: f32 = 640.0;
 const TITLE_H: f32 = 30.0;
 /// The value box and the unit column beside it, so `%` and `MHz` sit next to the number.
 const VALUE_BOX_W: f32 = 60.0;
-const UNIT_COL_W: f32 = 26.0;
+const UNIT_COL_W: f32 = 32.0;
 const VALUE_COL_W: f32 = VALUE_BOX_W + 5.0 + UNIT_COL_W;
 
 /// What the main window asks the app to do.

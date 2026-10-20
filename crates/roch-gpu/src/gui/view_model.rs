@@ -652,7 +652,7 @@ impl MainViewModel {
 
     pub fn memory_label(&self) -> &'static str {
         if self.caps.memory_clock_unit == "Mbps" {
-            "Memory Speed (Mbps)"
+            "Memory Speed"
         } else if self.caps.memory_clock_is_absolute {
             "Memory Clock"
         } else {
@@ -678,7 +678,7 @@ impl MainViewModel {
         if self.caps.power_limit_is_offset { "Power Limit Offset" } else { "Power Limit" }
     }
     /// The unit drawn beside the value box for fields whose unit is not in the label. `""` keeps
-    /// the unit in the label (mV, A, Mbps).
+    /// the unit in the label (mV, A).
     pub fn field_unit(&self, f: Field) -> &'static str {
         match f {
             Field::CoreOffset
@@ -688,7 +688,9 @@ impl MainViewModel {
             | Field::ClockLockMin
             | Field::ClockLockMax => "MHz",
             Field::MemoryOffset => {
-                if self.caps.memory_clock_is_absolute {
+                if self.caps.memory_clock_unit == "Mbps" {
+                    "Mbps"
+                } else if self.caps.memory_clock_is_absolute {
                     if self.caps.memory_clock_unit == "MHz" { "MHz" } else { "" }
                 } else {
                     "MHz"

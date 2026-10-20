@@ -181,6 +181,7 @@ fn intel_caps(base: &GpuCapabilities) -> GpuCapabilities {
         core_offset_step_mhz: 1,
         core_offset_min_mhz: -300,
         memory_clock_is_absolute: true,
+        memory_clock_unit: "Mbps".into(),
         memory_offset_min_mhz: 19000,
         memory_offset_max_mhz: 22000,
         temp_limit_min_c: 60,
@@ -220,6 +221,8 @@ fn intel_steps_ranges_and_clock_window() {
     }
     assert_eq!(vm.get(Field::CoreOffset), 105, "Intel core step is 15 MHz");
     assert_eq!(vm.get(Field::MemoryOffset), 19100, "Intel memory step is 100 Mbps");
+    assert_eq!(vm.memory_label(), "Memory Speed");
+    assert_eq!(vm.field_unit(Field::MemoryOffset), "Mbps", "Mbps is drawn next to the value");
     assert_eq!(vm.get(Field::VoltageBoost), 45, "Intel voltage step is 5 percent");
     assert_eq!(vm.get(Field::PowerLimit), 105, "Intel power step is 5 percent");
     assert_eq!(vm.get(Field::TempLimit), 95, "Intel temperature step is 5 percent");
