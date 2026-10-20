@@ -50,6 +50,16 @@ On this B60 the advertised range is 400–3000 MHz, but the factory range reads 
 
 Validation: 466 core, 34 telemetry and 18 app checks pass (518 total). A live 400–2300 MHz write/readback test passed, factory reset returned 400–2400 MHz, and exact previous tuning state, fan configuration and V/F curve were verified after restoration. No increased upper clock, voltage or power limits were tested. See [Arc Power security review](arc-power-security-review.md).
 
+## Rust build validation
+
+Tested on 2026-10-20 with the same Arc Pro B60 and driver 32.0.101.9030.
+
+- Read-only: `info` and `sensors` report the ranges in the table above. Telemetry shows memory as the driver's effective data rate (19000 Mbps), the unit the editor uses.
+- Clock range: `ctlFrequencyGetProperties` now reports 400–2400 MHz, the same as the factory range, so the editor's ceiling is 2400 MHz rather than the 3000 MHz recorded above. The Rust and C# builds read it identically; the difference is in what the driver reports.
+- Writes: `cargo run -p roch-intel --example intel_validate -- --write` (a dry run without `--write` prints the plan and writes nothing). Each step moves one control by its smallest step, verifies the readback, restores it, and checks the whole tuning state against the starting snapshot. All nine passed: core 0 → −1 MHz, memory 19000 → 19001 Mbps, power 100 → 99 %, temperature limit 100 → 99 %, voltage limit 0 → 1 %, V/F point 5 2880 → 2830 MHz and back to stock, fixed 40 % fans, a six-point fan curve, and a 400–2300 MHz clock range then factory. The final state, including V/F frequencies, matched the snapshot.
+
+As before, this verifies writes, readback and restoration, not gaming or stress-test stability.
+
 ## Version 1.0.9 review and validation
 
 The latest checks are recorded in [1.0.9 notes](releases/1.0.9.md). The editor uses 15 MHz core, 100 Mbps memory, and 5% voltage/power/temperature increments; the table above describes the finer native API granularity. Loading existing off-grid settings does not round them.

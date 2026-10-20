@@ -64,10 +64,11 @@ Each vendor crate loads its driver DLL from System32 only, and builds and tests 
 
 ## Verification status
 
-- **Tests:** 232 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver.
+- **Tests:** 233 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver.
 - **NVIDIA:** on an RTX 5070 Ti with driver 616.92, read-only output matches the C# 1.1.0 build. That covers `info`, `sensors` and `domains`, and the full `diag` dump is byte-identical apart from live readings.
 - **Write paths:** the code that writes to the GPU (apply, reset, fans, V/F curve, XOC levers) is a faithful port, but it has **not yet been validated on hardware** in the Rust build. Test carefully before relying on it. The same goes for the software temperature limit: its controller is tested only against the simulated GPU, and its read side (`info` reports `Soft temp limit: 50..105 °C` on the 5070 Ti, with 88 °C as the card's own limit) is the only part run on the card.
-- **AMD and Intel:** ported with their unit tests, but not yet run on an AMD or Arc card.
+- **Intel:** on an Arc Pro B60 with driver 32.0.101.9030, `info` and `sensors` read the card correctly, and every write path passed a write/readback/restore run: core offset, memory speed, power, temperature and voltage limits, a V/F point, fixed fan duty, a fan curve and the clock range, with the full tuning state back to its snapshot after each step (`cargo run -p roch-intel --example intel_validate`; see [Intel Arc B60](docs/intel-arc-b60.md)). That covers single-step changes, not stability under load.
+- **AMD:** ported with its unit tests, but not yet run on an AMD card.
 
 See the C# repository's notes for the hardware validation history of the original. They are copied in [`docs/`](docs/), including [driver compatibility](docs/r615-compatibility.md), [Intel Arc B60](docs/intel-arc-b60.md) and [profile recovery](docs/profile-recovery.md).
 
