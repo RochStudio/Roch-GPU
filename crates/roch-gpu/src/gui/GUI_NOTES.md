@@ -13,7 +13,9 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
   `--mock rtx50` simulates a card without a hardware temperature limit (as an RTX 50), which shows
   the software Temperature Limit row instead; `--mock multi` simulates two cards to try the header
   GPU menu.
-* Beside a resident (real, elevated) Roch GPU: `ROCH_TRACE=<file> ROCH_TRACE_BENCH=1` with `--mock`
+* Beside a resident (real, elevated) Roch GPU: `--mock --isolated` skips the single-instance
+  claim without signalling the resident copy. It only works with `--mock`.
+  Alternatively, `ROCH_TRACE=<file> ROCH_TRACE_BENCH=1` with `--mock`
   makes the run *isolated* (`trace::isolated`): no single-instance claim or show request, so the
   resident copy is neither signalled nor asked to come forward. The bench script then exits by
   itself after ~45 s.
@@ -27,8 +29,8 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 * `cargo test -p roch-gpu` — view-model tests in `gui/tests.rs` (mock backend, temp store, fake
   logon task), plus unit tests in `format.rs`, `assets.rs`, `startup.rs`, `windows/graphics.rs`,
   `telemetry_table.rs`, `fan_editor.rs`, `vf_editor.rs`, `windows/fan.rs`, `windows/monitor.rs`.
-* Visual checks: launch with `--mock` and `APPDATA` pointed at a scratch folder (so real profiles and
-  settings are untouched), then screenshot the window (e.g. PowerShell `CopyFromScreen`).
+* Visual checks: launch with `--mock --isolated` and `APPDATA` pointed at a scratch folder, then
+  inspect the main and child windows, including large text, scaling and scrolling.
 
 ## Module map (`src/gui/`)
 
@@ -38,7 +40,7 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 | `startup.rs` | `App.OnStartup` | `Flags::parse`, backend detection + "start simulated?" offer, recovery journal (recover BEFORE the logon profile), `--apply-profile`, `--exit` |
 | `shared.rs` | `App` statics | `Shared` (Arc service, store, `Mutex<AppSettings>`, `Mutex<Option<ProfileRecovery>>`, recovery notice, `StartupTasks`), `trial_profile` (= `App.TrialProfile`), `log`/`log_line` (1 MB rotating log) |
 | `view_model.rs` | `MainViewModel`, `ProfileSlot` | all UI logic, toolkit-free |
-| `app.rs` | `MainWindow.xaml.cs` | `RochApp`: worker thread, tray, hide-to-tray, child windows, modal dialogs, poll background mode, theme toggle, close-with-fan prompt |
+| `app.rs` | `MainWindow.xaml.cs` | `RochApp`: worker thread, tray, hide-to-tray, child windows, modal dialogs, poll background mode, live settings, close-with-fan prompt |
 | `windows/main_window.rs` | `MainWindow.xaml` | draws the root viewport, returns `MainAction`s |
 | `windows/xoc.rs` | `XocWindow` | done |
 | `windows/graphics.rs` | `GraphicsWindow` | done |
@@ -49,8 +51,11 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 | `fan_editor.rs` | `Controls/FanCurveEditor.cs` (logic half) | point math, hit-testing, drag/add/remove, typed edits — UI-free, tested |
 | `vf_editor.rs` | `Controls/VfCurveEditor.cs` (logic half) | axes, hit-testing, snapping, Ctrl/Shift drags, cap/ceiling, keys, status texts — UI-free, tested |
 | `windows/mod.rs` | — | `WinCtx`, `ChildChrome`, `child_builder`, `Placement`, `content_frame` |
-| `theme.rs` | `Native/Theme.cs`, `App.xaml` brushes | `Palette::{LIGHT,DARK}`, `pal(ctx)`, `apply(ctx, dark)`, `install_fonts`, `bold()/regular()`, `BODY`=12 |
-| `widgets.rs` | `App.xaml` styles, `RangeSlider`, `ValueBoxBehavior`, `ThemeGlyph` | `button(ButtonKind)`, `title_button`, `paint_moon`, `layout_slider`/`tight_slider`/`nudged_slider`, `nudge_button` (hold-repeat 400/60 ms), `range_slider`, `value_box`, `checkbox`, `info_line`, `layout_panel`, `label` |
+| `theme.rs` | `Native/Theme.cs`, `App.xaml` brushes | `Palette::{LIGHT,DARK}`, `pal(ctx)`, `apply(ctx, prefs, dark)`, `install_fonts`, `bold()/regular()`, `pitch`, `radius`, `BODY`=12 |
+| `preferences.rs` | Roch Viewer settings | bounded UI preferences, palettes and presets; serialized under `UiPreferences` in settings.json |
+| `settings_window.rs` | Roch Viewer settings | live appearance, colours, text, layout, telemetry, window and behaviour pages |
+| `fonts.rs` | Roch Viewer fonts | installed font-family discovery from Windows registry and font-file resolution |
+| `widgets.rs` | `App.xaml` styles, `RangeSlider`, `ValueBoxBehavior`, `ThemeGlyph` | `button(ButtonKind)`, `title_button`, `layout_slider`/`tight_slider`/`nudged_slider`, `nudge_button` (hold-repeat 400/60 ms), `range_slider`, `value_box`, `checkbox`, `info_line`, `layout_panel`, `label` |
 | `format.rs` | .NET format strings | `signed` (`+#;-#;0`), `one_decimal` (`0.#`), `parse_signed` (`TryParseSigned`), `info_line_parts` |
 | `tray.rs` | `SetupTray` | Show / Reset GPU to defaults / Exit, double-click = Show; 16 px frame from the .ico |
 | `assets.rs` | resources | `icon.png` + `RochGPU.ico` embedded (`crates/roch-gpu/assets/`) |
@@ -59,7 +64,7 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
 ## Windows / viewports
 
 * Main window = root viewport, undecorated (custom 30 px title strip: icon, "Roch GPU 1.1.0",
-  theme ☀/moon, −, ×), width 660, not resizable; height follows content with a 640 floor
+  settings gear, −, ×), base width 660, not resizable; height follows content with a 640 floor
   (`SizeToContent`), via `ViewportCommand::InnerSize` from `RochApp::ui`.
 * Every other window is an **immediate viewport** owned by `RochApp` as `Option<T>` (`None` =
   closed). Each frame `RochApp::show_children` builds a `WinCtx { vm: &mut MainViewModel, shared,
@@ -69,6 +74,11 @@ eframe). eframe 0.37's `App` trait is `logic(ctx, frame)` + `ui(ui, frame)` (no 
   pending focus request and reports close. `ChildChrome::fit(ctx, size)` = `SizeToContent`.
 * Clicking a window's button again focuses it (`T::focus()`); Telemetry toggles (focus, or close
   when already focused), as in WPF.
+* Native window effects are cached: opacity changes when its value changes, screen fitting runs
+  after size/DPI/monitor changes, and child size constraints are sent only when they change.
+  Native title lookup enumerates the calling UI thread only. Reading titles on driver/helper
+  threads can send synchronous cross-thread messages and stall interaction.
+  Renderers share an immutable `Arc<Prefs>` snapshot; publish a new snapshot after edits.
 * Placement: `Placement::RightOfOwner` (Monitor, Graphics: `Left = main.Right + 8`), `CenterOwner`
   (XOC, Fan, Curve). Build the viewport with `self.chrome.builder(title, size, icon, placement,
   main_rect)`: the position is worked out once, on open (part 2 fix — recomputing it from the main
@@ -100,7 +110,13 @@ Font: Consolas 12 (`theme::regular(BODY)`, bold = `theme::bold(BODY)` → consol
 `%WINDIR%\Fonts`, Segoe UI Symbol as the fallback (egui's own fonts are not compiled in, so a new
 glyph must exist in Consolas or Segoe UI Symbol). The theme is switched by
 
-`theme::apply(ctx, dark)`; `RochApp` persists it in `AppSettings::dark_mode`. Custom-drawn
+`theme::apply(ctx, prefs, dark)`; `RochApp` persists preferences in `AppSettings::ui_preferences`
+and keeps the legacy `dark_mode` and `poll_interval_ms` fields in sync. `Ctrl+,` opens Settings.
+The root and child windows respect the monitor bounds; body content scrolls at larger sizes.
+Settings follows Roch Viewer's 640 × 600 layout: 130-point sidebar, rounded tabs, red page headings,
+section dividers and a fixed footer. Its Consolas 13-point controls stay readable while the main
+window's font and text size are edited. GPU panel and Telemetry options use the same styling.
+Custom-drawn
 controls (graphs, curve editors) should read `pal(ui.ctx())` every frame.
 
 ## View-model API (`MainViewModel`)

@@ -132,7 +132,12 @@ fn plan(caps: &GpuCapabilities, initial: &GpuTuningState, curve: &[VfCurveSample
     );
     scalar(
         caps.can_set_power_limit,
-        Scalar { name: "Power limit", unit: "%", set: |b, g, v| b.set_power_limit(g, v), get: |s| s.power_limit_percent },
+        Scalar {
+            name: "Power limit",
+            unit: "%",
+            set: |b, g, v| b.set_power_limit(g, v),
+            get: |s| s.power_limit_percent,
+        },
         caps.power_limit_min_percent,
         caps.power_limit_max_percent,
     );
@@ -171,11 +176,12 @@ fn plan(caps: &GpuCapabilities, initial: &GpuTuningState, curve: &[VfCurveSample
 
     if caps.can_set_fan_speed {
         steps.push(Step::FanFixed(FIXED_FAN_PERCENT));
-        let points: Vec<FanPoint> = [(30.0, 30.0), (45.0, 30.0), (60.0, 40.0), (70.0, 55.0), (80.0, 75.0), (90.0, 90.0)]
-            .into_iter()
-            .take(caps.fan_curve_points.max(0) as usize)
-            .map(|(t, p)| FanPoint::new(t, p))
-            .collect();
+        let points: Vec<FanPoint> =
+            [(30.0, 30.0), (45.0, 30.0), (60.0, 40.0), (70.0, 55.0), (80.0, 75.0), (90.0, 90.0)]
+                .into_iter()
+                .take(caps.fan_curve_points.max(0) as usize)
+                .map(|(t, p)| FanPoint::new(t, p))
+                .collect();
         if points.len() >= 2 {
             steps.push(Step::FanCurve(FanCurve::with_points(points)));
         }
@@ -211,7 +217,8 @@ fn restore_fans(b: &mut IntelBackend, initial: &GpuTuningState) -> Result<()> {
 fn restore_clock_range(b: &mut IntelBackend, initial: &GpuTuningState) -> std::result::Result<(), String> {
     b.set_clock_range(GPU, 0, 0).map_err(err)?;
     let now = state(b)?;
-    if (now.locked_clock_min_mhz, now.locked_clock_max_mhz) != (initial.locked_clock_min_mhz, initial.locked_clock_max_mhz)
+    if (now.locked_clock_min_mhz, now.locked_clock_max_mhz)
+        != (initial.locked_clock_min_mhz, initial.locked_clock_max_mhz)
     {
         // The starting range was a custom one, not the factory range.
         b.set_clock_range(GPU, initial.locked_clock_min_mhz, initial.locked_clock_max_mhz).map_err(err)?;

@@ -6,8 +6,7 @@
 use std::time::Duration;
 
 use eframe::egui::{
-    self, Align2, Color32, CornerRadius, CursorIcon, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2,
-    vec2,
+    self, Align2, Color32, CursorIcon, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 
 use super::theme::{self, BODY, pal};
@@ -32,6 +31,7 @@ pub enum ButtonKind {
 
 /// A flat button of the given size. `bold` picks the bold face.
 pub fn button(ui: &mut Ui, text: &str, kind: ButtonKind, size: Vec2, enabled: bool, bold: bool) -> Response {
+    let size = vec2(size.x, theme::pitch(size.y));
     let p = pal(ui.ctx());
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (rect, resp) = ui.allocate_exact_size(size, sense);
@@ -82,7 +82,7 @@ pub fn button(ui: &mut Ui, text: &str, kind: ButtonKind, size: Vec2, enabled: bo
         }
     }
     let painter = ui.painter();
-    painter.rect(rect, CornerRadius::same(radius), fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
+    painter.rect(rect, theme::radius(radius), fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
     let font = if bold { theme::bold(BODY) } else { theme::regular(BODY) };
     painter.text(rect.center(), Align2::CENTER_CENTER, text, font, fg);
     if enabled { resp.on_hover_cursor(CursorIcon::PointingHand) } else { resp }
@@ -101,25 +101,6 @@ pub fn title_button(ui: &mut Ui, glyph: &str, width: f32, close: bool, font_size
     ui.painter().rect_filled(rect, 0.0, fill);
     ui.painter().text(rect.center(), Align2::CENTER_CENTER, glyph, theme::regular(font_size), fg);
     resp
-}
-
-/// The filled crescent of `ThemeGlyph` (light mode's "switch to dark" button) in an 18×18 box.
-///
-/// The WPF path `M14.125,1.324 A8,8 0 1 0 14.125,16.676 A8,8 0 0 1 14.125,1.324 Z` is two r=8
-/// arcs through the tips (14.125, 1.324) and (14.125, 16.676). A circle of radius 8 through both
-/// tips has its centre 2.253 either side of x=14.125: the large arc belongs to the circle centred
-/// at x=11.872 (the moon's body) and the small inner arc to the one centred at x=16.378 (the cut).
-/// That leaves a crescent about 4.5 px thick at its widest. Painted as the body, then the cut in
-/// `behind`, clipped to the glyph box.
-pub fn paint_moon(ui: &Ui, center: egui::Pos2, color: Color32, behind: Color32) {
-    const TIP_X: f32 = 14.125;
-    const HALF_CHORD: f32 = 7.676_073;
-    const R: f32 = 8.0;
-    let offset = (R * R - HALF_CHORD * HALF_CHORD).sqrt();
-    let origin = center - vec2(9.0, 9.0);
-    let painter = ui.painter_at(Rect::from_min_size(origin, vec2(18.0, 18.0)));
-    painter.circle_filled(origin + vec2(TIP_X - offset, 9.0), R, color);
-    painter.circle_filled(origin + vec2(TIP_X + offset, 9.0), R, behind);
 }
 
 /// Text in the muted style, optionally coloured.
@@ -181,7 +162,7 @@ pub fn nudge_button(ui: &mut Ui, glyph: &str, enabled: bool) -> bool {
     } else {
         (p.panel_alt, if enabled { p.text } else { p.muted }, p.border)
     };
-    ui.painter().rect(rect, CornerRadius::same(3), fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
+    ui.painter().rect(rect, theme::radius(3), fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
     ui.painter().text(rect.center(), Align2::CENTER_CENTER, glyph, theme::regular(9.0), fg);
     fire
 }
@@ -205,7 +186,7 @@ fn value_at(rect: Rect, thumb_w: f32, min: i32, max: i32, step: i32, x: f32) -> 
 /// The main window's slider (`LayoutSlider`): a 4 px track, accent to the left of the 12×24
 /// thumb, border colour to the right. Click or drag moves to the point.
 pub fn layout_slider(ui: &mut Ui, vm: &mut MainViewModel, f: Field, width: f32, enabled: bool) {
-    slider_impl(ui, vm, f, width, enabled, 24.0, 12.0, 4.0)
+    slider_impl(ui, vm, f, width, enabled, theme::pitch(24.0), 12.0, 4.0)
 }
 
 /// The compact XOC slider (`Tight`): 17 px high.
@@ -260,7 +241,7 @@ fn paint_slider(ui: &Ui, rect: Rect, x: f32, enabled: bool, h: f32, tw: f32, th:
     painter.rect_filled(Rect::from_min_max(pos2(rect.left(), mid - th / 2.0), pos2(x, mid + th / 2.0)), 0.0, left_col);
     let thumb = Rect::from_center_size(pos2(x, mid), vec2(tw, h));
     let tc = if enabled { p.text } else { p.muted };
-    painter.rect(thumb, CornerRadius::same(1), tc, Stroke::new(1.0, tc), StrokeKind::Inside);
+    painter.rect(thumb, theme::radius(1), tc, Stroke::new(1.0, tc), StrokeKind::Inside);
 }
 
 /// Nudge, slider, nudge — the middle column of a main-window row.
@@ -326,18 +307,18 @@ pub fn range_slider(ui: &mut Ui, vm: &mut MainViewModel, lo: Field, hi: Field, w
     let painter = ui.painter();
     painter.rect_filled(
         Rect::from_min_max(pos2(rect.left(), mid - TRACK_H / 2.0), pos2(rect.right(), mid + TRACK_H / 2.0)),
-        CornerRadius::same(1),
+        theme::radius(1),
         track,
     );
     if xh > xl {
         painter.rect_filled(
             Rect::from_min_max(pos2(xl, mid - TRACK_H / 2.0), pos2(xh, mid + TRACK_H / 2.0)),
-            CornerRadius::same(1),
+            theme::radius(1),
             span,
         );
     }
     for x in [xl, xh] {
-        painter.rect_filled(Rect::from_center_size(pos2(x, mid), vec2(THUMB_W, THUMB_H)), CornerRadius::same(2), thumb);
+        painter.rect_filled(Rect::from_center_size(pos2(x, mid), vec2(THUMB_W, THUMB_H)), theme::radius(2), thumb);
     }
 }
 
@@ -416,7 +397,7 @@ pub fn checkbox(ui: &mut Ui, checked: &mut bool, text: &str, enabled: bool) -> R
         (p.bg, if enabled { p.border } else { p.muted })
     };
     let painter = ui.painter();
-    painter.rect(boxr, CornerRadius::same(2), fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
+    painter.rect(boxr, theme::radius(2), fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
     if *checked {
         let c = boxr.center();
         painter.line_segment([c + vec2(-4.0, 0.0), c + vec2(-1.0, 3.0)], Stroke::new(2.0, Color32::WHITE));
@@ -436,7 +417,7 @@ pub fn layout_panel<R>(ui: &mut Ui, margin: egui::Margin, add: impl FnOnce(&mut 
     let p = pal(ui.ctx());
     egui::Frame::new()
         .stroke(Stroke::new(1.0, p.section_border))
-        .corner_radius(CornerRadius::same(2))
+        .corner_radius(theme::radius(2))
         .inner_margin(margin)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());

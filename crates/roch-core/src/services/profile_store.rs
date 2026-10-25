@@ -164,6 +164,9 @@ pub struct AppSettings {
     pub use_mock_backend: bool,
     /// Fresh settings open in light mode; an explicitly saved theme is retained.
     pub dark_mode: bool,
+    /// GUI appearance and layout preferences. Kept separate from tuning profiles;
+    /// older builds can ignore this object and still read the existing settings.
+    pub ui_preferences: serde_json::Value,
     /// The GPU the window last tuned, as an index into the backend's device list. Clamped to the
     /// enumerated list at startup, so a removed card or a driver that reorders falls back to 0.
     pub gpu_index: usize,
@@ -194,6 +197,7 @@ impl Default for AppSettings {
             history_seconds: 120,
             use_mock_backend: false,
             dark_mode: false,
+            ui_preferences: serde_json::Value::Null,
             gpu_index: 0,
             last_profile_by_gpu: BTreeMap::new(),
             observed_max_voltage_by_gpu: BTreeMap::new(),
@@ -239,7 +243,12 @@ mod tests {
         let dir = temp_dir("settings");
         let store = ProfileStore::new(Some(dir.clone())).unwrap();
         assert_eq!(store.load_settings(), AppSettings::default());
-        let mut s = AppSettings { dark_mode: true, ..Default::default() };
+        let mut s = AppSettings {
+            dark_mode: true,
+            startup_profile: Some("Slot 2".into()),
+            ui_preferences: serde_json::json!({"theme":"system", "cards":[{"sensor":"temp", "label":"My GPU"}]}),
+            ..Default::default()
+        };
         s.nvvdd_default_max_by_gpu.insert("gpu".into(), 1035);
         store.save_settings(&s).unwrap();
         assert_eq!(store.load_settings(), s);
@@ -248,5 +257,15 @@ mod tests {
         fs::write(store.settings_path(), "{ not json").unwrap();
         assert_eq!(store.load_settings(), AppSettings::default());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn legacy_settings_load_without_ui_preferences() {
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"DarkMode":true,"StartupProfile":"Slot 3","PollIntervalMs":2000}"#).unwrap();
+        assert!(settings.dark_mode);
+        assert_eq!(settings.startup_profile.as_deref(), Some("Slot 3"));
+        assert_eq!(settings.poll_interval_ms, 2000);
+        assert!(settings.ui_preferences.is_null());
     }
 }

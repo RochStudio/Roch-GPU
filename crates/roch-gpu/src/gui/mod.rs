@@ -13,8 +13,11 @@ pub mod app;
 pub mod assets;
 pub mod bench;
 pub mod fan_editor;
+pub mod fonts;
 pub mod format;
 pub mod native;
+pub mod preferences;
+pub mod settings_window;
 pub mod shared;
 pub mod startup;
 pub mod telemetry_table;
@@ -93,7 +96,7 @@ pub fn run(args: &[String]) -> i32 {
             .with_title("Roch GPU")
             .with_app_id("RochGPU")
             .with_inner_size([windows::main_window::WIDTH, windows::main_window::MIN_HEIGHT])
-            .with_min_inner_size([windows::main_window::WIDTH, windows::main_window::MIN_HEIGHT])
+            .with_min_inner_size([420.0, 300.0])
             .with_decorations(false)
             .with_resizable(false)
             .with_maximize_button(false)

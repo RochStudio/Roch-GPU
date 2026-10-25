@@ -40,11 +40,11 @@ impl XocWindow {
         ctx.show_viewport_immediate(Self::id(), builder, |ui, _class: ViewportClass| {
             let closed = self.chrome.frame(ui.ctx(), w.dark);
             let resp = content_frame(ui.ctx(), 12).show(ui, |ui| {
-                ui.set_width(WIDTH - 24.0);
-                body(ui, vm);
+                ui.set_width(WIDTH * theme::text_factor() - 24.0);
+                egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| body(ui, vm)).content_size.y
             });
-            let h = (resp.response.rect.height()).max(MIN_HEIGHT);
-            self.chrome.fit(ui.ctx(), vec2(WIDTH, h));
+            let h = (resp.inner + 24.0).max(MIN_HEIGHT);
+            self.chrome.fit(ui.ctx(), vec2(WIDTH * theme::text_factor(), h));
             !closed
         })
     }

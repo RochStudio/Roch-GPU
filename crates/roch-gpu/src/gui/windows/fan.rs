@@ -118,10 +118,10 @@ impl FanWindow {
             let width = ui.ctx().input(|i| i.viewport().inner_rect.map(|r| r.width())).unwrap_or(WIDTH);
             let resp = content_frame(ui.ctx(), 12).show(ui, |ui| {
                 ui.set_width(width - 24.0);
-                self.body(ui, w);
+                egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| self.body(ui, w)).content_size.y
             });
             // SizeToContent="Height".
-            self.chrome.fit(ui.ctx(), vec2(width, resp.response.rect.height()));
+            self.chrome.fit(ui.ctx(), vec2(width, resp.inner + 24.0));
             !closed
         })
     }

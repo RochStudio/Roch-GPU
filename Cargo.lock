@@ -2284,8 +2284,10 @@ dependencies = [
  "roch-core",
  "roch-intel",
  "roch-nvidia",
+ "serde_json",
  "tray-icon",
  "windows-sys 0.59.0",
+ "winreg",
  "winresource",
 ]
 

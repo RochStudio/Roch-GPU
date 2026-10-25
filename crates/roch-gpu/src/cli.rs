@@ -877,11 +877,8 @@ pub fn fmt_telemetry(t: &GpuTelemetry) -> String {
         if t.memory_temperature_c.is_nan() { String::new() } else { format!(" mem{}", num(t.memory_temperature_c, 0)) };
     let volt = if t.voltage_mv.is_nan() { "   -".to_string() } else { format!("{:>4} mV", num(t.voltage_mv, 0)) };
     // A card whose memory control is a data rate (Intel) reports in the editor's unit.
-    let (mem_value, mem_unit) = if t.memory_speed_mbps.is_finite() {
-        (t.memory_speed_mbps, "Mbps")
-    } else {
-        (t.memory_clock_mhz, "MHz")
-    };
+    let (mem_value, mem_unit) =
+        if t.memory_speed_mbps.is_finite() { (t.memory_speed_mbps, "Mbps") } else { (t.memory_clock_mhz, "MHz") };
     format!(
         "{time}  {:>5} MHz core  {:>6} {mem_unit} mem  {:>4}°C{hs}{mem}  {volt}  {:>5}% TDP  load {:>3}%  fan {:>3}% ({} rpm)  {} {}",
         num(t.core_clock_mhz, 0),

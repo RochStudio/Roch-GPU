@@ -18,7 +18,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use eframe::egui::{self, Context, IconData, Pos2, Rect, Vec2, ViewportBuilder, ViewportCommand, ViewportId};
+use eframe::egui::{self, Context, IconData, Pos2, Rect, Vec2, ViewportBuilder, ViewportCommand, ViewportId, vec2};
 use roch_core::GpuTelemetry;
 use roch_core::services::{ListenerId, TuningService};
 
@@ -67,6 +67,11 @@ fn place(placement: Placement, size: Vec2, main: Rect) -> Pos2 {
 /// opens and whenever the mode flips, and report a close request.
 #[derive(Debug, Default)]
 pub struct ChildChrome {
+    maintenance: super::native::WindowMaintenance,
+    maximum_sent: Option<Vec2>,
+    title: String,
+    level_sent: Option<bool>,
+    position_restored: bool,
     theme_sent: Option<bool>,
     /// Where the window opened. Worked out once: recomputing it from the main window every frame
     /// dragged the child along whenever the main window moved or changed height.
@@ -86,6 +91,8 @@ impl ChildChrome {
         placement: Placement,
         main: Option<Rect>,
     ) -> ViewportBuilder {
+        self.title = title.into();
+        let size = size * theme::text_factor();
         if self.placed.is_none() {
             self.placed = main.map(|m| place(placement, size, m));
         }
@@ -94,6 +101,35 @@ impl ChildChrome {
 
     /// Call at the top of the viewport's ui callback. Returns true when the user closed it.
     pub fn frame(&mut self, ctx: &Context, dark: bool) -> bool {
+        let maximum = maximum_size(ctx);
+        if self.maximum_sent != Some(maximum) {
+            ctx.send_viewport_cmd(ViewportCommand::MaxInnerSize(maximum));
+            self.maximum_sent = Some(maximum);
+        }
+        if let Some(size) = ctx.input(|i| i.viewport().inner_rect.map(|rect| rect.size()))
+            && (size.x > maximum.x + 1.0 || size.y > maximum.y + 1.0)
+        {
+            ctx.send_viewport_cmd(ViewportCommand::InnerSize(size.min(maximum)));
+        }
+        let prefs = super::preferences::current(ctx);
+        if self.level_sent != Some(prefs.always_on_top) {
+            ctx.send_viewport_cmd(ViewportCommand::WindowLevel(if prefs.always_on_top {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            }));
+            self.level_sent = Some(prefs.always_on_top);
+        }
+        if !self.position_restored {
+            self.position_restored = true;
+            if prefs.remember_positions
+                && let Some(at) = prefs.positions.get(&self.title)
+                && let Some(point) = super::native::position_points(*at, ctx.zoom_factor())
+            {
+                ctx.send_viewport_cmd(ViewportCommand::OuterPosition(point));
+            }
+        }
+        self.maintenance.update(ctx, &self.title, prefs.opacity);
         if self.theme_sent != Some(dark) {
             ctx.send_viewport_cmd(ViewportCommand::SetTheme(theme::system_theme(dark)));
             self.theme_sent = Some(dark);
@@ -112,7 +148,7 @@ impl ChildChrome {
 
     /// WPF `SizeToContent`: resize the window to `size` when the content's size changed.
     pub fn fit(&mut self, ctx: &Context, size: Vec2) {
-        let size = Vec2::new(size.x.round(), size.y.round());
+        let size = Vec2::new(size.x.round(), size.y.round()).min(maximum_size(ctx));
         if self.fitted.is_none_or(|s| (s - size).length() > 1.0) {
             self.fitted = Some(size);
             ctx.send_viewport_cmd(ViewportCommand::InnerSize(size));
@@ -123,6 +159,11 @@ impl ChildChrome {
     pub fn is_focused(ctx: &Context, id: ViewportId) -> bool {
         ctx.input(|i| i.raw.viewports.get(&id).and_then(|v| v.focused)).unwrap_or(false)
     }
+}
+
+fn maximum_size(ctx: &Context) -> Vec2 {
+    ctx.input(|i| i.viewport().monitor_size.map(|size| (size - vec2(24.0, 40.0)).max(vec2(420.0, 300.0))))
+        .unwrap_or(vec2(16_384.0, 16_384.0))
 }
 
 /// The themed background frame for a child window's content.

@@ -67,7 +67,17 @@ pub fn bench() -> Option<Bench> {
 /// A benchmark run against the simulated GPU stays out of the single-instance handshake, so it
 /// can run beside a resident copy of the app without signalling it or being turned away by it.
 pub fn isolated(args: &[String]) -> bool {
-    bench().is_some() && args.iter().any(|a| a == "--mock")
+    (bench().is_some() || args.iter().any(|a| a == "--isolated")) && args.iter().any(|a| a == "--mock")
+}
+
+#[cfg(test)]
+mod isolation_tests {
+    #[test]
+    fn isolated_preview_requires_an_explicit_mock_backend() {
+        assert!(super::isolated(&["--mock".into(), "--isolated".into()]));
+        assert!(!super::isolated(&["--isolated".into()]));
+        assert!(!super::isolated(&[]));
+    }
 }
 
 /// Milliseconds since the process was created.

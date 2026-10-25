@@ -5,7 +5,31 @@
 //! Viewer's: Consolas 12 px (bold for labels and values), loaded from the Windows font folder
 //! with Segoe UI Symbol as the fallback for the few glyphs Consolas lacks.
 
+use super::preferences::{self, Prefs, apply_contrast};
 use eframe::egui::{self, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Id, Stroke};
+
+#[derive(Clone, Copy)]
+struct Look {
+    text_delta: f32,
+    row_delta: f32,
+    bold: bool,
+    radius: f32,
+}
+static LOOK: std::sync::RwLock<Look> =
+    std::sync::RwLock::new(Look { text_delta: 0.0, row_delta: 0.0, bold: true, radius: 8.0 });
+fn look() -> Look {
+    *LOOK.read().unwrap_or_else(|e| e.into_inner())
+}
+pub fn pitch(base: f32) -> f32 {
+    let l = look();
+    (base + l.text_delta + l.row_delta).max(12.0)
+}
+pub fn text_factor() -> f32 {
+    ((BODY + look().text_delta) / BODY).max(1.0)
+}
+pub fn radius(base: u8) -> egui::CornerRadius {
+    egui::CornerRadius::same((base as f32 * look().radius / 8.0).round().clamp(0.0, 255.0) as u8)
+}
 
 /// Body text size in points (the WPF 12 device-independent pixels).
 pub const BODY: f32 = 12.0;
@@ -87,6 +111,28 @@ impl Palette {
     pub fn for_mode(dark: bool) -> Palette {
         if dark { Self::DARK } else { Self::LIGHT }
     }
+
+    pub fn from_preferences(prefs: &Prefs, dark: bool) -> Self {
+        let c = prefs.colors(dark);
+        Self {
+            bg: c.background,
+            panel: c.background,
+            panel_alt: c.background,
+            header: c.background,
+            border: c.border,
+            section_border: c.border,
+            text: apply_contrast(c.text, c.background, prefs.contrast),
+            muted: apply_contrast(c.dimmed, c.background, prefs.contrast),
+            highlight: if prefs.row_shading { c.shading } else { c.background },
+            brand: c.accent,
+            brand_hover: c.accent_hover,
+            selected: c.accent,
+            title_hover: c.hover,
+            accent: apply_contrast(c.value, c.background, prefs.contrast),
+            accent_dim: c.dimmed,
+            ..Self::for_mode(dark)
+        }
+    }
 }
 
 fn palette_id() -> Id {
@@ -100,12 +146,15 @@ pub fn pal(ctx: &Context) -> Palette {
 
 /// The bold body font.
 pub fn bold(size: f32) -> FontId {
-    FontId::new(size, FontFamily::Name("bold".into()))
+    FontId::new(
+        (size + look().text_delta).max(8.0),
+        if look().bold { FontFamily::Name("bold".into()) } else { FontFamily::Proportional },
+    )
 }
 
 /// The regular body font.
 pub fn regular(size: f32) -> FontId {
-    FontId::new(size, FontFamily::Proportional)
+    FontId::new((size + look().text_delta).max(8.0), FontFamily::Proportional)
 }
 
 /// Load Consolas (regular and bold) and Segoe UI Symbol from the Windows font folder. egui's own
@@ -113,7 +162,7 @@ pub fn regular(size: f32) -> FontId {
 /// Segoe UI Symbol cover every glyph the UI draws (° — – … · × − → ↑ ↓, and ◀ ▶ ☀, which only
 /// Segoe UI Symbol has). Should Consolas be missing, the first of Segoe UI, Tahoma and Arial
 /// stands in for it. A file that cannot be read is skipped, never fatal.
-pub fn install_fonts(ctx: &Context) {
+pub fn install_fonts(ctx: &Context, family: &str) {
     let mut fonts = FontDefinitions::empty();
     let dir = std::env::var_os("WINDIR").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
     let mut load = |key: &'static str, file: &str| -> Option<String> {
@@ -131,11 +180,25 @@ pub fn install_fonts(ctx: &Context) {
             .find_map(|(key, file)| load(key, file)),
     };
 
+    let custom = if family.eq_ignore_ascii_case("Consolas") { None } else { super::fonts::find_family(family) };
+    let custom_regular = custom.as_ref().and_then(|f| std::fs::read(&f.regular).ok());
+    let custom_bold = custom.as_ref().and_then(|f| f.bold.as_ref()).and_then(|p| std::fs::read(p).ok());
+    let selected_regular = custom_regular.map(|bytes| {
+        fonts.font_data.insert("selected".into(), std::sync::Arc::new(FontData::from_owned(bytes)));
+        "selected".to_owned()
+    });
+    let selected_bold = custom_bold.map(|bytes| {
+        fonts.font_data.insert("selected-bold".into(), std::sync::Arc::new(FontData::from_owned(bytes)));
+        "selected-bold".to_owned()
+    });
+
     let chain = |first: Option<String>| -> Vec<String> {
         [first, stand_in.clone(), symbols.clone()].into_iter().flatten().collect()
     };
-    let regular_chain = chain(regular.clone());
-    let bold_chain = chain(bold.or(regular));
+    let regular_chain = chain(selected_regular.clone().or(regular.clone()));
+    fonts.families.insert(FontFamily::Name("settings-mono".into()), chain(regular.clone()));
+    fonts.families.insert(FontFamily::Name("settings-bold".into()), chain(bold.clone().or(regular.clone())));
+    let bold_chain = chain(selected_bold.or(selected_regular).or(bold).or(regular));
     fonts.families.insert(FontFamily::Proportional, regular_chain.clone());
     fonts.families.insert(FontFamily::Monospace, regular_chain);
     fonts.families.insert(FontFamily::Name("bold".into()), bold_chain);
@@ -143,8 +206,15 @@ pub fn install_fonts(ctx: &Context) {
 }
 
 /// Paint everything for the given mode: store the palette and rebuild egui's visuals from it.
-pub fn apply(ctx: &Context, dark: bool) {
-    let p = Palette::for_mode(dark);
+pub fn apply(ctx: &Context, prefs: &Prefs, dark: bool) {
+    *LOOK.write().unwrap_or_else(|e| e.into_inner()) = Look {
+        text_delta: prefs.text_delta,
+        row_delta: prefs.row_delta,
+        bold: prefs.bold_headings,
+        radius: prefs.corner_radius,
+    };
+    preferences::publish(ctx, prefs);
+    let p = Palette::from_preferences(prefs, dark);
     ctx.data_mut(|d| d.insert_temp(palette_id(), p));
     let mut style = (*ctx.global_style()).clone();
     let mut v = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
@@ -171,7 +241,7 @@ pub fn apply(ctx: &Context, dark: bool) {
         w.weak_bg_fill = p.panel_alt;
         w.bg_stroke = Stroke::new(1.0, p.border);
         w.fg_stroke = Stroke::new(1.0, p.text);
-        w.corner_radius = egui::CornerRadius::same(2);
+        w.corner_radius = radius(2);
         w.expansion = 0.0;
     }
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, p.section_border);
@@ -184,8 +254,8 @@ pub fn apply(ctx: &Context, dark: bool) {
     style.text_styles.insert(egui::TextStyle::Small, regular(10.0));
     style.text_styles.insert(egui::TextStyle::Monospace, regular(BODY));
     style.text_styles.insert(egui::TextStyle::Heading, bold(14.0));
-    style.spacing.item_spacing = egui::vec2(6.0, 4.0);
-    style.spacing.interact_size.y = 20.0;
+    style.spacing.item_spacing = egui::vec2(6.0, (4.0 + prefs.row_delta).max(1.0));
+    style.spacing.interact_size.y = pitch(20.0);
     style.interaction.tooltip_delay = 0.4;
     // The same style under both egui themes, and the preference pinned, so the OS setting never
     // overrides the app's own choice.

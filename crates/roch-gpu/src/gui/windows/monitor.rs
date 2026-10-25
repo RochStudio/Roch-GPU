@@ -78,6 +78,20 @@ fn hms(secs: u64) -> String {
 }
 
 impl MonitorWindow {
+    pub fn sensor_catalog(&self) -> Vec<(String, String)> {
+        let mut group = String::new();
+        let mut catalog = Vec::new();
+        if let Some(table) = &self.table {
+            for row in table.rows() {
+                if row.is_header {
+                    group.clone_from(&row.name);
+                } else if let Some(key) = row.sensor_key() {
+                    catalog.push((key.to_string(), format!("{group} / {}", row.name)));
+                }
+            }
+        }
+        catalog
+    }
     pub fn id() -> ViewportId {
         ViewportId::from_hash_of("roch_monitor")
     }
@@ -169,31 +183,45 @@ impl MonitorWindow {
             pos2(ui.max_rect().right() - badge.size().x - 20.0, top),
             vec2(badge.size().x + 20.0, badge.size().y + 12.0),
         );
-        ui.painter().rect_filled(r, CornerRadius::same(5), p.panel);
+        ui.painter().rect_filled(r, theme::radius(5), p.panel);
         ui.painter().galley(r.min + vec2(10.0, 6.0), badge, p.text);
         ui.add_space(16.0);
 
         // Summary cards.
+        let prefs = crate::gui::preferences::current(ui.ctx());
         let gap = 12.0;
-        let card_w = ((ui.available_width() - 2.0 * gap) / 3.0).floor();
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for (label, value) in ["GPU TEMPERATURE", "CORE CLOCK", "BOARD POWER"].iter().zip(&self.summary) {
-                egui::Frame::new()
-                    .fill(p.panel)
-                    .stroke(Stroke::new(1.0, p.border))
-                    .corner_radius(CornerRadius::same(8))
-                    .inner_margin(egui::Margin::symmetric(16, 12))
-                    .show(ui, |ui| {
-                        ui.set_width(card_w - 34.0);
-                        ui.vertical(|ui| {
-                            ui.label(RichText::new(*label).font(theme::bold(BODY)).color(p.text));
-                            ui.add_space(5.0);
-                            ui.label(RichText::new(value).font(theme::regular(BODY)).color(p.text));
-                        });
+        let card_columns = prefs.card_columns.min(prefs.cards.len()).max(1);
+        let card_w = ((ui.available_width() - (card_columns - 1) as f32 * gap) / card_columns as f32).floor();
+        for cards in prefs.cards.chunks(card_columns) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for card in cards {
+                    let row = self.table.as_ref().and_then(|table| {
+                        table.rows().iter().find(|row| row.sensor_key() == Some(card.sensor.as_str()))
                     });
-            }
-        });
+                    let label = if card.label.is_empty() {
+                        row.map_or(card.sensor.as_str(), |row| row.name.as_str())
+                    } else {
+                        &card.label
+                    };
+                    let value = row.map_or("—", |row| row.current.as_str());
+                    egui::Frame::new()
+                        .fill(p.panel)
+                        .stroke(Stroke::new(1.0, p.border))
+                        .corner_radius(theme::radius(8))
+                        .inner_margin(egui::Margin::symmetric(16, 12))
+                        .show(ui, |ui| {
+                            ui.set_width(card_w - 34.0);
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new(label).font(theme::bold(BODY)).color(p.text));
+                                ui.add_space(5.0);
+                                ui.label(RichText::new(value).font(theme::regular(BODY)).color(p.text));
+                            });
+                        });
+                }
+            });
+            ui.add_space(6.0);
+        }
         ui.add_space(18.0);
 
         // Fixed column heading; its right gutter matches the scrollbar in the body.
@@ -225,7 +253,12 @@ impl MonitorWindow {
                     .auto_shrink([false, false])
                     .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                     .show(ui, |ui| {
-                        for row in rows {
+                        for (index, row) in rows
+                            .iter()
+                            .enumerate()
+                            .filter(|(index, _)| row_visible(rows, *index, &prefs.hidden_sensors))
+                        {
+                            let _ = index;
                             draw_row(ui, row, &p);
                         }
                     });
@@ -276,12 +309,24 @@ fn columns(r: Rect) -> [Rect; 5] {
     out
 }
 
+/// Hide an empty group along with its last hidden sensor.
+fn row_visible(rows: &[TelemetryRow], index: usize, hidden: &[String]) -> bool {
+    let row = &rows[index];
+    if row.is_header {
+        rows[index + 1..]
+            .iter()
+            .take_while(|r| !r.is_header)
+            .any(|r| r.sensor_key().is_some_and(|key| !hidden.iter().any(|h| h == key)))
+    } else {
+        row.sensor_key().is_none_or(|key| !hidden.iter().any(|h| h == key))
+    }
+}
 fn draw_row(ui: &mut Ui, row: &TelemetryRow, p: &Palette) {
     let width = ui.available_width();
     if row.is_header {
         // A group title: brand bar on the left, bold, spanning every column.
         ui.add_space(14.0);
-        let (r, _) = ui.allocate_exact_size(vec2(width, 15.0 + 4.0), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(vec2(width, theme::pitch(15.0 + 4.0)), Sense::hover());
         ui.painter().rect_filled(Rect::from_min_size(r.min, vec2(2.0, r.height())), CornerRadius::ZERO, p.brand);
         ui.painter().text(
             pos2(r.left() + 2.0 + 8.0, r.center().y),
@@ -293,15 +338,15 @@ fn draw_row(ui: &mut Ui, row: &TelemetryRow, p: &Palette) {
         ui.add_space(5.0);
         return;
     }
-    let (r, resp) = ui.allocate_exact_size(vec2(width, 15.0 + 12.0), Sense::hover());
+    let (r, resp) = ui.allocate_exact_size(vec2(width, theme::pitch(15.0 + 12.0)), Sense::hover());
     let fill = if resp.hovered() {
-        p.panel
+        p.title_hover
     } else if row.is_banded {
         p.highlight
     } else {
         Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(r, CornerRadius::same(3), fill);
+    ui.painter().rect_filled(r, theme::radius(3), fill);
     let cols = columns(r);
     let painter = ui.painter();
     // The name is clipped with an ellipsis and spelled out in full on hover.
@@ -336,7 +381,7 @@ fn style_scrollbar(ui: &mut Ui, p: &Palette) {
     v.hovered.fg_stroke.color = p.muted.gamma_multiply(0.65);
     v.active.fg_stroke.color = p.muted.gamma_multiply(0.8);
     for w in [&mut v.inactive, &mut v.hovered, &mut v.active] {
-        w.corner_radius = CornerRadius::same(4);
+        w.corner_radius = theme::radius(4);
     }
 }
 
@@ -355,7 +400,7 @@ fn switch(ui: &mut Ui, on: &mut bool, text: &str) -> egui::Response {
     let painter = ui.painter();
     painter.rect(
         track,
-        CornerRadius::same(8),
+        theme::radius(8),
         if *on { p.title_hover } else { p.border },
         Stroke::new(1.0, p.muted),
         StrokeKind::Inside,
@@ -389,5 +434,21 @@ mod tests {
         assert_eq!(c[0].width(), NAME_COL);
         assert!(c[1..].iter().all(|r| (r.width() - 100.0).abs() < 1e-3));
         assert_eq!(c[4].right(), 630.0);
+    }
+
+    #[test]
+    fn hiding_a_sensor_also_hides_its_empty_group_and_preserves_other_groups() {
+        let table = TelemetryTable::new(&GpuTelemetry::default(), &roch_core::GpuCapabilities::default(), []);
+        let rows = table.rows();
+        let hidden: Vec<String> = rows.iter().filter_map(|row| row.sensor_key()).map(str::to_string).collect();
+        assert!((0..rows.len()).all(|i| !row_visible(rows, i, &hidden)));
+        let except_temperature: Vec<String> = hidden.into_iter().filter(|key| key != "temp").collect();
+        let visible: Vec<&str> = rows
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| row_visible(rows, *i, &except_temperature))
+            .map(|(_, row)| row.name.as_str())
+            .collect();
+        assert_eq!(visible, ["TEMPERATURES", "GPU"]);
     }
 }

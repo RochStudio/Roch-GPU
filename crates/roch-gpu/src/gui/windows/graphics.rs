@@ -1,7 +1,7 @@
 //! Read-only static graphics-card details, matching Roch Viewer's Graphics section
 //! (C# `GraphicsWindow`).
 
-use eframe::egui::{self, Align, Context, CornerRadius, Layout, RichText, ViewportClass, ViewportId, vec2};
+use eframe::egui::{self, Align, Context, Layout, RichText, ViewportClass, ViewportId, vec2};
 use roch_core::{GpuGraphicsInfo, GpuGraphicsRow};
 
 use super::{ChildChrome, Placement, WinCtx, content_frame};
@@ -64,7 +64,7 @@ impl GraphicsWindow {
                 ui.add_space(4.0);
                 egui::Frame::new()
                     .fill(p.panel)
-                    .corner_radius(CornerRadius::same(5))
+                    .corner_radius(theme::radius(5))
                     .inner_margin(egui::Margin::symmetric(10, 6))
                     .show(ui, |ui| ui.label(RichText::new("READ ONLY").font(theme::bold(BODY)).color(p.text)));
             });

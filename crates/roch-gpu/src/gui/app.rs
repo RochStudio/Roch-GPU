@@ -6,15 +6,18 @@
 //! worker's finished jobs, and hands newly queued jobs to the worker. `ui()` draws the main window,
 //! then each open child window as an immediate viewport, then any modal dialog.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Context, IconData, TextureHandle, ViewportCommand, vec2};
 use roch_core::services::ServiceEvent;
 
 use super::bench::{self, Bench};
 use super::native;
+use super::preferences::{self, Prefs, ThemeMode};
+use super::settings_window::SettingsWindow;
 use super::shared::Shared;
 use super::theme;
 use super::tray::{Tray, TrayCommand};
@@ -72,6 +75,17 @@ pub struct RochApp {
     shared: Shared,
     vm: MainViewModel,
     dark: bool,
+    prefs: Prefs,
+    applied_font: String,
+    poll_interval: u32,
+    pending_preferences_save: Option<Instant>,
+    last_system_check: Instant,
+    last_position_sample: Instant,
+    sampled_positions: BTreeMap<String, (i32, i32)>,
+    root_position_restored: bool,
+    window_maintenance: native::WindowMaintenance,
+    settings_window: Option<SettingsWindow>,
+    content_width: f32,
     icon: Arc<IconData>,
     icon_tex: Option<TextureHandle>,
     events: Receiver<ServiceEvent>,
@@ -107,9 +121,12 @@ impl RochApp {
         show_requests: Receiver<()>,
     ) -> Self {
         let ctx = cc.egui_ctx.clone();
-        let dark = shared.settings().dark_mode;
-        theme::install_fonts(&ctx);
-        theme::apply(&ctx, dark);
+        let settings = shared.settings().clone();
+        let prefs = Prefs::from_json(&settings.ui_preferences, settings.dark_mode, settings.poll_interval_ms);
+        let dark = prefs.theme.is_dark(native::system_dark());
+        theme::install_fonts(&ctx, &prefs.font_family);
+        theme::apply(&ctx, &prefs, dark);
+        ctx.set_zoom_factor(prefs.ui_scale);
         crate::trace!("app: fonts + theme");
 
         let events = shared.service.subscribe();
@@ -125,7 +142,7 @@ impl RochApp {
         // The monitor starts closed, so the poll starts in the background (no driver call unless a
         // fan curve needs a temperature).
         shared.service.set_background_mode(true);
-        let interval = shared.settings().poll_interval_ms.max(250) as u64;
+        let interval = u64::from(prefs.refresh_ms);
         if let Err(e) = shared.service.start_polling(interval) {
             shared.log(&format!("Polling could not start: {e}"));
         }
@@ -140,6 +157,17 @@ impl RochApp {
             shared,
             vm,
             dark,
+            applied_font: prefs.font_family.clone(),
+            poll_interval: prefs.refresh_ms,
+            prefs,
+            pending_preferences_save: None,
+            last_system_check: Instant::now(),
+            last_position_sample: Instant::now(),
+            sampled_positions: BTreeMap::new(),
+            root_position_restored: false,
+            window_maintenance: native::WindowMaintenance::default(),
+            settings_window: None,
+            content_width: main_window::WIDTH,
             icon: super::assets::window_icon(),
             icon_tex: super::assets::icon_texture(&ctx),
             events,
@@ -186,6 +214,7 @@ impl RochApp {
         self.curve = None;
         self.xoc = None;
         self.graphics = None;
+        self.settings_window = None;
         self.update_poll_detail();
         self.hidden = true;
         ctx.send_viewport_cmd(ViewportCommand::Visible(false));
@@ -361,12 +390,10 @@ impl RochApp {
                     self.vm.report(format!("Could not open the log: {e}"), true);
                 }
             }
-            MainAction::ToggleTheme => {
-                self.dark = !self.dark;
-                theme::apply(ctx, self.dark);
-                self.shared.settings().dark_mode = self.dark;
-                self.shared.save_settings();
-            }
+            MainAction::OpenSettings => match &mut self.settings_window {
+                Some(window) => window.focus(),
+                None => self.settings_window = Some(SettingsWindow::default()),
+            },
             MainAction::Minimize => self.minimize_to_tray(ctx),
             MainAction::Close => self.request_close(ctx),
             MainAction::OpenUrl(url) => {
@@ -443,6 +470,131 @@ impl RochApp {
         }
         if poll_changed {
             self.update_poll_detail();
+        }
+        if self.settings_window.is_none() {
+            return;
+        }
+        let before = self.prefs.clone();
+        let catalog = self
+            .monitor
+            .as_ref()
+            .map(MonitorWindow::sensor_catalog)
+            .filter(|catalog| !catalog.is_empty())
+            .unwrap_or_else(|| {
+                vec![
+                    ("temp".into(), "Temperatures / GPU".into()),
+                    ("core".into(), "Clocks / GPU core".into()),
+                    ("watts".into(), "Power / Board draw".into()),
+                ]
+            });
+        if let Some(window) = &mut self.settings_window
+            && !window.show(ctx, &mut self.prefs, &self.shared, &self.icon, main_rect, &catalog)
+        {
+            self.settings_window = None;
+        }
+        if self.prefs != before {
+            self.apply_preferences(ctx);
+        }
+    }
+
+    fn apply_preferences(&mut self, ctx: &Context) {
+        self.dark = self.prefs.theme.is_dark(self.prefs.theme == ThemeMode::System && native::system_dark());
+        if self.applied_font != self.prefs.font_family {
+            theme::install_fonts(ctx, &self.prefs.font_family);
+            self.applied_font = self.prefs.font_family.clone();
+        }
+        theme::apply(ctx, &self.prefs, self.dark);
+        if ctx.zoom_factor() != self.prefs.ui_scale {
+            ctx.set_zoom_factor(self.prefs.ui_scale);
+        }
+        ctx.send_viewport_cmd(ViewportCommand::WindowLevel(if self.prefs.always_on_top {
+            egui::WindowLevel::AlwaysOnTop
+        } else {
+            egui::WindowLevel::Normal
+        }));
+        self.pending_preferences_save = Some(Instant::now());
+        ctx.request_repaint();
+    }
+
+    fn save_preferences(&self) {
+        {
+            let mut settings = self.shared.settings();
+            settings.ui_preferences = self.prefs.to_json();
+            settings.dark_mode = self.dark;
+            settings.poll_interval_ms = self.prefs.refresh_ms as i32;
+        }
+        self.shared.save_settings();
+    }
+
+    fn preferences_tick(&mut self, ctx: &Context) {
+        self.window_maintenance.update(ctx, "Roch GPU", self.prefs.opacity);
+        if !self.root_position_restored {
+            self.root_position_restored = true;
+            ctx.send_viewport_cmd(ViewportCommand::WindowLevel(if self.prefs.always_on_top {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            }));
+            if self.prefs.remember_positions
+                && let Some(position) = self.prefs.positions.get("Roch GPU")
+                && let Some(at) = native::position_points(*position, ctx.zoom_factor())
+            {
+                ctx.send_viewport_cmd(ViewportCommand::OuterPosition(at));
+            }
+        }
+        if self.prefs.theme == ThemeMode::System {
+            if self.last_system_check.elapsed() >= Duration::from_secs(2) {
+                self.last_system_check = Instant::now();
+                if native::system_dark() != self.dark {
+                    self.apply_preferences(ctx);
+                }
+            }
+            ctx.request_repaint_after(Duration::from_secs(2));
+        }
+        if self.prefs.remember_positions && self.last_position_sample.elapsed() >= Duration::from_secs(1) {
+            self.last_position_sample = Instant::now();
+            let mut changed = false;
+            for title in [
+                "Roch GPU",
+                "Roch GPU — Settings",
+                "Roch GPU — Telemetry",
+                "Roch GPU — Graphics",
+                "XOC",
+                "Fan Control",
+                "Voltage / Frequency curve",
+            ] {
+                if let Some(position) = native::window_position(title)
+                    && self.sampled_positions.insert(title.into(), position) != Some(position)
+                    && self.prefs.positions.get(title) != Some(&position)
+                {
+                    self.prefs.positions.insert(title.into(), position);
+                    changed = true;
+                }
+            }
+            if changed {
+                preferences::publish(ctx, &self.prefs);
+                self.pending_preferences_save.get_or_insert_with(Instant::now);
+            }
+        }
+        if let Some(since) = self.pending_preferences_save {
+            if since.elapsed() >= Duration::from_millis(350) {
+                self.pending_preferences_save = None;
+                if self.poll_interval != self.prefs.refresh_ms {
+                    let interval = self.prefs.refresh_ms;
+                    self.poll_interval = interval;
+                    self.vm.queue_custom("Updating refresh interval…", move |shared| {
+                        let result = shared.service.start_polling(u64::from(interval));
+                        Box::new(move |vm| {
+                            if let Err(error) = result {
+                                vm.report(format!("Polling could not restart: {error}"), true);
+                            }
+                        })
+                    });
+                }
+                self.save_preferences();
+            } else {
+                ctx.request_repaint_after(Duration::from_millis(350));
+            }
         }
     }
 
@@ -549,6 +701,10 @@ impl RochApp {
 
 impl eframe::App for RochApp {
     fn logic(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::Comma)) {
+            self.handle_action(ctx, MainAction::OpenSettings);
+        }
+        self.preferences_tick(ctx);
         if self.frames == 1 && crate::trace::enabled() {
             crate::trace!("first frame presented");
         }
@@ -588,10 +744,16 @@ impl eframe::App for RochApp {
         let needed = main_window::show(ui, &mut self.vm, self.icon_tex.as_ref(), &mut actions);
         let main_done = started.map(|t| t.elapsed());
         // SizeToContent="Height" with MinHeight="640".
-        let want = needed.max(main_window::MIN_HEIGHT).round();
-        if (want - self.content_height).abs() > 1.0 {
+        let max_height =
+            ctx.input(|i| i.viewport().monitor_size.map(|size| (size.y - 80.0).max(300.0))).unwrap_or(f32::MAX);
+        let want = needed.max(main_window::MIN_HEIGHT).min(max_height).round();
+        let max_width =
+            ctx.input(|i| i.viewport().monitor_size.map(|size| (size.x - 40.0).max(420.0))).unwrap_or(f32::MAX);
+        let width = main_window::width().min(max_width);
+        if (want - self.content_height).abs() > 1.0 || (width - self.content_width).abs() > 1.0 {
             self.content_height = want;
-            ctx.send_viewport_cmd(ViewportCommand::InnerSize(vec2(main_window::WIDTH, want)));
+            self.content_width = width;
+            ctx.send_viewport_cmd(ViewportCommand::InnerSize(vec2(width, want)));
         }
         for a in actions {
             self.handle_action(&ctx, a);
@@ -612,7 +774,7 @@ impl eframe::App for RochApp {
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        theme::Palette::for_mode(self.dark).bg.to_normalized_gamma_f32()
+        theme::Palette::from_preferences(&self.prefs, self.dark).bg.to_normalized_gamma_f32()
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -621,6 +783,6 @@ impl eframe::App for RochApp {
         self.shared.service.release_fan_control();
         self.shared.service.release_soft_thermal_limit();
         let _ = self.shared.service.stop_polling();
-        self.shared.save_settings();
+        self.save_preferences();
     }
 }

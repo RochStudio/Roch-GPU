@@ -29,6 +29,9 @@ pub struct TelemetryRow {
 }
 
 impl TelemetryRow {
+    pub(crate) fn sensor_key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
     /// A heading has no reading of its own, and an em dash in all four columns reads as four
     /// sensors that failed rather than as a title.
     fn header(name: &str) -> Self {

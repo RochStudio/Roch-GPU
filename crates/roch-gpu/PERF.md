@@ -63,6 +63,19 @@ egui's ~0.7 MB of embedded fonts sat in `.rdata`, which `--crates` does not show
 
 ## How to measure
 
+### UI customization follow-up (October 24, 2026)
+
+A local mock comparison exposed stalls after adding window preferences. Native title lookup
+enumerated every window in the process; `GetWindowTextW` can synchronously message windows on
+driver/helper threads. Lookup now uses `EnumThreadWindows` on the UI thread. Opacity, bounds and
+child size constraints are updated only when their inputs change, and renderers share `Arc<Prefs>`.
+
+One full scripted run per build, using separate scratch settings folders and the same 39.5 seconds
+of scheduled waits, reached `bench: Exit` at **50.69 s before** and **39.66 s after**. The two
+10-second idle phases took 11.3/11.0 seconds before and 10.0/10.0 seconds after. These are local
+responsiveness checks, not a claim about frame rate or GPU driver performance. Trace logs are
+under `artifacts/RochGPU-lag-benchmark` in the parent workspace.
+
 The timing trace is built in and does nothing unless switched on:
 
 ```powershell

@@ -4,7 +4,7 @@
 
 A Windows tuning and monitoring tool for NVIDIA, AMD and Intel Arc GPUs: supported clocks, voltage, power, fans and memory timings, live telemetry, five profile slots and light/dark modes. No HWiNFO dependency.
 
-This is a Rust rewrite of [Roch GPU 1.1.0](https://github.com/RochStudio/Roch-GPU) (C#/WPF). It keeps the same features, driver handling, CLI, and profile/settings files, so an existing `%AppData%\Roch GPU` folder carries over.
+The main branch contains the Rust application. It replaces the [original C#/WPF 1.1.0 build](https://github.com/RochStudio/Roch-GPU/tree/v1.1.0) and keeps compatible profile/settings files, so an existing `%AppData%\Roch GPU` folder carries over.
 
 ## What changed from the C# build
 
@@ -40,6 +40,17 @@ The same executable is the command line:
 .\RochGPU.exe info --gpu 1    # the second card of the same vendor
 ```
 
+## Customize the UI
+
+Click the **gear** or press **Ctrl+,**. Changes apply live and save automatically.
+
+- Light, dark or Windows theme; seven colour presets and custom colours.
+- Installed fonts, text size, spacing, corner roundness and UI scale.
+- Show, hide and reorder panels; choose Telemetry cards, labels, columns and sensors.
+- Remember window positions, keep windows on top, adjust opacity and refresh rate.
+
+**Reset all** resets the appearance while keeping GPU tuning and profiles. The bottom bar also opens the settings folder and closes Settings.
+
 ## Build
 
 Install Rust (stable, `x86_64-pc-windows-msvc`) and run in PowerShell:
@@ -64,7 +75,7 @@ Each vendor crate loads its driver DLL from System32 only, and builds and tests 
 
 ## Verification status
 
-- **Tests:** 233 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver.
+- **Tests:** 244 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, UI preferences, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver. Two optional audit tests are ignored.
 - **NVIDIA:** on an RTX 5070 Ti with driver 616.92, read-only output matches the C# 1.1.0 build. That covers `info`, `sensors` and `domains`, and the full `diag` dump is byte-identical apart from live readings.
 - **Write paths:** the code that writes to the GPU (apply, reset, fans, V/F curve, XOC levers) is a faithful port, but it has **not yet been validated on hardware** in the Rust build. Test carefully before relying on it. The same goes for the software temperature limit: its controller is tested only against the simulated GPU, and its read side (`info` reports `Soft temp limit: 50..105 °C` on the 5070 Ti, with 88 °C as the card's own limit) is the only part run on the card.
 - **Intel:** on an Arc Pro B60 with driver 32.0.101.9030, `info` and `sensors` read the card correctly, and every write path passed a write/readback/restore run: core offset, memory speed, power, temperature and voltage limits, a V/F point, fixed fan duty, a fan curve and the clock range, with the full tuning state back to its snapshot after each step (`cargo run -p roch-intel --example intel_validate`; see [Intel Arc B60](docs/intel-arc-b60.md)). That covers single-step changes, not stability under load.

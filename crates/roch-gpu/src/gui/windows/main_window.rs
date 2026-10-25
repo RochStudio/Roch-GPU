@@ -14,6 +14,9 @@ use crate::gui::widgets::{self, ButtonKind};
 /// Fixed window width (WPF `Width="660"`) and the floor of the content-sized height.
 pub const WIDTH: f32 = 660.0;
 pub const MIN_HEIGHT: f32 = 640.0;
+pub fn width() -> f32 {
+    WIDTH * theme::text_factor()
+}
 const TITLE_H: f32 = 30.0;
 /// The value box and the unit column beside it, so `%` and `MHz` sit next to the number.
 const VALUE_BOX_W: f32 = 60.0;
@@ -29,7 +32,7 @@ pub enum MainAction {
     ToggleMonitor,
     OpenGraphics,
     OpenLog,
-    ToggleTheme,
+    OpenSettings,
     Minimize,
     Close,
     OpenUrl(&'static str),
@@ -50,26 +53,44 @@ pub fn show(ui: &mut Ui, vm: &mut MainViewModel, icon: Option<&TextureHandle>, a
     title_bar(ui, title_rect, icon, actions);
 
     // DockPanel Margin="8".
-    let body =
-        Rect::from_min_max(pos2(full.left() + 8.0, title_rect.bottom() + 8.0), pos2(full.right() - 8.0, f32::MAX));
+    let body = Rect::from_min_max(
+        pos2(full.left() + 8.0, title_rect.bottom() + 8.0),
+        pos2(full.right() - 8.0, full.bottom() - 8.0),
+    );
     let mut child = ui.new_child(UiBuilder::new().max_rect(body).layout(Layout::top_down(Align::Min)));
     child.spacing_mut().item_spacing = vec2(0.0, 0.0);
-    let top = child.cursor().top();
-    header(&mut child, vm, actions);
-    sliders(&mut child, vm, actions);
-    profile_bar(&mut child, vm, actions);
-    let controls_bottom = child.cursor().top();
+    let prefs = crate::gui::preferences::current(ui.ctx());
+    let natural = egui::ScrollArea::both()
+        .auto_shrink([false, false])
+        .show(&mut child, |child| {
+            child.set_min_width(width() - 16.0);
+            let top = child.cursor().top();
+            header(child, vm, actions);
+            for panel in &prefs.panels {
+                if !panel.visible {
+                    continue;
+                }
+                match panel.key.as_str() {
+                    "tuning" => sliders(child, vm, actions),
+                    "profiles" => profile_bar(child, vm, actions),
+                    _ => {}
+                }
+            }
+            let controls_bottom = child.cursor().top();
 
-    // The elastic gap: the Apply panel and the footer sit at the bottom of a window that is at
-    // least MIN_HEIGHT tall, as in the WPF grid's star row.
-    let bottom_h = measure_bottom(&mut child, vm);
-    let natural = (controls_bottom - top) + bottom_h;
-    let available = full.height() - TITLE_H - 16.0;
-    if available > natural {
-        child.add_space(available - natural);
-    }
-    apply_panel(&mut child, vm);
-    footer(&mut child, vm, actions);
+            // The elastic gap: the Apply panel and the footer sit at the bottom of a window that is at
+            // least MIN_HEIGHT tall, as in the WPF grid's star row.
+            let bottom_h = measure_bottom(child, vm);
+            let natural = (controls_bottom - top) + bottom_h;
+            let available = full.height() - TITLE_H - 16.0;
+            if available > natural {
+                child.add_space(available - natural);
+            }
+            apply_panel(child, vm);
+            footer(child, vm, actions);
+            natural
+        })
+        .inner;
     TITLE_H + 16.0 + natural
 }
 
@@ -95,16 +116,8 @@ fn title_bar(ui: &mut Ui, rect: Rect, icon: Option<&TextureHandle>, actions: &mu
     if widgets::title_button(&mut buttons, "\u{2212}", 44.0, false, 18.0).on_hover_text("Minimise").clicked() {
         actions.push(MainAction::Minimize);
     }
-    let dark = p.dark;
-    let glyph = if dark { "\u{2600}" } else { "" };
-    let theme_btn = widgets::title_button(&mut buttons, glyph, 36.0, false, 18.0);
-    if !dark {
-        let behind = if theme_btn.hovered() { p.title_hover } else { p.bg };
-        widgets::paint_moon(&buttons, theme_btn.rect.center(), Color32::BLACK, behind);
-    }
-    let tip = if dark { "Switch to light mode" } else { "Switch to dark mode" };
-    if theme_btn.on_hover_text(tip).clicked() {
-        actions.push(MainAction::ToggleTheme);
+    if widgets::title_button(&mut buttons, "\u{2699}", 36.0, false, 18.0).on_hover_text("Settings (Ctrl+,)").clicked() {
+        actions.push(MainAction::OpenSettings);
     }
 }
 
@@ -115,7 +128,7 @@ fn header(ui: &mut Ui, vm: &MainViewModel, actions: &mut Vec<MainAction>) {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 1.0;
         ui.horizontal_top(|ui| {
-            let right_w = 80.0 + 80.0 + 64.0 + 3.0 * 6.0;
+            let right_w = (80.0 + 80.0 + 64.0) * theme::text_factor() + 3.0 * 6.0;
             // A picker is taller than the plain label; give the header row room for it.
             let gpu_row_h = if vm.gpu_count() > 1 { 38.0 } else { 30.0 };
             ui.allocate_ui_with_layout(
@@ -165,7 +178,7 @@ fn header(ui: &mut Ui, vm: &MainViewModel, actions: &mut Vec<MainAction>) {
             ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 let b = |ui: &mut Ui, t: &str, w: f32| {
-                    widgets::button(ui, t, ButtonKind::Header, vec2(w, 24.0), true, false)
+                    widgets::button(ui, t, ButtonKind::Header, vec2(w * theme::text_factor(), 24.0), true, false)
                 };
                 if b(ui, "Log", 64.0).clicked() {
                     actions.push(MainAction::OpenLog);
@@ -178,10 +191,12 @@ fn header(ui: &mut Ui, vm: &MainViewModel, actions: &mut Vec<MainAction>) {
                 }
             });
         });
-        widgets::info_line(ui, &vm.bios_line());
-        widgets::info_line(ui, &vm.pcie_bus_line());
-        widgets::info_line(ui, &vm.resizable_bar_line());
-        widgets::info_line(ui, &vm.memory_type_line());
+        if crate::gui::preferences::current(ui.ctx()).show_gpu_details {
+            widgets::info_line(ui, &vm.bios_line());
+            widgets::info_line(ui, &vm.pcie_bus_line());
+            widgets::info_line(ui, &vm.resizable_bar_line());
+            widgets::info_line(ui, &vm.memory_type_line());
+        }
         ui.add_space(2.0);
         let color = if vm.limit_is_active() { p.warn } else { p.text };
         widgets::label(ui, vm.limit_reason_text(), color, false);
@@ -206,9 +221,9 @@ fn slider_row_with_tip(
 ) {
     ui.add_space(margin_y);
     let w = ui.available_width();
-    ui.allocate_ui_with_layout(vec2(w, 30.0), Layout::left_to_right(Align::Center), |ui| {
+    ui.allocate_ui_with_layout(vec2(w, theme::pitch(30.0)), Layout::left_to_right(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        let (r, resp) = ui.allocate_exact_size(vec2(180.0, 30.0), Sense::hover());
+        let (r, resp) = ui.allocate_exact_size(vec2(180.0 * theme::text_factor(), theme::pitch(30.0)), Sense::hover());
         let color = if enabled { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
         let wide = ui.painter().layout_no_wrap(label.to_string(), theme::bold(BODY), color).size().x > r.width() - 4.0;
         let text = if wide { label.replacen(" (", "\n(", 1) } else { label.to_string() };
@@ -217,21 +232,30 @@ fn slider_row_with_tip(
             resp.on_hover_text(tip);
         }
         ui.add_space(8.0);
-        let slider_w = w - 180.0 - VALUE_COL_W - 8.0 - 18.0;
+        let slider_w = w - (180.0 + VALUE_COL_W) * theme::text_factor() - 8.0 - 18.0;
         widgets::nudged_slider(ui, vm, f, slider_w, enabled, false);
         ui.add_space(18.0);
-        ui.allocate_ui_with_layout(vec2(VALUE_COL_W, 30.0), Layout::left_to_right(Align::Center), |ui| {
-            let tip = vm.range_text(f);
-            widgets::value_box(ui, vm, f, vec2(VALUE_BOX_W, 30.0), enabled).on_hover_text(tip);
-            let unit = vm.field_unit(f);
-            if !unit.is_empty() {
-                ui.add_space(5.0);
-                let color = if enabled { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
-                ui.allocate_ui_with_layout(vec2(UNIT_COL_W, 30.0), Layout::left_to_right(Align::Center), |ui| {
-                    ui.label(RichText::new(unit).font(theme::regular(BODY)).color(color));
-                });
-            }
-        });
+        ui.allocate_ui_with_layout(
+            vec2(VALUE_COL_W * theme::text_factor(), theme::pitch(30.0)),
+            Layout::left_to_right(Align::Center),
+            |ui| {
+                let tip = vm.range_text(f);
+                widgets::value_box(ui, vm, f, vec2(VALUE_BOX_W * theme::text_factor(), theme::pitch(30.0)), enabled)
+                    .on_hover_text(tip);
+                let unit = vm.field_unit(f);
+                if !unit.is_empty() {
+                    ui.add_space(5.0);
+                    let color = if enabled { pal(ui.ctx()).text } else { pal(ui.ctx()).muted };
+                    ui.allocate_ui_with_layout(
+                        vec2(UNIT_COL_W * theme::text_factor(), theme::pitch(30.0)),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.label(RichText::new(unit).font(theme::regular(BODY)).color(color));
+                        },
+                    );
+                }
+            },
+        );
     });
     ui.add_space(margin_y);
 }
@@ -377,7 +401,8 @@ fn profile_bar(ui: &mut Ui, vm: &mut MainViewModel, actions: &mut Vec<MainAction
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
-                    let (r, _) = ui.allocate_exact_size(vec2(56.0, 34.0), Sense::hover());
+                    let (r, _) =
+                        ui.allocate_exact_size(vec2(56.0 * theme::text_factor(), theme::pitch(34.0)), Sense::hover());
                     ui.painter().text(r.left_center(), Align2::LEFT_CENTER, "PROFILE", theme::bold(BODY), p.text);
                     for slot in vm.slots().to_vec() {
                         let kind = ButtonKind::Slot { occupied: slot.occupied, active: slot.is_active };
@@ -397,7 +422,7 @@ fn profile_bar(ui: &mut Ui, vm: &mut MainViewModel, actions: &mut Vec<MainAction
                             ui,
                             "Save",
                             ButtonKind::Toggle { checked: armed },
-                            vec2(46.0, 34.0),
+                            vec2(46.0 * theme::text_factor(), 34.0),
                             !busy,
                             true,
                         )
@@ -447,10 +472,11 @@ fn profile_bar(ui: &mut Ui, vm: &mut MainViewModel, actions: &mut Vec<MainAction
 
 fn measure_bottom(ui: &mut Ui, vm: &MainViewModel) -> f32 {
     // Apply panel: margin 12 + padding 6+6 + button 42 (+ the pending line), then the footer block.
-    let pending = if vm.pending_changes() { 6.0 + 15.0 } else { 0.0 };
+    let pending = if vm.pending_changes() { 6.0 + theme::pitch(15.0) } else { 0.0 };
     let error = if vm.status_is_error { 32.0 } else { 0.0 };
-    let summary = summary_height(ui, vm);
-    12.0 + 12.0 + 42.0 + pending + 6.0 + error + summary + 24.0
+    let summary =
+        if crate::gui::preferences::current(ui.ctx()).show_applied_summary { summary_height(ui, vm) } else { 0.0 };
+    12.0 + 12.0 + theme::pitch(42.0) + pending + 6.0 + error + summary + theme::pitch(24.0)
 }
 
 fn summary_height(ui: &Ui, vm: &MainViewModel) -> f32 {
@@ -498,18 +524,24 @@ fn footer(ui: &mut Ui, vm: &MainViewModel, actions: &mut Vec<MainAction>) {
         )
         .on_hover_text(&vm.status);
     }
-    let summary = vm.applied_summary();
-    let mut job =
-        egui::text::LayoutJob::simple(summary.to_string(), theme::regular(BODY), p.text, ui.available_width());
-    job.wrap.max_rows = 3;
-    job.wrap.overflow_character = Some('…');
-    ui.add(egui::Label::new(job).selectable(false)).on_hover_text(summary);
+    let prefs = crate::gui::preferences::current(ui.ctx());
+    if prefs.show_applied_summary {
+        let summary = vm.applied_summary();
+        let mut job =
+            egui::text::LayoutJob::simple(summary.to_string(), theme::regular(BODY), p.text, ui.available_width());
+        job.wrap.max_rows = 3;
+        job.wrap.overflow_character = Some('…');
+        ui.add(egui::Label::new(job).selectable(false)).on_hover_text(summary);
+    }
 
     // The shared 24 px footer: social links left, status right.
     let w = ui.available_width();
     ui.allocate_ui_with_layout(vec2(w, 24.0), Layout::left_to_right(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         for (i, (name, url)) in FOOTER_LINKS.iter().enumerate() {
+            if !prefs.show_footer_links {
+                break;
+            }
             if i > 0 {
                 ui.label(RichText::new(" | ").font(theme::regular(BODY)).color(p.text));
             }
