@@ -1,21 +1,26 @@
-# AMD probes
+# AMD developer tools
 
-Read-only PowerShell scripts used to map the AMD driver surface while writing the ADL backend. They
-are kept because they are the fastest way to find out what a *different* AMD card exposes, and
-because they document how the backend's assumptions were established.
+The historical PowerShell probes are replaced by native Rust commands. Run from the repository root:
 
-Run any of them from PowerShell:
+| Command | Purpose |
+|---|---|
+| `cargo xtask amd probe` | Installed driver libraries, ADL adapter identity, Overdrive capabilities and live PMLog sensors |
+| `cargo xtask amd exports` | Actual PE export names, legacy OD8 getter variants and every AMD adapter index |
+| `cargo xtask amd features` | OD8 capability bits, feature names, min/max/default/current values and X3 adjustability |
+| `cargo xtask amd telemetry` | Legacy power/temperature/performance APIs and a three-second streaming PMLog sample |
+| `cargo xtask amd write-check --apply` | Four core-clock write shapes, readback and live clocks; restore and verify the original OD8 snapshot after each attempt |
 
-```powershell
-iex (Get-Content .\AmdProbe.ps1 -Raw)
+Common options: `--adapter INDEX`, `--out report.txt`, and `--mock`. Mock mode never loads a driver and exercises every command on simulated data. Write-check accepts `--offset MHz` (default 200), validates the driver's range, and requires `--apply` on real hardware. It restores the original values, including nonzero offsets, rather than resetting them to zero. An early error also attempts restoration; a failed restoration is reported.
+
+Examples:
+
+```console
+cargo xtask amd probe --out amd-report.txt
+cargo xtask amd features --adapter 0
+cargo xtask amd write-check --mock
+cargo xtask amd telemetry --mock
 ```
 
-| Script | What it answers |
-|---|---|
-| `AmdProbe.ps1`  | Which libraries are present, what Overdrive version the driver reports, which PMLog sensors exist |
-| `AmdProbe2.ps1` | Every `ADL*Overdrive*` entry point the installed `atiadlxx.dll` actually exports, across all adapter indices |
-| `AmdProbe3.ps1` | The full Overdrive 8 feature table: capability bits, and each feature's min/max/default/current |
-| `AmdProbe4.ps1` | Whether a core-clock offset write actually sticks, tried in four different call shapes |
+Reports go to the terminal unless `--out` is supplied. The tools load driver DLLs from System32 only, release ADL output buffers, and stop/destroy streaming devices on exit and failure. They do not use PowerShell, .NET, HWiNFO or another helper executable.
 
-`AmdProbe4.ps1` is the only one that writes anything: it sets the core clock offset, reads it back,
-and restores it to 0. The others touch nothing.
+Tests cover malformed PE data, rejected options, read-only commands, write/readback/restore with simulated failures, and streaming cleanup. Real AMD hardware validation is separate from these tests.

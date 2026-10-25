@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/roch-core", "crates/roch-nvidia", "crates/roch-amd", "crates/roch-intel", "crates/roch-gpu"]
+members = ["crates/roch-core", "crates/roch-nvidia", "crates/roch-amd", "crates/roch-intel", "crates/roch-gpu", "xtask"]
 
 [workspace.package]
 version = "1.1.0"

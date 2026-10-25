@@ -53,13 +53,15 @@ Click the **gear** or press **Ctrl+,**. Changes apply live and save automaticall
 
 ## Build
 
-Install Rust (stable, `x86_64-pc-windows-msvc`) and run in PowerShell:
+Install Rust (stable, `x86_64-pc-windows-msvc`) and run:
 
-```powershell
-.\build.ps1
+```console
+cargo xtask build
 ```
 
-It runs the tests and clippy, then builds `dist\RochGPU.exe`. Startup and window timings can be traced with `ROCH_TRACE=1`; see [`crates/roch-gpu/PERF.md`](crates/roch-gpu/PERF.md). For development, `cargo run -p roch-gpu -- --mock` opens the window against the simulated GPU.
+The Rust build tool checks formatting, runs release tests and clippy, builds and smoke-tests a private copy, then publishes `dist\RochGPU.exe`. Failed checks preserve the existing executable. Use `--out-dir PATH` to build elsewhere while the tool is open. Native Rust AMD diagnostic commands are documented in [`tools/amd`](tools/amd/README.md).
+
+Startup and window timings can be traced with `ROCH_TRACE=1`; see [`crates/roch-gpu/PERF.md`](crates/roch-gpu/PERF.md). For development, `cargo run -p roch-gpu -- --mock` opens the window against the simulated GPU.
 
 ## Layout
 
@@ -70,12 +72,13 @@ It runs the tests and clippy, then builds `dist\RochGPU.exe`. Startup and window
 | `crates/roch-amd` | ADL (Overdrive 8) tuning and ADLX telemetry |
 | `crates/roch-intel` | IGCL tuning and telemetry for Arc |
 | `crates/roch-gpu` | `RochGPU.exe`: backend detection, CLI, and the egui window |
+| `xtask` | Native Rust build, packaging and AMD diagnostic tools |
 
 Each vendor crate loads its driver DLL from System32 only, and builds and tests on its own (`cargo test -p roch-nvidia`).
 
 ## Verification status
 
-- **Tests:** 244 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, UI preferences, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver. Two optional audit tests are ignored.
+- **Tests:** 256 unit and integration tests. They cover layouts, buffer parsing, apply ordering, profiles, UI preferences, the recovery journal, the software temperature limit (against a simulated card whose temperature follows its clock), the CLI, the view model and the editors. None of them touch a driver. Two optional audit tests are ignored.
 - **NVIDIA:** on an RTX 5070 Ti with driver 616.92, read-only output matches the C# 1.1.0 build. That covers `info`, `sensors` and `domains`, and the full `diag` dump is byte-identical apart from live readings.
 - **Write paths:** the code that writes to the GPU (apply, reset, fans, V/F curve, XOC levers) is a faithful port, but it has **not yet been validated on hardware** in the Rust build. Test carefully before relying on it. The same goes for the software temperature limit: its controller is tested only against the simulated GPU, and its read side (`info` reports `Soft temp limit: 50..105 °C` on the 5070 Ti, with 88 °C as the card's own limit) is the only part run on the card.
 - **Intel:** on an Arc Pro B60 with driver 32.0.101.9030, `info` and `sensors` read the card correctly, and every write path passed a write/readback/restore run: core offset, memory speed, power, temperature and voltage limits, a V/F point, fixed fan duty, a fan curve and the clock range, with the full tuning state back to its snapshot after each step (`cargo run -p roch-intel --example intel_validate`; see [Intel Arc B60](docs/intel-arc-b60.md)). That covers single-step changes, not stability under load.

@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: cmd
+
 jobs:
   # Windows only: the backends are Win32 FFI and the GUI is a Windows app. Tests touch no driver.
   build-and-test:
@@ -26,18 +30,16 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
-      - name: Test, lint and build
-        shell: pwsh
-        run: ./build.ps1
+      - name: Test, lint, build and smoke-test with Rust
+        run: cargo xtask build
 
-      # The --mock backend touches no driver, so the binary can be smoke-tested without a GPU.
-      - name: Smoke-test the CLI against the mock GPU
-        shell: pwsh
+      - name: Smoke-test native AMD diagnostic commands
         run: |
-          $out = & './dist/RochGPU.exe' info --mock 2>&1 | Out-String
-          Write-Host $out
-          if ($LASTEXITCODE -ne 0) { throw "'RochGPU.exe info --mock' exited $LASTEXITCODE" }
-          if ($out -notmatch 'Simulated') { throw "mock backend did not report a simulated GPU" }
+          cargo xtask amd probe --mock || exit /b 1
+          cargo xtask amd exports --mock || exit /b 1
+          cargo xtask amd features --mock || exit /b 1
+          cargo xtask amd write-check --mock || exit /b 1
+          cargo xtask amd telemetry --mock || exit /b 1
 
       - uses: actions/upload-artifact@v4
         with:

@@ -49,17 +49,15 @@ not install a kernel driver, disable security features or guess register offsets
 
 ## Validation
 
-`dotnet run --project tests/GpuTuner.Core.Tests -c Release`
-
-`dotnet run --project tests/GpuTuner.Telemetry.Tests -c Release`
-
-The latter compiles the production telemetry table and checks grouped insertion,
-late sensor discovery, disappearing sensors, deduplication, reset and striping.
-`build.ps1` runs both test suites before publishing.
+`cargo xtask build` runs the Rust workspace tests, lint, build and simulated CLI checks.
+Telemetry tests cover grouped insertion, late discovery, disappearing sensors,
+deduplication, reset and striping. The hardware observations above were recorded
+with the earlier C# build.
 
 `RochGPU.exe diag` reports the merged native sample and ADLX availability.
-`tools/amd/NativeTelemetryProbe.ps1` is an optional read-only developer probe for
-ADL adapter 0, not a runtime dependency. It starts/stops only telemetry sampling.
+`cargo xtask amd telemetry --adapter 0` is an optional native Rust read-only probe,
+not a runtime dependency. It starts/stops only telemetry sampling. Add `--mock`
+to test the command without AMD hardware.
 
 ## API references
 
