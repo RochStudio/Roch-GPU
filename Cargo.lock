@@ -2253,7 +2253,7 @@ dependencies = [
 
 [[package]]
 name = "roch-amd"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "libloading 0.8.9",
  "roch-core",
@@ -2263,7 +2263,7 @@ dependencies = [
 
 [[package]]
 name = "roch-core"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "chrono",
  "libloading 0.8.9",
@@ -2275,7 +2275,7 @@ dependencies = [
 
 [[package]]
 name = "roch-gpu"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "chrono",
  "eframe",
@@ -2293,7 +2293,7 @@ dependencies = [
 
 [[package]]
 name = "roch-intel"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "libloading 0.8.9",
  "roch-core",
@@ -2301,7 +2301,7 @@ dependencies = [
 
 [[package]]
 name = "roch-nvidia"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "libloading 0.8.9",
  "roch-core",
@@ -3417,7 +3417,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "roch-amd",
  "roch-core",

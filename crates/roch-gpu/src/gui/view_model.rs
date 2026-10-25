@@ -33,7 +33,7 @@ pub const FOOTER_LINKS: [(&str, &str); 3] = [
     ("Discord", "https://discord.gg/KfzExpKQHB"),
 ];
 
-/// "Roch GPU 1.1.0" for the title strip, from the crate version so it cannot go stale.
+/// The title strip includes the crate version so it cannot go stale.
 pub fn title_text() -> String {
     format!("Roch GPU {}", roch_core::VERSION.split(['+', '-']).next().unwrap_or(""))
 }

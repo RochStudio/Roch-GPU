@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/roch-core", "crates/roch-nvidia", "crates/roch-amd", "crates/roch-intel", "crates/roch-gpu", "xtask"]
 
 [workspace.package]
-version = "1.1.0"
+version = "1.1.1"
 edition = "2024"
 license = "GPL-3.0-or-later"
 authors = ["Roch Studio"]
