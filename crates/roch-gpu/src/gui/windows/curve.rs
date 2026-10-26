@@ -329,7 +329,7 @@ impl CurveWindow {
                         // The editor draws everything above the cap flat without touching the
                         // stored points, so Remove flatten can reveal the exact curve again.
                         let _ = tx.send(CurveMsg::Cap(mv));
-                        vm.set(Field::TargetVoltage, mv); // and the main window, which saves it
+                        vm.sync_from_card(Field::TargetVoltage, mv); // and the main window, which saves it
                         let _ = tx.send(CurveMsg::Say(
                             format!("Voltage capped at {mv} mV — applied to the GPU now. Check the live voltage."),
                             false,
@@ -382,7 +382,7 @@ impl CurveWindow {
                         // At the reachable ceiling the profile serialises this as "no cap", so a
                         // later Apply cannot quietly restore the flatten just removed.
                         let ceiling = vm.reachable_ceiling_mv();
-                        vm.set(Field::TargetVoltage, ceiling);
+                        vm.sync_from_card(Field::TargetVoltage, ceiling);
                         CurveMsg::Say(
                             format!("Voltage flatten removed (was {before} mV). The underlying curve is unchanged."),
                             false,
@@ -409,7 +409,7 @@ impl CurveWindow {
                 let done = "Curve cleared on the GPU — back to stock.".to_owned();
                 match (result, reread) {
                     (Ok(()), Some(read)) => {
-                        vm.set(Field::CoreOffset, 0);
+                        vm.sync_from_card(Field::CoreOffset, 0);
                         let _ = tx.send(CurveMsg::Loaded { read: Box::new(read), note: Some((done, false)) });
                     }
                     (Ok(()), None) => {
@@ -441,7 +441,7 @@ impl CurveWindow {
             Box::new(move |vm: &mut MainViewModel| match result {
                 Ok((core, after)) => {
                     if let Some(c) = core {
-                        vm.set(Field::CoreOffset, c);
+                        vm.sync_from_card(Field::CoreOffset, c);
                     }
                     let applied = after.iter().filter(|p| p.live_mhz != p.stock_mhz).count();
                     let msg = if sent == 0 {

@@ -1292,6 +1292,10 @@ impl TuningService {
         drv.thermal.clock_range_rewritten(true);
         drv.backend.set_voltage_lock(gpu, target_mv)?;
         let mut st = self.state();
+        // Keep the applied profile describing the card, as an Apply does (0 = no cap).
+        if let Some(ap) = st.applied.as_mut() {
+            ap.target_voltage_mv = target_mv.max(0);
+        }
         refresh_live_voltage_state(drv.backend.as_mut(), gpu, &mut st);
         Ok(())
     }

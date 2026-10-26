@@ -1224,6 +1224,18 @@ fn fan_curve_keeps_running_on_a_card_that_is_not_selected() {
     assert!(!svc.drives_other_fans());
 }
 
+/// A voltage cap set outside Apply (the curve window's flatten) is recorded in the applied profile,
+/// as Apply records it: the cap, or 0 once removed.
+#[test]
+fn voltage_lock_keeps_the_applied_profile_describing_the_card() {
+    let svc = new_svc();
+    svc.apply(&profile());
+    svc.set_voltage_lock(900).unwrap();
+    assert_eq!(svc.applied_profile().unwrap().target_voltage_mv, 900);
+    svc.set_voltage_lock(0).unwrap();
+    assert_eq!(svc.applied_profile().unwrap().target_voltage_mv, 0);
+}
+
 /// Dropping a polling service stops the thread (C# Dispose).
 #[test]
 fn drop_stops_polling() {

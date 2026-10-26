@@ -129,6 +129,22 @@ fn switching_gpu_rebuilds_the_editor_and_persists_the_choice() {
     assert!(!fans(0).fan_manual, "exit hands the fans back");
 }
 
+/// The curve window's flatten writes the voltage cap straight to the card, so the main window
+/// shows it without calling it an unapplied change; an edit made there before still counts.
+#[test]
+fn a_value_another_window_wrote_is_not_unapplied() {
+    let f = fixture();
+    let mut vm = vm(&f);
+    assert!(!vm.pending_changes());
+    vm.sync_from_card(Field::TargetVoltage, 900);
+    assert_eq!(vm.get(Field::TargetVoltage), 900);
+    assert!(!vm.pending_changes(), "a flatten already on the card is not unapplied");
+
+    vm.set(Field::PowerLimit, 90);
+    vm.sync_from_card(Field::TargetVoltage, 950);
+    assert!(vm.pending_changes(), "the power edit is still unapplied");
+}
+
 #[test]
 fn a_fan_curve_survives_switching_gpu_and_shows_again_on_return() {
     let f = multi_fixture();

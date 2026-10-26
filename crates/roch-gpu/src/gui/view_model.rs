@@ -1138,6 +1138,16 @@ impl MainViewModel {
         self.refresh_applied_summary();
     }
 
+    /// Another window wrote `f` to the card (the curve window's flatten, say); show the value
+    /// without counting it as an unapplied edit. Edits already pending stay pending.
+    pub fn sync_from_card(&mut self, f: Field, value: i32) {
+        let (pending, pending_fans) = (self.pending_changes, self.pending_fan_changes);
+        self.set(f, value);
+        self.pending_changes = pending;
+        self.pending_fan_changes = pending_fans;
+        self.refresh_applied_summary();
+    }
+
     /// The slot lit up in the profile bar, if any.
     pub fn active_slot_name(&self) -> Option<String> {
         self.slots.iter().find(|s| s.is_active && s.occupied).map(ProfileSlot::name)
