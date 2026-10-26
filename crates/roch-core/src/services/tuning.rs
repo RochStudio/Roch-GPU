@@ -157,11 +157,31 @@ fn signed(v: i32) -> String {
 /// Everything the C# kept under `_lock` that is about talking to the driver.
 struct Driver {
     backend: Box<dyn GpuBackend>,
-    /// The software fan curve this process is stepping; `None` when the driver owns the fans.
-    active_curve: Option<FanCurve>,
-    last_curve_fan_sent: f64,
+    /// The software fan curves this process is stepping, by GPU. A card missing here has fans the
+    /// driver owns. Each card keeps its own, so switching cards in the window leaves them running.
+    fan_curves: BTreeMap<usize, CurveRun>,
+    /// What this run last wrote to each card's fans: exit hands every manual one back, and the
+    /// window shows a card's fans again after switching away and back.
+    fans_set: BTreeMap<usize, FanSettings>,
     /// The software temperature limit this process is running.
     thermal: ThermalRun,
+}
+
+/// A software fan curve and the last duty it sent.
+struct CurveRun {
+    curve: FanCurve,
+    last_sent: f64,
+}
+
+/// The fan settings this run last wrote to one card. The driver cannot describe a software curve
+/// (it sees only the duty the curve set last), so this is the only record of it.
+#[derive(Debug, Clone)]
+pub struct FanSettings {
+    pub mode: FanMode,
+    pub percent: i32,
+    /// One duty per fan; fewer than two means `percent` for every fan.
+    pub per_fan: Vec<i32>,
+    pub curve: FanCurve,
 }
 
 /// What the software temperature limit is doing, for the UI. A copy; see
@@ -790,13 +810,14 @@ fn write_fans(
 ) {
     let lo = caps.fan_min_percent;
     let hi = if caps.fan_max_percent <= 0 { 100 } else { caps.fan_max_percent };
+    let errors_before = t.errors.len();
+    // Only this card's curve stops: another card's keeps running.
+    drv.fan_curves.remove(&gpu);
     match mode {
         FanMode::Auto => {
-            drv.active_curve = None;
             t.run("Fan auto", drv.backend.set_fan_auto(gpu));
         }
         FanMode::Fixed => {
-            drv.active_curve = None;
             // Fewer than two duties is one duty for every fan: -1 is "all coolers", and a single
             // entry addressed to cooler 1 would leave the rest wherever they were.
             if per_fan.len() < 2 {
@@ -815,14 +836,16 @@ fn write_fans(
             if caps.fan_curve_is_hardware {
                 // The driver runs it, so it survives this app closing — and no polling loop means
                 // no fan oscillation if the app is busy.
-                drv.active_curve = None;
                 t.run("Fan curve", drv.backend.set_fan_curve(gpu, curve));
             } else {
-                drv.active_curve = Some(curve.clone_config());
-                drv.last_curve_fan_sent = f64::NAN;
+                drv.fan_curves.insert(gpu, CurveRun { curve: curve.clone_config(), last_sent: f64::NAN });
                 // First step happens on the next poll, using the live temperature.
             }
         }
+    }
+    if t.errors.len() == errors_before {
+        let settings = FanSettings { mode, percent, per_fan: per_fan.to_vec(), curve: curve.clone_config() };
+        drv.fans_set.insert(gpu, settings);
     }
 }
 
@@ -850,9 +873,10 @@ impl Inner {
             st.note_voltage_observation(t.voltage_mv, t.gpu_load_percent);
         }
         self.history.add(t.clone());
-        self.run_fan_curve(&t);
+        self.run_fan_curve(gpu, &t);
         self.run_soft_thermal(&t, true);
         self.events.telemetry(&t);
+        self.run_other_fan_curves(gpu);
         Ok(())
     }
 
@@ -863,17 +887,31 @@ impl Inner {
     /// for the time you were gaming.
     fn poll_background(&self) -> Result<()> {
         let gpu = self.gpu();
+        self.run_other_fan_curves(gpu);
         let wanted = {
             let drv = lock(&self.driver);
-            drv.active_curve.is_some() || drv.thermal.wants_samples(gpu)
+            drv.fan_curves.contains_key(&gpu) || drv.thermal.wants_samples(gpu)
         };
         if !wanted {
             return Ok(());
         }
         let t = lock(&self.driver).backend.read_temperature_only(gpu)?;
-        self.run_fan_curve(&t);
+        self.run_fan_curve(gpu, &t);
         self.run_soft_thermal(&t, true);
         Ok(())
+    }
+
+    /// Step the curves running on cards other than the selected one, each from its own card's
+    /// temperature: the window switching to another card does not stop them.
+    fn run_other_fan_curves(&self, selected: usize) {
+        let others: Vec<usize> = lock(&self.driver).fan_curves.keys().copied().filter(|&g| g != selected).collect();
+        for gpu in others {
+            let reading = lock(&self.driver).backend.read_temperature_only(gpu);
+            match reading {
+                Ok(t) => self.run_fan_curve(gpu, &t),
+                Err(e) => self.events.log(&format!("Fan curve (GPU {gpu}): {}", e.message)),
+            }
+        }
     }
 
     /// One step of the software temperature limit. `gated`: the poll loop's call, held to one step
@@ -978,24 +1016,24 @@ impl Inner {
         self.events.logs(logs);
     }
 
-    fn run_fan_curve(&self, t: &GpuTelemetry) {
-        let gpu = self.gpu();
+    /// One step of `gpu`'s software fan curve, from a reading of that card.
+    fn run_fan_curve(&self, gpu: usize, t: &GpuTelemetry) {
         let mut failure = None;
         {
             let mut guard = lock(&self.driver);
             let drv = &mut *guard;
             // A fan-mode change must not be followed by a write from the old curve.
-            let Some(curve) = drv.active_curve.as_mut() else { return };
+            let Some(run) = drv.fan_curves.get_mut(&gpu) else { return };
             if !t.temperature_c.is_finite() {
                 return;
             }
-            let Some(next) = curve.step(t.temperature_c) else { return };
+            let Some(next) = run.curve.step(t.temperature_c) else { return };
             let pct = round_even_i32(next);
-            if !drv.last_curve_fan_sent.is_nan() && (pct as f64 - drv.last_curve_fan_sent).abs() < 1.0 {
+            if !run.last_sent.is_nan() && (pct as f64 - run.last_sent).abs() < 1.0 {
                 return;
             }
             match drv.backend.set_fan_speed(gpu, -1, pct) {
-                Ok(()) => drv.last_curve_fan_sent = pct as f64,
+                Ok(()) => run.last_sent = pct as f64,
                 Err(e) => failure = Some(format!("Fan curve: {}", e.message)),
             }
         }
@@ -1058,8 +1096,8 @@ impl TuningService {
             inner: Arc::new(Inner {
                 driver: Mutex::new(Driver {
                     backend,
-                    active_curve: None,
-                    last_curve_fan_sent: f64::NAN,
+                    fan_curves: BTreeMap::new(),
+                    fans_set: BTreeMap::new(),
                     thermal: ThermalRun::new(),
                 }),
                 state: Mutex::new(EngineState::new()),
@@ -1133,7 +1171,7 @@ impl TuningService {
     pub fn initialize(&self, gpu_index: usize) -> Result<()> {
         self.initialize_backend()?;
         // The first selection has no old card to hand anything back from.
-        self.select_gpu_inner(gpu_index, false)
+        self.select_gpu(gpu_index)
     }
 
     /// Initialise and select `gpu_index`, falling back to the first card when a saved index no
@@ -1141,7 +1179,7 @@ impl TuningService {
     pub fn initialize_preferred(&self, gpu_index: usize) -> Result<()> {
         self.initialize_backend()?;
         let count = self.devices().len();
-        self.select_gpu_inner(if gpu_index < count { gpu_index } else { 0 }, false)
+        self.select_gpu(if gpu_index < count { gpu_index } else { 0 })
     }
 
     /// Initialise the vendor API and enumerate its cards without selecting one.
@@ -1157,21 +1195,13 @@ impl TuningService {
     }
 
     /// Switch to another GPU of the same backend. Fails for an index the backend did not report.
+    /// The old card's fans keep whatever this run set: each card's curve is stepped from its own
+    /// temperature whichever card is selected, and exit hands them all back.
     pub fn select_gpu(&self, index: usize) -> Result<()> {
-        self.select_gpu_inner(index, true)
-    }
-
-    fn select_gpu_inner(&self, index: usize, release_fans: bool) -> Result<()> {
         // Validate before touching the old card: a bad index must not change anything.
         let count = self.devices().len();
         if index >= count {
             return Err(GpuError::new(format!("No GPU at index {index} ({count} found).")));
-        }
-        // Both controllers belong to the card they were started on. The software temperature limit
-        // is released below while the old capabilities are still in state; the fan curve has to be
-        // handed back first so its next poll cannot step the new card with the old card's curve.
-        if release_fans {
-            self.release_fan_control();
         }
 
         let message;
@@ -1778,7 +1808,9 @@ impl TuningService {
             let drv = &mut *guard;
             let mut st_guard = self.state();
             let st = &mut *st_guard;
-            drv.active_curve = None;
+            // The driver reset below puts the fans back on auto.
+            drv.fan_curves.remove(&gpu);
+            drv.fans_set.remove(&gpu);
             st.manual_curve_active = false;
             // The driver reset below releases the clock lock along with everything else, and the
             // disarmed Clock Range write after it hands the range back to the driver regardless.
@@ -1948,24 +1980,55 @@ impl TuningService {
         a.errors
     }
 
+    /// What this run last wrote to the selected card's fans; `None` if it has not touched them.
+    pub fn fan_settings(&self) -> Option<FanSettings> {
+        let gpu = self.gpu();
+        lock(&self.inner.driver).fans_set.get(&gpu).cloned()
+    }
+
+    /// This run has a card other than the selected one on a fixed duty or a software curve, which
+    /// exit would hand back to the driver.
+    pub fn drives_other_fans(&self) -> bool {
+        let gpu = self.gpu();
+        lock(&self.inner.driver).fans_set.iter().any(|(&g, f)| g != gpu && f.mode != FanMode::Auto)
+    }
+
     /// Safety: on exit (or from a crash handler) hand fans back to the driver, so a fixed low fan
-    /// speed can't persist after the app that was supposed to manage it is gone.
+    /// speed can't persist after the app that was supposed to manage it is gone. Every card this
+    /// run took off auto goes back, not only the one selected in the window.
     ///
     /// Only for a curve *this* app runs. A driver-owned curve keeps running whether this process
     /// exists or not, and resetting it here threw away the user's fan settings on every exit.
     pub fn release_fan_control(&self) {
-        let gpu = self.gpu();
-        let caps = self.capabilities();
-        let mut released = false;
+        let selected = self.gpu();
+        let selected_caps = self.capabilities();
+        let mut released = 0;
         {
             let mut drv = lock(&self.inner.driver);
-            drv.active_curve = None;
-            if caps.can_set_fan_speed && !caps.fan_curve_is_hardware {
-                released = drv.backend.set_fan_auto(gpu).is_ok();
+            drv.fan_curves.clear();
+            let mut cards: Vec<usize> = std::mem::take(&mut drv.fans_set)
+                .into_iter()
+                .filter(|(_, f)| f.mode != FanMode::Auto)
+                .map(|(g, _)| g)
+                .collect();
+            if !cards.contains(&selected) {
+                cards.push(selected);
+            }
+            for gpu in cards {
+                let caps = if gpu == selected { Ok(selected_caps.clone()) } else { drv.backend.capabilities(gpu) };
+                if let Ok(caps) = caps
+                    && caps.can_set_fan_speed
+                    && !caps.fan_curve_is_hardware
+                    && drv.backend.set_fan_auto(gpu).is_ok()
+                {
+                    released += 1;
+                }
             }
         }
-        if released {
-            self.log("Fans returned to auto");
+        match released {
+            0 => {}
+            1 => self.log("Fans returned to auto"),
+            n => self.log(&format!("Fans returned to auto on {n} GPUs")),
         }
     }
 

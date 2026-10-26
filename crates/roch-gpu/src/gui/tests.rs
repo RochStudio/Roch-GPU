@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use roch_core::mock::MockBackend;
 use roch_core::services::{AppSettings, ProfileStore, TuningService};
-use roch_core::{FanCurve, FanMode, GpuCapabilities, Result, TuningProfile, VoltageControlStyle, XocLever};
+use roch_core::{FanCurve, FanMode, FanPoint, GpuCapabilities, Result, TuningProfile, VoltageControlStyle, XocLever};
 
 use super::shared::{Shared, StartupTasks};
 use super::view_model::{Field, MainViewModel};
@@ -100,16 +100,20 @@ fn switching_gpu_rebuilds_the_editor_and_persists_the_choice() {
     assert!(vm.gpu_choice_label(1).contains("Simulated RTX 4070 SUPER (2)"), "{}", vm.gpu_choice_label(1));
     let second = f.shared.service.devices()[1].name.clone();
 
-    // A fixed fan duty is handed back before the switch: it belongs to the old card.
+    // A fixed fan duty stays on the old card through the switch: only exit hands it back.
     f.shared.service.set_fans(FanMode::Fixed, 70, &[], &FanCurve::default(), None);
-    assert!(f.shared.service.with_backend(|b| b.read_tuning_state(0)).unwrap().fan_manual);
+    let fans = |gpu| f.shared.service.with_backend(|b| b.read_tuning_state(gpu)).unwrap();
+    assert!(fans(0).fan_manual);
 
     vm.switch_gpu(1).unwrap();
     assert_eq!(vm.gpu_index(), 1);
     assert_eq!(vm.device.name, second);
     assert_eq!(f.shared.service.gpu_index(), 1);
     assert_eq!(f.shared.settings().gpu_index, 1, "choice is persisted");
-    assert!(!f.shared.service.with_backend(|b| b.read_tuning_state(0)).unwrap().fan_manual, "old fans back to auto");
+    assert!(fans(0).fan_manual && fans(0).fan_percent == 70, "old card keeps its fan duty");
+    assert!(!fans(1).fan_manual, "new card's fans untouched");
+    assert!(!vm.is_fixed_fan(), "the editor shows the new card's fans");
+    assert!(f.shared.service.drives_other_fans(), "closing would hand the old card's fans back");
 
     // An index the backend did not report leaves the editor on the current card.
     assert!(vm.switch_gpu(9).is_err());
@@ -119,6 +123,24 @@ fn switching_gpu_rebuilds_the_editor_and_persists_the_choice() {
     vm.switch_gpu(0).unwrap();
     assert_eq!(vm.gpu_index(), 0);
     assert_eq!(f.shared.settings().gpu_index, 0);
+    assert!(vm.is_fixed_fan() && vm.get(Field::FixedFan) == 70, "back on the first card, its fixed duty shows");
+
+    f.shared.service.release_fan_control();
+    assert!(!fans(0).fan_manual, "exit hands the fans back");
+}
+
+#[test]
+fn a_fan_curve_survives_switching_gpu_and_shows_again_on_return() {
+    let f = multi_fixture();
+    let mut vm = vm(&f);
+    let curve = FanCurve::with_points(vec![FanPoint::new(0.0, 64.0), FanPoint::new(120.0, 64.0)]);
+    f.shared.service.set_fans(FanMode::Curve, 40, &[], &curve, None);
+
+    vm.switch_gpu(1).unwrap();
+    assert!(!vm.is_curve_fan(), "the second card has no curve");
+    vm.switch_gpu(0).unwrap();
+    assert!(vm.is_curve_fan(), "the first card's curve shows again");
+    assert_eq!(vm.editor_curve().points.len(), 2);
 }
 
 #[test]

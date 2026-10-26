@@ -266,9 +266,9 @@ impl RochApp {
     // ------------------------------------------------------------------ closing
 
     /// The close button, Alt+F4 or the tray's Exit. Asks first when closing would hand a fan
-    /// curve this app is running back to the driver.
+    /// curve this app is running back to the driver, on this card or another one.
     fn request_close(&mut self, ctx: &Context) {
-        let fan_active = self.vm.is_curve_fan() || self.vm.is_fixed_fan();
+        let fan_active = self.vm.is_curve_fan() || self.vm.is_fixed_fan() || self.shared.service.drives_other_fans();
         if !self.really_close
             && self.tray.is_some()
             && !self.shared.service.capabilities().fan_curve_is_hardware

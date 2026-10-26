@@ -1190,6 +1190,40 @@ fn preferred_gpu_falls_back_to_the_first_when_missing() {
     assert!(two.device().name.contains("(2)"), "{}", two.device().name);
 }
 
+/// A software fan curve belongs to its card: selecting another card leaves it running (on screen
+/// and from the tray), the new card's fans are never written, and exit hands both back.
+#[test]
+fn fan_curve_keeps_running_on_a_card_that_is_not_selected() {
+    let svc = TuningService::new(Box::new(MockBackend::with_second_gpu()));
+    svc.initialize(0).unwrap();
+    let fans = |gpu| svc.with_backend(|b| b.read_tuning_state(gpu)).unwrap();
+    svc.set_fans(FanMode::Curve, 30, &[], &curve(&[(0.0, 77.0), (120.0, 77.0)]), None);
+    svc.select_gpu(1).unwrap();
+    assert!(svc.drives_other_fans());
+    assert!(svc.fan_settings().is_none(), "nothing set on the selected card");
+
+    for background in [false, true] {
+        svc.with_backend(|b| b.set_fan_auto(0)).unwrap();
+        svc.set_background_mode(background);
+        // A new curve on card 0 restarts its stepping (selected card 1 stays put).
+        svc.select_gpu(0).unwrap();
+        svc.set_fans(FanMode::Curve, 30, &[], &curve(&[(0.0, 77.0), (120.0, 77.0)]), None);
+        svc.select_gpu(1).unwrap();
+        svc.start_polling(10).unwrap();
+        thread::sleep(Duration::from_millis(200));
+        svc.stop_polling().unwrap();
+        let (a, b) = (fans(0), fans(1));
+        assert!(a.fan_manual && a.fan_percent == 77, "background={background}: card 0's curve ran");
+        assert!(!b.fan_manual, "background={background}: card 1 untouched");
+    }
+
+    svc.set_fans(FanMode::Fixed, 55, &[], &FanCurve::default(), None);
+    assert_eq!(svc.fan_settings().map(|f| (f.mode, f.percent)), Some((FanMode::Fixed, 55)));
+    svc.release_fan_control();
+    assert!(!fans(0).fan_manual && !fans(1).fan_manual, "exit hands every card back");
+    assert!(!svc.drives_other_fans());
+}
+
 /// Dropping a polling service stops the thread (C# Dispose).
 #[test]
 fn drop_stops_polling() {

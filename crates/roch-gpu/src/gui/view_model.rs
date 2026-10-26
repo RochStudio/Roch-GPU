@@ -403,15 +403,23 @@ impl MainViewModel {
         let load = |n: &Option<String>| -> Option<TuningProfile> {
             n.as_deref().filter(|n| !n.is_empty()).and_then(|n| shared.store.load(n).ok().flatten())
         };
+        // What this run already set on the card comes first: after switching away and back, a curve
+        // the service is still running is newer than any saved slot.
         let fan_source = load(&last_name).or_else(|| load(&startup_name));
-        if !vm.caps.can_read_hardware_fan_curve
-            && let Some(saw) = fan_source
-            && saw.gpu_name.as_deref().is_none_or(|g| g.is_empty() || g == name)
-        {
-            vm.set_fan_mode_index(saw.fan_mode.as_number());
-            vm.set(Field::FixedFan, saw.fixed_fan_percent);
-            vm.per_fan_percents = saw.fixed_fan_percents.clone();
-            vm.editor_curve = saw.fan_curve.clone_config();
+        if !vm.caps.can_read_hardware_fan_curve {
+            if let Some(f) = svc.fan_settings() {
+                vm.set_fan_mode_index(f.mode.as_number());
+                vm.set(Field::FixedFan, f.percent);
+                vm.per_fan_percents = f.per_fan;
+                vm.editor_curve = f.curve;
+            } else if let Some(saw) = fan_source
+                && saw.gpu_name.as_deref().is_none_or(|g| g.is_empty() || g == name)
+            {
+                vm.set_fan_mode_index(saw.fan_mode.as_number());
+                vm.set(Field::FixedFan, saw.fixed_fan_percent);
+                vm.per_fan_percents = saw.fixed_fan_percents.clone();
+                vm.editor_curve = saw.fan_curve.clone_config();
+            }
         }
         vm.mark_clean();
 
@@ -440,9 +448,9 @@ impl MainViewModel {
         vm
     }
 
-    /// Switch to another card of this backend. The service hands the old card's software fan
-    /// curve and temperature limit back; this rebuilds the editor from the new card's
-    /// capabilities, current settings and last profile.
+    /// Switch to another card of this backend. The old card keeps its fans (the service goes on
+    /// running its curve) but hands its software temperature limit back; this rebuilds the editor
+    /// from the new card's capabilities, current settings and last profile.
     pub fn switch_gpu(&mut self, index: usize) -> Result<()> {
         if index == self.gpu_index {
             return Ok(());

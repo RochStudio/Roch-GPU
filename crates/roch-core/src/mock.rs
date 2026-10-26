@@ -21,6 +21,12 @@ impl Rng {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct MockFan {
+    manual: bool,
+    duty: i32,
+}
+
 pub struct MockBackend {
     rng: Rng,
     devices: Vec<GpuDevice>,
@@ -28,7 +34,8 @@ pub struct MockBackend {
     mem: i32,
     power: i32,
     temp: i32,
-    fan: i32,
+    /// One per card, so a test can tell whose fans a write reached. Everything else is shared.
+    fans: Vec<MockFan>,
     volt_boost: i32,
     volt_offset: i32,
     rail_max: i32,
@@ -42,7 +49,6 @@ pub struct MockBackend {
     lock_hi: i32,
     nvvdd_ocp: i32,
     msvdd_ocp: i32,
-    fan_manual: bool,
     load: f64,
     sim_temp: f64,
     volt_lock_mv: i32,
@@ -87,7 +93,7 @@ impl MockBackend {
             mem: 0,
             power: 100,
             temp: 83,
-            fan: 30,
+            fans: vec![MockFan { manual: false, duty: 30 }],
             volt_boost: 0,
             volt_offset: 0,
             rail_max: 1035,
@@ -101,7 +107,6 @@ impl MockBackend {
             lock_hi: 0,
             nvvdd_ocp: 300_000,
             msvdd_ocp: 120_000,
-            fan_manual: false,
             load: 5.0,
             sim_temp: 40.0,
             volt_lock_mv: 0,
@@ -126,8 +131,8 @@ impl MockBackend {
         m
     }
 
-    /// A machine with two cards, for the multi-GPU selection tests and `--mock multi`. The mock
-    /// ignores the index for reads and writes, but enumerates both so selection can be exercised.
+    /// A machine with two cards, for the multi-GPU selection tests and `--mock multi`. Each card has
+    /// its own fans; every other read and write ignores the index.
     pub fn with_second_gpu() -> Self {
         let mut m = Self::new();
         let mut second = m.devices[0].clone();
@@ -135,7 +140,19 @@ impl MockBackend {
         second.name = "Simulated RTX 4070 SUPER (2)".into();
         second.bus_id = "PCI bus 2, slot 0".into();
         m.devices.push(second);
+        m.fans.push(m.fans[0]);
         m
+    }
+
+    /// Whether `gpu`'s fans are on a fixed duty, and the duty.
+    pub fn fan_state(&self, gpu: usize) -> (bool, i32) {
+        let f = self.fans[gpu.min(self.fans.len() - 1)];
+        (f.manual, f.duty)
+    }
+
+    fn fan_mut(&mut self, gpu: usize) -> &mut MockFan {
+        let i = gpu.min(self.fans.len() - 1);
+        &mut self.fans[i]
     }
 
     /// The simulated temperature right now, before the next reading moves it.
@@ -254,12 +271,12 @@ impl GpuBackend for MockBackend {
         })
     }
 
-    fn read_telemetry(&mut self, _gpu: usize) -> Result<GpuTelemetry> {
+    fn read_telemetry(&mut self, gpu: usize) -> Result<GpuTelemetry> {
         // Random-walk load; temperature follows load minus fan cooling.
         let walked = clamp_f64(self.load + (self.rng.next_f64() - 0.5) * 20.0, 0.0, 100.0);
         self.load = self.fixed_load.map(|l| clamp_f64(l, 0.0, 100.0)).unwrap_or(walked);
-        let fan =
-            if self.fan_manual { self.fan as f64 } else { clamp_f64(30.0 + (self.sim_temp - 40.0) * 1.5, 30.0, 100.0) };
+        let (manual, duty) = self.fan_state(gpu);
+        let fan = if manual { duty as f64 } else { clamp_f64(30.0 + (self.sim_temp - 40.0) * 1.5, 30.0, 100.0) };
 
         let core = self.core as f64;
         let free_clock = if self.load < 5.0 {
@@ -321,7 +338,8 @@ impl GpuBackend for MockBackend {
         })
     }
 
-    fn read_tuning_state(&mut self, _gpu: usize) -> Result<GpuTuningState> {
+    fn read_tuning_state(&mut self, gpu: usize) -> Result<GpuTuningState> {
+        let (fan_manual, fan_percent) = self.fan_state(gpu);
         Ok(GpuTuningState {
             core_offset_mhz: self.core,
             memory_offset_mhz: self.mem,
@@ -329,8 +347,8 @@ impl GpuBackend for MockBackend {
             temp_limit_c: self.temp,
             voltage_boost_percent: self.volt_boost,
             voltage_offset_mv: self.volt_offset,
-            fan_manual: self.fan_manual,
-            fan_percent: self.fan,
+            fan_manual,
+            fan_percent,
             voltage_rail_max_mv: self.rail_max,
             msvdd_rail_max_mv: self.msvdd_max,
             voltage_rail_floor_mv: self.rail_floor,
@@ -483,9 +501,8 @@ impl GpuBackend for MockBackend {
         Ok(())
     }
 
-    fn set_fan_speed(&mut self, _gpu: usize, fan_index: i32, percent: i32) -> Result<()> {
-        self.fan_manual = true;
-        self.fan = percent;
+    fn set_fan_speed(&mut self, gpu: usize, fan_index: i32, percent: i32) -> Result<()> {
+        *self.fan_mut(gpu) = MockFan { manual: true, duty: percent };
         // -1 is every cooler; otherwise the id is 1-based, as NVAPI numbers them.
         for (i, f) in self.fan_percents.iter_mut().enumerate() {
             if fan_index < 0 || fan_index == i as i32 + 1 {
@@ -495,12 +512,12 @@ impl GpuBackend for MockBackend {
         Ok(())
     }
 
-    fn set_fan_auto(&mut self, _gpu: usize) -> Result<()> {
-        self.fan_manual = false;
+    fn set_fan_auto(&mut self, gpu: usize) -> Result<()> {
+        self.fan_mut(gpu).manual = false;
         Ok(())
     }
 
-    fn reset_to_defaults(&mut self, _gpu: usize) -> Result<()> {
+    fn reset_to_defaults(&mut self, gpu: usize) -> Result<()> {
         self.core = 0;
         self.mem = 0;
         self.power = 100;
@@ -508,7 +525,7 @@ impl GpuBackend for MockBackend {
         self.volt_boost = 0;
         self.volt_offset = 0;
         self.volt_lock_mv = 0;
-        self.fan_manual = false;
+        self.fan_mut(gpu).manual = false;
         // The private domains too: a mock that forgets the same thing agrees with the bug.
         self.xbar = 0;
         self.sys = 0;
@@ -520,8 +537,11 @@ impl GpuBackend for MockBackend {
         Ok(())
     }
 
-    fn diagnostics(&mut self, _gpu: usize) -> String {
-        let fan = if self.fan_manual { format!("{}%", self.fan) } else { "auto".into() };
+    fn diagnostics(&mut self, gpu: usize) -> String {
+        let fan = match self.fan_state(gpu) {
+            (true, duty) => format!("{duty}%"),
+            (false, _) => "auto".into(),
+        };
         format!(
             "Simulated GPU — nothing real to dump.\r\ncore={} mem={} power={} temp={} vboost={} fan={}\r\n",
             self.core, self.mem, self.power, self.temp, self.volt_boost, fan

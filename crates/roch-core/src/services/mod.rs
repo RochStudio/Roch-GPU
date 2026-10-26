@@ -10,4 +10,4 @@ pub mod tuning;
 pub use profile_store::{AppSettings, ProfileStore};
 pub use recovery::ProfileRecovery;
 pub use telemetry_history::TelemetryHistory;
-pub use tuning::{ListenerId, ServiceEvent, SoftThermalStatus, TuningService};
+pub use tuning::{FanSettings, ListenerId, ServiceEvent, SoftThermalStatus, TuningService};
