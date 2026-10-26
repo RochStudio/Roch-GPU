@@ -35,6 +35,10 @@ pub trait GpuBackend: Send {
     fn read_tuning_state(&mut self, gpu: usize) -> Result<GpuTuningState>;
 
     fn set_core_offset(&mut self, gpu: usize, offset_mhz: i32) -> Result<()>;
+    /// Minimum core clock in MHz, for a backend reporting `can_set_core_min_clock`.
+    fn set_core_min_clock(&mut self, _gpu: usize, _mhz: i32) -> Result<()> {
+        Err(GpuError::new("This card does not expose a minimum core clock."))
+    }
     fn set_memory_offset(&mut self, gpu: usize, offset_mhz: i32) -> Result<()>;
     fn set_power_limit(&mut self, gpu: usize, percent: i32) -> Result<()>;
     fn set_temp_limit(&mut self, gpu: usize, celsius: i32) -> Result<()>;

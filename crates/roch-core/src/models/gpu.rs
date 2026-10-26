@@ -175,6 +175,21 @@ pub struct GpuCapabilities {
     pub memory_clock_is_absolute: bool,
     /// Stock memory clock in MHz, when the slider is absolute.
     pub memory_clock_default_mhz: i32,
+    /// True when the core slider is an absolute maximum clock (RDNA 3) rather than an offset
+    /// (NVIDIA, RDNA 4). The core_offset range then holds clocks, not deltas.
+    pub core_clock_is_absolute: bool,
+    /// Stock maximum core clock in MHz, when the slider is absolute.
+    pub core_clock_default_mhz: i32,
+    /// A minimum core clock can be set beside the maximum (RDNA 3's GfxClkFMin), in MHz.
+    pub can_set_core_min_clock: bool,
+    pub core_min_clock_min_mhz: i32,
+    pub core_min_clock_max_mhz: i32,
+    pub core_min_clock_default_mhz: i32,
+    /// True when the `Offset`-style voltage slider is an absolute maximum voltage (RDNA 3) rather
+    /// than an offset (RDNA 4). The voltage_offset range then holds millivolts, not deltas.
+    pub voltage_offset_is_absolute: bool,
+    /// Stock maximum voltage in mV, when that slider is absolute.
+    pub voltage_offset_default_mv: i32,
     /// True when the power limit is a +/- offset around stock rather than a percentage of TDP.
     pub power_limit_is_offset: bool,
     /// Zero RPM (fan stop at idle) can be turned on and off.
@@ -272,6 +287,14 @@ impl Default for GpuCapabilities {
             voltage_style: VoltageControlStyle::Absolute,
             memory_clock_is_absolute: false,
             memory_clock_default_mhz: 0,
+            core_clock_is_absolute: false,
+            core_clock_default_mhz: 0,
+            can_set_core_min_clock: false,
+            core_min_clock_min_mhz: 0,
+            core_min_clock_max_mhz: 0,
+            core_min_clock_default_mhz: 0,
+            voltage_offset_is_absolute: false,
+            voltage_offset_default_mv: 0,
             power_limit_is_offset: false,
             can_set_zero_rpm: false,
             zero_rpm_default: true,
@@ -447,6 +470,8 @@ impl Default for GpuTelemetry {
 pub struct GpuTuningState {
     pub hardware_fan_curve: Option<FanCurve>,
     pub core_offset_mhz: i32,
+    /// Minimum core clock currently set, in MHz; 0 when the card has no such control.
+    pub core_min_clock_mhz: i32,
     pub memory_offset_mhz: i32,
     pub power_limit_percent: i32,
     pub temp_limit_c: i32,
@@ -485,6 +510,7 @@ impl Default for GpuTuningState {
         Self {
             hardware_fan_curve: None,
             core_offset_mhz: 0,
+            core_min_clock_mhz: 0,
             memory_offset_mhz: 0,
             power_limit_percent: 100,
             temp_limit_c: 83,

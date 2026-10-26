@@ -123,6 +123,12 @@ diag                          full dump: capabilities, raw tables, sensors
 startup --enable <profile> | --disable | --status
 ```
 
+On AMD RDNA 3 (RX 7000) the driver exposes the maximum core clock and maximum voltage rather than
+offsets, so there `--core` and `--uv` take those absolute values (`info` prints the range and stock);
+an out-of-range value is ignored with a note rather than clamped. Profiles saved on a different GPU
+are refused when their values would not mean the same thing on this one (another vendor, Intel,
+or RDNA 3).
+
 `--gpu <n>` selects the card, `--mock` uses a simulated GPU. Anything that writes needs an elevated
 terminal. Passing a gated flag arms that lever for that apply; any lever you don't name goes back to
 the driver's own value.

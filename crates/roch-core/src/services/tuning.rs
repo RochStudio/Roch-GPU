@@ -587,7 +587,11 @@ fn add_clamp_notes(notes: &mut Vec<String>, caps: &GpuCapabilities, asked: &Tuni
         }
     };
 
-    note("core offset", asked.core_offset_mhz, applied.core_offset_mhz, " MHz");
+    let core = if caps.core_clock_is_absolute { "max core clock" } else { "core offset" };
+    note(core, asked.core_offset_mhz, applied.core_offset_mhz, " MHz");
+    if caps.can_set_core_min_clock && asked.core_min_clock_mhz > 0 {
+        note("min core clock", asked.core_min_clock_mhz, applied.core_min_clock_mhz, " MHz");
+    }
     note("memory tuning", asked.memory_offset_mhz, applied.memory_offset_mhz, &format!(" {}", caps.memory_clock_unit));
     note("power limit", asked.power_limit_percent, applied.power_limit_percent, "%");
     // Only when the card has a thermal policy at all; otherwise the profile carries a default
@@ -596,7 +600,8 @@ fn add_clamp_notes(notes: &mut Vec<String>, caps: &GpuCapabilities, asked: &Tuni
         note("temperature limit", asked.temp_limit_c, applied.temp_limit_c, caps.temp_limit_unit());
     }
     note("voltage boost", asked.voltage_boost_percent, applied.voltage_boost_percent, "%");
-    note("undervolt", asked.voltage_offset_mv, applied.voltage_offset_mv, " mV");
+    let volt = if caps.voltage_offset_is_absolute { "max voltage" } else { "undervolt" };
+    note(volt, asked.voltage_offset_mv, applied.voltage_offset_mv, " mV");
     // Only for an armed lever; the rest are written back to the driver's own values.
     if asked.xoc_armed.has(XocLever::NVVDD) {
         if asked.voltage_rail_max_mv > 0 {
@@ -1404,11 +1409,9 @@ impl TuningService {
         let caps = st.caps.clone();
         let device_name = st.device(gpu).name;
 
-        if caps.voltage_style == VoltageControlStyle::Percent
-            && let Some(owner) = profile.gpu_name.as_deref().filter(|n| !n.is_empty() && *n != device_name)
-        {
+        if let Some(owner) = profile.foreign_owner(&caps, &device_name) {
             return vec![format!(
-                "Profile belongs to {owner}. Save a new profile for {device_name}; Intel tuning units differ."
+                "Profile belongs to {owner}. Save a new profile for {device_name}; tuning values do not carry between these cards."
             )];
         }
 
@@ -1436,7 +1439,11 @@ impl TuningService {
             // One signed offset, no ceiling arithmetic: the vendor applies it to the whole curve.
             curve_offset_mv = p.voltage_offset_mv;
             boost_pct = 0;
-            a.log(format!("Voltage offset: {} mV", signed(curve_offset_mv)));
+            if caps.voltage_offset_is_absolute {
+                a.log(format!("Max voltage: {curve_offset_mv} mV"));
+            } else {
+                a.log(format!("Voltage offset: {} mV", signed(curve_offset_mv)));
+            }
         } else if caps.voltage_style == VoltageControlStyle::Absolute {
             // Two independent levers, the way Afterburner exposes them: the boost raises the
             // ceiling above the V/F table's top, the target caps the core at or below a chosen
@@ -1520,8 +1527,19 @@ impl TuningService {
         if caps.can_set_voltage_curve || caps.voltage_style == VoltageControlStyle::Offset {
             a.run("Voltage offset", drv.backend.set_voltage_curve_offset(gpu, curve_offset_mv, 0));
         }
+        // The driver keeps the minimum at or below the maximum on every write, so whichever moves
+        // toward the other goes second: a floor raised above today's ceiling waits for the new one.
+        let core_min = if p.core_min_clock_mhz > 0 { p.core_min_clock_mhz } else { caps.core_min_clock_default_mhz };
+        let min_first = caps.can_set_core_min_clock
+            && drv.backend.read_tuning_state(gpu).map_or(true, |s| core_min <= s.core_offset_mhz);
+        if min_first {
+            a.run("Min core clock", drv.backend.set_core_min_clock(gpu, core_min));
+        }
         if caps.can_set_core_offset {
             a.run("Core offset", drv.backend.set_core_offset(gpu, p.core_offset_mhz));
+        }
+        if caps.can_set_core_min_clock && !min_first {
+            a.run("Min core clock", drv.backend.set_core_min_clock(gpu, core_min));
         }
         if caps.can_set_memory_offset {
             a.run("Memory offset", drv.backend.set_memory_offset(gpu, p.memory_offset_mhz));
@@ -1831,6 +1849,7 @@ impl TuningService {
             },
             gpu_name: Some(st.device(gpu).name),
             core_offset_mhz: s.core_offset_mhz,
+            core_min_clock_mhz: s.core_min_clock_mhz,
             memory_offset_mhz: s.memory_offset_mhz,
             power_limit_percent: s.power_limit_percent,
             temp_limit_c: s.temp_limit_c,

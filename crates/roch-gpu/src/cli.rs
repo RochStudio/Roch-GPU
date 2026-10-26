@@ -230,11 +230,31 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
     }
     let c = svc.capabilities();
     outln!(out);
-    outln!(
-        out,
-        "Core offset   : {}",
-        range_or(c.can_set_core_offset, || format!("{}..{} MHz", c.core_offset_min_mhz, c.core_offset_max_mhz))
-    );
+    if c.core_clock_is_absolute {
+        if c.can_set_core_min_clock {
+            outln!(
+                out,
+                "Min core clock: {}..{} MHz (stock {})",
+                c.core_min_clock_min_mhz,
+                c.core_min_clock_max_mhz,
+                c.core_min_clock_default_mhz
+            );
+        }
+        outln!(
+            out,
+            "Max core clock: {}",
+            range_or(c.can_set_core_offset, || format!(
+                "{}..{} MHz (stock {})",
+                c.core_offset_min_mhz, c.core_offset_max_mhz, c.core_clock_default_mhz
+            ))
+        );
+    } else {
+        outln!(
+            out,
+            "Core offset   : {}",
+            range_or(c.can_set_core_offset, || format!("{}..{} MHz", c.core_offset_min_mhz, c.core_offset_max_mhz))
+        );
+    }
     outln!(
         out,
         "Memory tuning : {}",
@@ -289,10 +309,16 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
         "not supported".to_string()
     } else if c.can_set_voltage_curve {
         format!("{}..0 mV (stock max {} mV)", c.voltage_offset_min_mv, c.stock_max_voltage_mv)
+    } else if c.voltage_offset_is_absolute {
+        format!("{}..{} mV (stock {})", c.voltage_offset_min_mv, c.voltage_offset_max_mv, c.voltage_offset_default_mv)
     } else {
         format!("{}..{} mV (whole-curve offset)", c.voltage_offset_min_mv, c.voltage_offset_max_mv)
     };
-    outln!(out, "Undervolt     : {undervolt}");
+    if c.voltage_offset_is_absolute {
+        outln!(out, "Max voltage   : {undervolt}");
+    } else {
+        outln!(out, "Undervolt     : {undervolt}");
+    }
     if c.can_edit_vf_curve {
         outln!(
             out,
@@ -387,8 +413,15 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
     let rail = |floor: i32, max: i32| if max > 0 { format!("{floor}-{max} mV") } else { "n/a".into() };
     // Only the controls this card has, gated as the capability lines above are: a 0 for a lever
     // the card does not offer reads as a setting.
+    let core = if c.can_set_core_min_clock {
+        format!("core {}-{} MHz", s.core_min_clock_mhz, s.core_offset_mhz)
+    } else if c.core_clock_is_absolute {
+        format!("max core {} MHz", s.core_offset_mhz)
+    } else {
+        format!("core {} MHz", signed(s.core_offset_mhz))
+    };
     let mut current = vec![
-        format!("core {} MHz", signed(s.core_offset_mhz)),
+        core,
         format!("mem {} {}", s.memory_offset_mhz, c.memory_clock_unit),
         format!("power {}%", s.power_limit_percent),
         format!("temp {temp_limit}"),
@@ -397,7 +430,9 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
         let key = if c.voltage_style == VoltageControlStyle::Percent { "vlimit" } else { "vboost" };
         current.push(format!("{key} {}%", s.voltage_boost_percent));
     }
-    if can_undervolt {
+    if c.voltage_offset_is_absolute {
+        current.push(format!("max voltage {uv_mv} mV"));
+    } else if can_undervolt {
         current.push(format!("uv {uv_mv} mV"));
     }
     if c.can_set_voltage_rail {
@@ -501,7 +536,32 @@ pub fn build_apply_profile(
 ) -> CliResult<(TuningProfile, Vec<String>)> {
     let mut notes = Vec::new();
     if let Some(v) = o.get("core") {
-        p.core_offset_mhz = int(v)?;
+        let mhz = int(v)?;
+        let (lo, hi) = (caps.core_offset_min_mhz, caps.core_offset_max_mhz);
+        // On an absolute card "--core 120" read as an offset would cap the clock at the bottom of
+        // the range, so a value outside it is refused rather than clamped.
+        if caps.core_clock_is_absolute && !(lo..=hi).contains(&mhz) {
+            notes.push(format!(
+                "{NOTE_PREFIX} on this card --core is the maximum core clock, {lo}..{hi} MHz (stock {}) — {v} ignored.",
+                caps.core_clock_default_mhz
+            ));
+        } else {
+            p.core_offset_mhz = mhz;
+        }
+    }
+    if let Some(v) = o.get("core-min") {
+        let mhz = int(v)?;
+        let (lo, hi) = (caps.core_min_clock_min_mhz, caps.core_min_clock_max_mhz);
+        if !caps.can_set_core_min_clock {
+            notes.push(format!("{NOTE_PREFIX} this card exposes no minimum core clock — {v} MHz ignored."));
+        } else if !(lo..=hi).contains(&mhz) {
+            notes.push(format!(
+                "{NOTE_PREFIX} --core-min is the minimum core clock, {lo}..{hi} MHz (stock {}) — {v} ignored.",
+                caps.core_min_clock_default_mhz
+            ));
+        } else {
+            p.core_min_clock_mhz = mhz;
+        }
     }
     if let Some(v) = o.get("mem") {
         p.memory_offset_mhz = int(v)?;
@@ -535,7 +595,17 @@ pub fn build_apply_profile(
         p.voltage_boost_percent = int(v)?;
     }
     if let Some(v) = o.get("uv") {
-        p.voltage_offset_mv = int(v)?;
+        let mv = int(v)?;
+        let (lo, hi) = (caps.voltage_offset_min_mv, caps.voltage_offset_max_mv);
+        // "--uv -100" on an absolute card would clamp to the lowest voltage the driver allows.
+        if caps.voltage_offset_is_absolute && !(lo..=hi).contains(&mv) {
+            notes.push(format!(
+                "{NOTE_PREFIX} on this card --uv is the maximum core voltage, {lo}..{hi} mV (stock {}) — {v} ignored.",
+                caps.voltage_offset_default_mv
+            ));
+        } else {
+            p.voltage_offset_mv = mv;
+        }
     }
     if let Some(v) = o.get("clock-min") {
         p.clock_lock_min_mhz = int(v)?;
@@ -931,9 +1001,11 @@ RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
   RochGPU.exe info [--gpu 0]
   RochGPU.exe sensors [--gpu 0]          list supplemental native sensor readings
   RochGPU.exe monitor [--gpu 0] [--interval 1000]
-  RochGPU.exe apply [--gpu 0] [--core +150] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83|card] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
+  RochGPU.exe apply [--gpu 0] [--core +150] [--core-min 500] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83|card] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
     each gated flag arms its own lever for that apply; a lever you do not name goes back to the driver's own value
     --soft-temp: a software temperature limit below the card's own (RTX 50); 'card' leaves it to the card; only enforced while the app runs
+    --core / --uv on AMD RDNA 3: the maximum core clock (MHz) and maximum voltage (mV), not offsets; see `info` for the range
+    --core-min (AMD RDNA 3): the minimum core clock in MHz
   RochGPU.exe apply-profile <name> [--gpu 0]
   RochGPU.exe list-profiles
   RochGPU.exe reset [--gpu 0]
@@ -1121,6 +1193,53 @@ mod tests {
             build_apply_profile(TuningProfile::default(), &caps, &Opts::parse(&args("--core"))),
             Err(CliError::BadNumber)
         ));
+    }
+
+    #[test]
+    fn absolute_core_and_voltage_refuse_offsets() {
+        let caps = GpuCapabilities {
+            core_offset_min_mhz: 500,
+            core_offset_max_mhz: 5000,
+            core_clock_is_absolute: true,
+            core_clock_default_mhz: 2835,
+            voltage_style: VoltageControlStyle::Offset,
+            voltage_offset_min_mv: 700,
+            voltage_offset_max_mv: 1100,
+            voltage_offset_is_absolute: true,
+            voltage_offset_default_mv: 1100,
+            ..Default::default()
+        };
+        let current = TuningProfile { core_offset_mhz: 2835, voltage_offset_mv: 1100, ..Default::default() };
+        let (p, notes) =
+            build_apply_profile(current.clone(), &caps, &Opts::parse(&args("--core +120 --uv -100"))).unwrap();
+        assert_eq!((p.core_offset_mhz, p.voltage_offset_mv), (2835, 1100), "offsets leave the card at stock");
+        assert_eq!(
+            notes,
+            vec![
+                "Note: on this card --core is the maximum core clock, 500..5000 MHz (stock 2835) — +120 ignored.",
+                "Note: on this card --uv is the maximum core voltage, 700..1100 mV (stock 1100) — -100 ignored.",
+            ]
+        );
+        let (p, notes) =
+            build_apply_profile(current.clone(), &caps, &Opts::parse(&args("--core 2900 --uv 1050"))).unwrap();
+        assert_eq!((p.core_offset_mhz, p.voltage_offset_mv), (2900, 1050), "in-range values are the limits");
+        assert!(notes.is_empty(), "{notes:?}");
+
+        // --core-min only where the driver offers a minimum, and only inside its range.
+        let (_, notes) = build_apply_profile(current.clone(), &caps, &Opts::parse(&args("--core-min 800"))).unwrap();
+        assert_eq!(notes, vec!["Note: this card exposes no minimum core clock — 800 MHz ignored."]);
+        let caps = GpuCapabilities {
+            can_set_core_min_clock: true,
+            core_min_clock_min_mhz: 500,
+            core_min_clock_max_mhz: 5000,
+            core_min_clock_default_mhz: 500,
+            ..caps
+        };
+        let (p, notes) = build_apply_profile(current.clone(), &caps, &Opts::parse(&args("--core-min 800"))).unwrap();
+        assert!(p.core_min_clock_mhz == 800 && notes.is_empty(), "{notes:?}");
+        let (p, notes) = build_apply_profile(current, &caps, &Opts::parse(&args("--core-min 50"))).unwrap();
+        assert_eq!(p.core_min_clock_mhz, 0, "out of range is left alone");
+        assert_eq!(notes, vec!["Note: --core-min is the minimum core clock, 500..5000 MHz (stock 500) — 50 ignored."]);
     }
 
     #[test]

@@ -65,9 +65,11 @@ pub enum Field {
     /// The software temperature limit, in °C; the card's own limit (88 °C on a 5070 Ti) is the
     /// default/off point, and the window runs on to 105 °C.
     SoftTempLimit,
+    /// AMD RDNA 3's minimum core clock, in MHz, beside the absolute maximum (`CoreOffset`).
+    CoreMinClock,
 }
 
-const FIELD_COUNT: usize = 20;
+const FIELD_COUNT: usize = 21;
 
 impl Field {
     pub const ALL: [Field; FIELD_COUNT] = [
@@ -91,6 +93,7 @@ impl Field {
         Field::NvvddOcpAmps,
         Field::MsvddOcpAmps,
         Field::SoftTempLimit,
+        Field::CoreMinClock,
     ];
 
     /// The nudge-command name the WPF arrows used ("core:-1").
@@ -102,6 +105,7 @@ impl Field {
             Field::VoltageBoost => "voltboost",
             Field::VoltageOffset => "voltoffset",
             Field::CoreOffset => "core",
+            Field::CoreMinClock => "coremin",
             Field::MemoryOffset => "mem",
             Field::PowerLimit => "power",
             Field::TempLimit => "temp",
@@ -263,6 +267,8 @@ pub struct MainViewModel {
     editor_curve: FanCurve,
     xoc_armed: XocLever,
     pending_changes: bool,
+    /// Fan edits apart from the rest: the fan window's own Apply writes these and clears only them.
+    pending_fan_changes: bool,
     loading_editor: bool,
 
     telemetry: Option<GpuTelemetry>,
@@ -314,6 +320,7 @@ impl MainViewModel {
             editor_curve: FanCurve::default(),
             xoc_armed: XocLever::NONE,
             pending_changes: false,
+            pending_fan_changes: false,
             loading_editor: false,
             telemetry: None,
             last_ceiling: 0,
@@ -406,7 +413,7 @@ impl MainViewModel {
             vm.per_fan_percents = saw.fixed_fan_percents.clone();
             vm.editor_curve = saw.fan_curve.clone_config();
         }
-        vm.pending_changes = false;
+        vm.mark_clean();
 
         vm.refresh_profiles();
         vm.refresh_slots();
@@ -668,11 +675,31 @@ impl MainViewModel {
     pub fn voltage_boost_label(&self) -> &'static str {
         if self.caps.voltage_style == VoltageControlStyle::Percent { "Voltage Limit" } else { "Voltage Boost" }
     }
+    pub fn has_core_min_clock(&self) -> bool {
+        self.caps.can_set_core_min_clock
+    }
+    pub fn core_min_range_text(&self) -> String {
+        let c = &self.caps;
+        format!(
+            "{} … {} MHz (stock {}). The clock the core never drops below; it must stay at or under the maximum.",
+            c.core_min_clock_min_mhz, c.core_min_clock_max_mhz, c.core_min_clock_default_mhz
+        )
+    }
     pub fn core_label(&self) -> &'static str {
-        "Core Offset"
+        if self.caps.core_clock_is_absolute { "Max Core Clock" } else { "Core Offset" }
     }
     pub fn voltage_label(&self) -> &'static str {
-        if self.is_voltage_offset() { "Voltage Offset (mV)" } else { "Core Voltage (mV)" }
+        if self.caps.voltage_offset_is_absolute {
+            "Max Voltage (mV)"
+        } else if self.is_voltage_offset() {
+            "Voltage Offset (mV)"
+        } else {
+            "Core Voltage (mV)"
+        }
+    }
+    /// A core value as the summaries print it: an absolute clock plain, an offset signed.
+    fn core_text(&self, mhz: i32) -> String {
+        if self.caps.core_clock_is_absolute { mhz.to_string() } else { signed(mhz) }
     }
     pub fn power_label(&self) -> &'static str {
         if self.caps.power_limit_is_offset { "Power Limit Offset" } else { "Power Limit" }
@@ -682,6 +709,7 @@ impl MainViewModel {
     pub fn field_unit(&self, f: Field) -> &'static str {
         match f {
             Field::CoreOffset
+            | Field::CoreMinClock
             | Field::XbarOffset
             | Field::SysOffset
             | Field::VideoOffset
@@ -707,7 +735,12 @@ impl MainViewModel {
     }
 
     pub fn core_range_text(&self) -> String {
-        format!("{} … {} MHz", signed(self.caps.core_offset_min_mhz), signed(self.caps.core_offset_max_mhz))
+        let c = &self.caps;
+        if c.core_clock_is_absolute {
+            format!("{} … {} MHz (stock {})", c.core_offset_min_mhz, c.core_offset_max_mhz, c.core_clock_default_mhz)
+        } else {
+            format!("{} … {} MHz", signed(c.core_offset_min_mhz), signed(c.core_offset_max_mhz))
+        }
     }
     pub fn mem_range_text(&self) -> String {
         let c = &self.caps;
@@ -721,13 +754,26 @@ impl MainViewModel {
         }
     }
     pub fn amd_clock_support_text(&self) -> String {
-        format!(
-            "Offset range: {}. Absolute core limits and FCLK adjustment are unavailable in this backend. FCLK appears in Telemetry when reported.",
-            self.core_range_text()
-        )
+        if self.caps.core_clock_is_absolute {
+            format!(
+                "Maximum clock range: {}. A minimum clock and FCLK adjustment are unavailable in this backend. FCLK appears in Telemetry when reported.",
+                self.core_range_text()
+            )
+        } else {
+            format!(
+                "Offset range: {}. Absolute core limits and FCLK adjustment are unavailable in this backend. FCLK appears in Telemetry when reported.",
+                self.core_range_text()
+            )
+        }
     }
     pub fn voltage_offset_range_text(&self) -> String {
-        format!("{} … {} mV (0 = stock)", self.caps.voltage_offset_min_mv, self.caps.voltage_offset_max_mv)
+        let c = &self.caps;
+        if c.voltage_offset_is_absolute {
+            let (lo, hi, stock) = (c.voltage_offset_min_mv, c.voltage_offset_max_mv, c.voltage_offset_default_mv);
+            format!("{lo} … {hi} mV (stock {stock})")
+        } else {
+            format!("{} … {} mV (0 = stock)", c.voltage_offset_min_mv, c.voltage_offset_max_mv)
+        }
     }
     pub fn voltage_boost_range_text(&self) -> String {
         let c = &self.caps;
@@ -889,6 +935,7 @@ impl MainViewModel {
             Field::NvvddOcpAmps => (self.nvvdd_ocp_min_a(), self.nvvdd_ocp_max_a()),
             Field::MsvddOcpAmps => (self.msvdd_ocp_min_a(), self.msvdd_ocp_max_a()),
             Field::SoftTempLimit => c.soft_thermal_limit_range(),
+            Field::CoreMinClock => (c.core_min_clock_min_mhz, c.core_min_clock_min_mhz.max(c.core_min_clock_max_mhz)),
         }
     }
 
@@ -907,6 +954,7 @@ impl MainViewModel {
     /// One slider tick / one arrow press.
     pub fn step(&self, f: Field) -> i32 {
         match f {
+            Field::CoreOffset if self.caps.core_clock_is_absolute => 5,
             Field::CoreOffset | Field::XbarOffset | Field::SysOffset | Field::VideoOffset => self.core_step_mhz(),
             Field::MemoryOffset => self.memory_step_mhz(),
             Field::PowerLimit => self.power_step_percent(),
@@ -924,6 +972,9 @@ impl MainViewModel {
         let (min, max) = self.bounds(f);
         let within = |step: i32| clock_step::snap_within(v, step, min, max);
         match f {
+            // Like an absolute memory clock: stock sits wherever the driver puts it (2835 MHz is off
+            // the 15 MHz grid), and snapping it would move the card off stock.
+            Field::CoreOffset if self.caps.core_clock_is_absolute => v,
             Field::CoreOffset => within(self.editor_step(self.core_step_mhz())),
             Field::MemoryOffset => within(self.memory_snap_mhz()),
             Field::PowerLimit => within(self.editor_step(self.power_step_percent())),
@@ -949,7 +1000,11 @@ impl MainViewModel {
             return false;
         }
         self.vals[f as usize] = v;
-        self.dirty();
+        if f == Field::FixedFan {
+            self.dirty_fans()
+        } else {
+            self.dirty()
+        }
         true
     }
 
@@ -957,6 +1012,8 @@ impl MainViewModel {
     pub fn input_text(&self, f: Field) -> String {
         let v = self.get(f);
         match f {
+            Field::CoreOffset if self.caps.core_clock_is_absolute => v.to_string(),
+            Field::VoltageOffset if self.caps.voltage_offset_is_absolute => v.to_string(),
             Field::CoreOffset | Field::VoltageOffset | Field::XbarOffset | Field::SysOffset | Field::VideoOffset => {
                 signed(v)
             }
@@ -990,6 +1047,7 @@ impl MainViewModel {
             return;
         }
         let step = match f {
+            Field::CoreOffset if self.caps.core_clock_is_absolute => 5,
             Field::CoreOffset | Field::XbarOffset | Field::SysOffset | Field::VideoOffset => self.core_step_mhz(),
             Field::MemoryOffset => self.memory_step_mhz(),
             Field::PowerLimit => self.power_step_percent(),
@@ -1016,7 +1074,7 @@ impl MainViewModel {
     pub fn set_zero_rpm(&mut self, v: bool) {
         if self.zero_rpm != v {
             self.zero_rpm = v;
-            self.dirty();
+            self.dirty_fans();
         }
     }
     pub fn memory_timing_index(&self) -> i32 {
@@ -1036,7 +1094,7 @@ impl MainViewModel {
     pub fn set_fan_mode_index(&mut self, v: i32) {
         if self.fan_mode_index != v {
             self.fan_mode_index = v;
-            self.dirty();
+            self.dirty_fans();
         }
     }
     pub fn is_fixed_fan(&self) -> bool {
@@ -1059,14 +1117,16 @@ impl MainViewModel {
         &mut self.editor_curve
     }
     pub fn mark_curve_dirty(&mut self) {
-        self.dirty();
+        self.dirty_fans();
     }
 
-    /// The fan window wrote to the card; bring this window's controls into line with it.
+    /// The fan window wrote to the card; bring this window's controls into line with it. The fans
+    /// are now applied, so only edits to everything else still count as unapplied.
     pub fn sync_fans_from_service(&mut self, mode: FanMode, percent: i32, per_fan: &[i32]) {
         self.set(Field::FixedFan, percent);
         self.per_fan_percents = per_fan.to_vec();
         self.set_fan_mode_index(mode.as_number());
+        self.pending_fan_changes = false;
         self.refresh_applied_summary();
     }
 
@@ -1178,7 +1238,14 @@ impl MainViewModel {
     }
 
     pub fn pending_changes(&self) -> bool {
-        self.pending_changes
+        self.pending_changes || self.pending_fan_changes
+    }
+    fn mark_clean(&mut self) {
+        self.pending_changes = false;
+        self.pending_fan_changes = false;
+    }
+    fn dirty_fans(&mut self) {
+        self.pending_fan_changes = true;
     }
     fn dirty(&mut self) {
         self.pending_changes = true;
@@ -1393,6 +1460,7 @@ impl MainViewModel {
             Field::NvvddOcpAmps => self.nvvdd_ocp_range_text(),
             Field::MsvddOcpAmps => self.msvdd_ocp_range_text(),
             Field::SoftTempLimit => self.soft_temp_range_text(),
+            Field::CoreMinClock => self.core_min_range_text(),
         }
     }
 
@@ -1512,7 +1580,7 @@ impl MainViewModel {
             Err(_) => {
                 return format!(
                     "Applied: core {} · mem {} · power {}% · temp {}{} · fan {}",
-                    signed(p.core_offset_mhz),
+                    self.core_text(p.core_offset_mhz),
                     signed(p.memory_offset_mhz),
                     p.power_limit_percent,
                     p.temp_limit_c,
@@ -1522,6 +1590,13 @@ impl MainViewModel {
             }
         };
         let volts = match c.voltage_style {
+            VoltageControlStyle::Offset if c.voltage_offset_is_absolute => {
+                if a.voltage_offset_mv == c.voltage_offset_default_mv {
+                    "stock".to_string()
+                } else {
+                    format!("max {} mV", a.voltage_offset_mv)
+                }
+            }
             VoltageControlStyle::Offset => {
                 if a.voltage_offset_mv == 0 {
                     "stock".to_string()
@@ -1579,7 +1654,11 @@ impl MainViewModel {
         };
         format!(
             "On GPU: volt {volts} · core {} · mem {mem} · power {}%{temp} · fan {fan}{extras}",
-            signed(a.core_offset_mhz),
+            if self.has_core_min_clock() {
+                format!("{}–{}", a.core_min_clock_mhz, a.core_offset_mhz)
+            } else {
+                self.core_text(a.core_offset_mhz)
+            },
             a.power_limit_percent
         )
     }
@@ -1685,13 +1764,11 @@ impl MainViewModel {
     }
 
     fn describe_profile(&self, p: &TuningProfile) -> String {
-        if self.intel_tuning()
-            && let Some(g) = p.gpu_name.as_deref().filter(|g| !g.is_empty() && *g != self.device.name)
-        {
+        if let Some(g) = p.foreign_owner(&self.caps, &self.device.name) {
             return format!("Saved for {g}. Save a profile for the current GPU before applying.");
         }
         let mut bits = vec![
-            format!("core {} MHz", signed(p.core_offset_mhz)),
+            format!("core {} MHz", self.core_text(p.core_offset_mhz)),
             format!("mem {} {}", p.memory_offset_mhz, self.caps.memory_clock_unit),
             format!("power {}%", p.power_limit_percent),
             format!("temp {} {}", p.temp_limit_c, self.caps.temp_limit_unit()),
@@ -1752,14 +1829,14 @@ impl MainViewModel {
     }
 
     fn can_load_profile(&mut self, profile: &TuningProfile) -> bool {
-        match profile.gpu_name.as_deref() {
-            Some(g) if self.intel_tuning() && !g.is_empty() && g != self.device.name => {
+        match profile.foreign_owner(&self.caps, &self.device.name) {
+            Some(g) => {
                 self.set_status_error(format!(
-                    "Profile belongs to {g}. Save a new profile for this GPU; Intel tuning units differ."
+                    "Profile belongs to {g}. Save a new profile for this GPU; tuning values do not carry between these cards."
                 ));
                 false
             }
-            _ => true,
+            None => true,
         }
     }
 
@@ -1886,6 +1963,7 @@ impl MainViewModel {
             name: name.to_string(),
             gpu_name: Some(self.device.name.clone()),
             core_offset_mhz: g(Field::CoreOffset),
+            core_min_clock_mhz: if self.has_core_min_clock() { g(Field::CoreMinClock) } else { 0 },
             memory_offset_mhz: g(Field::MemoryOffset),
             power_limit_percent: g(Field::PowerLimit),
             temp_limit_c: g(Field::TempLimit),
@@ -1925,6 +2003,8 @@ impl MainViewModel {
         self.loading_editor = true;
         let c = self.caps.clone();
         self.set(Field::CoreOffset, p.core_offset_mhz);
+        let core_min = if p.core_min_clock_mhz > 0 { p.core_min_clock_mhz } else { c.core_min_clock_default_mhz };
+        self.set(Field::CoreMinClock, core_min);
         self.set(Field::MemoryOffset, p.memory_offset_mhz);
         self.set(Field::PowerLimit, p.power_limit_percent);
         self.set(Field::TempLimit, p.temp_limit_c);
@@ -2101,7 +2181,7 @@ impl MainViewModel {
                     } else {
                         self.set_status(errors.join("  |  "));
                     }
-                    self.pending_changes = false;
+                    self.mark_clean();
                     // Disabled rail editors show the driver-owned live ceilings; the boost can
                     // move them, so do not leave startup values on screen.
                     self.refresh_driver_owned_rail_ceilings(&readback.state);
@@ -2116,7 +2196,7 @@ impl MainViewModel {
                     self.set_status_error(errors.join("  |  "));
                     if recovery_idle && let Some(a) = applied {
                         self.load_into_editor(&a);
-                        self.pending_changes = false;
+                        self.mark_clean();
                     }
                 }
                 self.applied_summary = self.build_applied_summary(&readback);
@@ -2127,7 +2207,7 @@ impl MainViewModel {
                         let stock = TuningProfile::stock(&self.caps, Some(&self.device.name));
                         self.load_into_editor(&stock);
                         self.xoc_armed = XocLever::NONE;
-                        self.pending_changes = false;
+                        self.mark_clean();
                         self.set_status("Reset to driver defaults");
                     }
                     Err(e) => self.set_status_error(e.message),

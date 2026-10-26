@@ -72,6 +72,7 @@ struct OffsetStyleBackend {
     calls: Vec<String>,
     voltage_offset_mv: i32,
     core_offset_mhz: i32,
+    core_min_mhz: i32,
     memory_mhz: i32,
     power_percent: i32,
     zero_rpm: bool,
@@ -88,6 +89,7 @@ impl OffsetStyleBackend {
             calls: Vec::new(),
             voltage_offset_mv: 0,
             core_offset_mhz: 0,
+            core_min_mhz: 0,
             memory_mhz: 2518,
             power_percent: 0,
             zero_rpm: true,
@@ -162,6 +164,7 @@ impl GpuBackend for OffsetStyleBackend {
     fn read_tuning_state(&mut self, _gpu: usize) -> Result<GpuTuningState> {
         Ok(GpuTuningState {
             core_offset_mhz: self.core_offset_mhz,
+            core_min_clock_mhz: self.core_min_mhz,
             memory_offset_mhz: self.memory_mhz,
             power_limit_percent: self.power_percent,
             voltage_offset_mv: self.voltage_offset_mv,
@@ -176,6 +179,11 @@ impl GpuBackend for OffsetStyleBackend {
     fn set_core_offset(&mut self, _gpu: usize, mhz: i32) -> Result<()> {
         self.call("SetCoreOffset");
         self.core_offset_mhz = mhz;
+        Ok(())
+    }
+    fn set_core_min_clock(&mut self, _gpu: usize, mhz: i32) -> Result<()> {
+        self.call("SetCoreMinClock");
+        self.core_min_mhz = mhz;
         Ok(())
     }
     fn set_memory_offset(&mut self, _gpu: usize, mhz: i32) -> Result<()> {
@@ -804,6 +812,134 @@ fn offset_style_card() {
     let stock = TuningProfile::stock(&caps, Some("Test"));
     assert_eq!(stock.memory_offset_mhz, 2518, "stock memory = rated clock");
     assert!(stock.zero_rpm, "stock zero rpm follows the card default");
+}
+
+/// RDNA 3 reports the same OD8 ids as absolute limits: the maximum clock and voltage themselves.
+fn rdna3_caps() -> GpuCapabilities {
+    GpuCapabilities {
+        can_set_core_offset: true,
+        core_offset_min_mhz: 500,
+        core_offset_max_mhz: 5000,
+        core_clock_is_absolute: true,
+        core_clock_default_mhz: 2835,
+        can_set_core_min_clock: true,
+        core_min_clock_min_mhz: 500,
+        core_min_clock_max_mhz: 5000,
+        core_min_clock_default_mhz: 500,
+        can_set_memory_offset: true,
+        memory_offset_min_mhz: 2500,
+        memory_offset_max_mhz: 3000,
+        memory_clock_is_absolute: true,
+        memory_clock_default_mhz: 2500,
+        can_set_power_limit: true,
+        power_limit_min_percent: -10,
+        power_limit_max_percent: 15,
+        power_limit_default_percent: 0,
+        power_limit_is_offset: true,
+        voltage_style: VoltageControlStyle::Offset,
+        voltage_offset_min_mv: 700,
+        voltage_offset_max_mv: 1100,
+        voltage_offset_is_absolute: true,
+        voltage_offset_default_mv: 1100,
+        can_read_voltage: true,
+        can_set_fan_speed: true,
+        fan_curve_is_hardware: true,
+        fan_curve_points: 5,
+        fan_min_percent: 15,
+        fan_count: 1,
+        ..Default::default()
+    }
+}
+
+/// Stock on an absolute card is the card's own clock and voltage, not the bottom of the range.
+#[test]
+fn absolute_core_and_voltage_stock_is_the_cards_own() {
+    let mut backend = OffsetStyleBackend::new();
+    backend.override_caps = Some(rdna3_caps());
+    backend.devices[0].name = "AMD Radeon RX 7900 XT".into();
+    let svc = TuningService::new(Box::new(backend));
+    svc.initialize(0).unwrap();
+
+    let stock = TuningProfile::stock(&svc.capabilities(), Some("AMD Radeon RX 7900 XT"));
+    assert_eq!(
+        (stock.core_min_clock_mhz, stock.core_offset_mhz, stock.voltage_offset_mv),
+        (500, 2835, 1100),
+        "stock = rated clocks and voltage"
+    );
+
+    let errs = svc.apply(&stock);
+    assert!(errs.is_empty(), "stock apply is clean ({})", errs.join(" | "));
+    offset(&svc, |b| {
+        assert_eq!(b.core_offset_mhz, 2835, "max clock left at stock, not clamped to 500 MHz");
+        assert_eq!(b.core_min_mhz, 500, "min clock at stock");
+        assert_eq!(b.voltage_offset_mv, 1100, "max voltage left at stock, not clamped to 700 mV");
+    });
+}
+
+/// The minimum clock is written on the side that keeps it at or under the maximum throughout.
+#[test]
+fn min_core_clock_is_written_in_a_safe_order_and_never_above_the_max() {
+    let mut backend = OffsetStyleBackend::new();
+    backend.override_caps = Some(rdna3_caps());
+    backend.core_offset_mhz = 1000; // the card's maximum today
+    let svc = TuningService::new(Box::new(backend));
+    svc.initialize(0).unwrap();
+    let order = |svc: &TuningService| {
+        offset(svc, |b| b.calls.iter().filter(|c| c.starts_with("SetCore")).cloned().collect::<Vec<_>>())
+    };
+
+    // Raising the floor above today's 1000 MHz ceiling: the ceiling goes first.
+    offset(&svc, |b| b.calls.clear());
+    svc.apply(&TuningProfile { core_offset_mhz: 3000, core_min_clock_mhz: 2500, ..profile() });
+    assert_eq!(order(&svc), ["SetCoreOffset", "SetCoreMinClock"]);
+    assert_eq!(offset(&svc, |b| (b.core_min_mhz, b.core_offset_mhz)), (2500, 3000));
+
+    // Lowering the ceiling under today's 2500 MHz floor: the floor goes first.
+    offset(&svc, |b| b.calls.clear());
+    svc.apply(&TuningProfile { core_offset_mhz: 2000, core_min_clock_mhz: 1500, ..profile() });
+    assert_eq!(order(&svc), ["SetCoreMinClock", "SetCoreOffset"]);
+
+    // A floor above the ceiling is held at the ceiling, with a note.
+    let notes = svc.apply(&TuningProfile { core_offset_mhz: 2000, core_min_clock_mhz: 2600, ..profile() });
+    assert_eq!(offset(&svc, |b| b.core_min_mhz), 2000);
+    assert!(notes.iter().any(|n| n.contains("min core clock 2600 MHz")), "{notes:?}");
+
+    // 0 in a profile means the driver's default.
+    svc.apply(&TuningProfile { core_offset_mhz: 2835, ..profile() });
+    assert_eq!(offset(&svc, |b| b.core_min_mhz), 500);
+}
+
+/// A profile saved on another card is refused where its values would not mean the same thing.
+#[test]
+fn foreign_profiles_are_refused_across_units_and_vendors() {
+    let rtx = TuningProfile {
+        gpu_name: Some("NVIDIA GeForce RTX 4070 Ti".into()),
+        power_limit_percent: 110,
+        voltage_offset_mv: -90,
+        ..profile()
+    };
+    let rdna3 = rdna3_caps();
+    let nvidia = GpuCapabilities::default();
+    let (radeon, rtx50) = ("AMD Radeon RX 7900 XT", "NVIDIA GeForce RTX 5070 Ti");
+    let own = TuningProfile { gpu_name: Some(radeon.into()), ..profile() };
+    let xtx = TuningProfile { gpu_name: Some("AMD Radeon RX 7900 XTX".into()), ..profile() };
+
+    assert_eq!(rtx.foreign_owner(&rdna3, radeon), Some("NVIDIA GeForce RTX 4070 Ti"), "RTX profile on RDNA 3");
+    assert_eq!(xtx.foreign_owner(&rdna3, radeon), Some("AMD Radeon RX 7900 XTX"), "absolute limits are per card");
+    assert_eq!(own.foreign_owner(&nvidia, rtx50), Some(radeon), "Radeon profile on an NVIDIA card");
+    assert_eq!(rtx.foreign_owner(&nvidia, rtx50), None, "NVIDIA offsets carry between NVIDIA cards");
+    assert_eq!(profile().foreign_owner(&rdna3, radeon), None, "a profile with no GPU recorded still applies");
+    assert_eq!(own.foreign_owner(&rdna3, radeon), None, "its own card");
+
+    let mut backend = OffsetStyleBackend::new();
+    backend.override_caps = Some(rdna3);
+    backend.devices[0].name = radeon.into();
+    let svc = TuningService::new(Box::new(backend));
+    svc.initialize(0).unwrap();
+    offset(&svc, |b| b.calls.clear());
+    let refused = svc.apply(&rtx);
+    assert!(refused.len() == 1 && refused[0].contains("RTX 4070 Ti"), "refused: {}", refused.join(" | "));
+    assert!(offset(&svc, |b| b.calls.is_empty()), "nothing written for a foreign profile");
 }
 
 /// "ReleaseFanControl respects who owns the curve"

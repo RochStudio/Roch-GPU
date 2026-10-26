@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
 use super::fan_curve::FanCurve;
-use super::gpu::GpuCapabilities;
+use super::gpu::{GpuCapabilities, VoltageControlStyle};
 use super::xoc_lever::XocLever;
 use crate::util::clamp_i32;
 
@@ -132,6 +132,9 @@ pub struct TuningProfile {
     pub gpu_name: Option<String>,
 
     pub core_offset_mhz: i32,
+    /// Minimum core clock in MHz, where the card has one (RDNA 3). 0 = the driver's default; the
+    /// C# build ignores the field.
+    pub core_min_clock_mhz: i32,
     pub memory_offset_mhz: i32,
     pub power_limit_percent: i32,
     pub temp_limit_c: i32,
@@ -194,6 +197,20 @@ pub struct TuningProfile {
     pub modified_utc: DateTime<Utc>,
 }
 
+/// The vendor a GPU's marketing name implies, or `None` when it names none.
+fn gpu_vendor(name: &str) -> Option<&'static str> {
+    let n = name.to_lowercase();
+    if ["nvidia", "geforce", "rtx", "gtx", "quadro"].iter().any(|k| n.contains(k)) {
+        Some("nvidia")
+    } else if n.contains("radeon") || n.contains("amd") {
+        Some("amd")
+    } else if n.contains("intel") {
+        Some("intel")
+    } else {
+        None
+    }
+}
+
 fn legacy_xoc<'de, D: Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
     Option::<bool>::deserialize(d).map(|b| b.unwrap_or(false))
 }
@@ -205,6 +222,7 @@ impl Default for TuningProfile {
             version: 1,
             gpu_name: None,
             core_offset_mhz: 0,
+            core_min_clock_mhz: 0,
             memory_offset_mhz: 0,
             power_limit_percent: 100,
             temp_limit_c: 83,
@@ -269,7 +287,11 @@ impl TuningProfile {
         TuningProfile {
             name: "Stock".into(),
             gpu_name: gpu_name.map(str::to_string),
-            core_offset_mhz: 0,
+            // An absolute slider's zero is the bottom of the card, not stock: 0 clamped to a
+            // 500 MHz clock cap and a 700 mV voltage cap on a 7900 XT.
+            core_offset_mhz: if caps.core_clock_is_absolute { caps.core_clock_default_mhz } else { 0 },
+            core_min_clock_mhz: if caps.can_set_core_min_clock { caps.core_min_clock_default_mhz } else { 0 },
+            voltage_offset_mv: if caps.voltage_offset_is_absolute { caps.voltage_offset_default_mv } else { 0 },
             voltage_boost_percent: caps.voltage_boost_default_percent,
             power_limit_percent: caps.power_limit_default_percent,
             memory_timing_level: caps.memory_timing_default_level,
@@ -282,9 +304,32 @@ impl TuningProfile {
         }
     }
 
+    /// The GPU this profile was saved for, when its values cannot be applied to `device_name`.
+    ///
+    /// Intel percentages and RDNA 3's absolute clock and voltage limits only mean something on
+    /// the card they were read from. Offsets carry between cards of one vendor, but not to another:
+    /// an RTX profile's core 0 and undervolt -90 clamped to a 500 MHz cap and 700 mV on a 7900 XT.
+    /// Profiles that record no GPU (older builds) are allowed, as before.
+    pub fn foreign_owner(&self, caps: &GpuCapabilities, device_name: &str) -> Option<&str> {
+        let owner = self.gpu_name.as_deref().filter(|n| !n.is_empty() && *n != device_name)?;
+        let card_specific = caps.voltage_style == VoltageControlStyle::Percent
+            || caps.core_clock_is_absolute
+            || caps.voltage_offset_is_absolute;
+        let other_vendor = matches!((gpu_vendor(owner), gpu_vendor(device_name)), (Some(a), Some(b)) if a != b);
+        (card_specific || other_vendor).then_some(owner)
+    }
+
     /// Clamp every value into the ranges the driver reports.
     pub fn clamp_to(&mut self, caps: &GpuCapabilities) {
         self.core_offset_mhz = clamp_i32(self.core_offset_mhz, caps.core_offset_min_mhz, caps.core_offset_max_mhz);
+        // 0 means "the driver's default". A floor above the ceiling is one the driver would refuse.
+        if self.core_min_clock_mhz > 0 && caps.can_set_core_min_clock {
+            let (lo, mut hi) = (caps.core_min_clock_min_mhz, caps.core_min_clock_max_mhz);
+            if caps.core_clock_is_absolute {
+                hi = hi.min(self.core_offset_mhz).max(lo);
+            }
+            self.core_min_clock_mhz = clamp_i32(self.core_min_clock_mhz, lo, hi);
+        }
         self.memory_offset_mhz =
             clamp_i32(self.memory_offset_mhz, caps.memory_offset_min_mhz, caps.memory_offset_max_mhz);
         self.power_limit_percent =

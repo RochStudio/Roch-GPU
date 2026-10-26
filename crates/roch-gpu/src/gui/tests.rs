@@ -294,6 +294,66 @@ fn nvidia_values_snap_to_the_driver_grid_and_clamp() {
 }
 
 #[test]
+fn rdna3_absolute_core_and_voltage_load_at_stock() {
+    let f = fixture();
+    let mut vm = vm(&f);
+    vm.caps = GpuCapabilities {
+        voltage_style: VoltageControlStyle::Offset,
+        core_offset_min_mhz: 500,
+        core_offset_max_mhz: 5000,
+        core_clock_is_absolute: true,
+        core_clock_default_mhz: 2835,
+        can_set_core_min_clock: true,
+        core_min_clock_min_mhz: 500,
+        core_min_clock_max_mhz: 5000,
+        core_min_clock_default_mhz: 500,
+        voltage_offset_min_mv: 700,
+        voltage_offset_max_mv: 1100,
+        voltage_offset_is_absolute: true,
+        voltage_offset_default_mv: 1100,
+        ..vm.caps.clone()
+    };
+    // What the Reset button loads: the card's own limits, not 500 MHz and 700 mV.
+    vm.load_into_editor(&TuningProfile::stock(&vm.caps, None));
+    assert_eq!((vm.get(Field::CoreOffset), vm.get(Field::VoltageOffset)), (2835, 1100));
+    assert_eq!((vm.core_label(), vm.voltage_label()), ("Max Core Clock", "Max Voltage (mV)"));
+    assert_eq!(
+        (vm.input_text(Field::CoreOffset), vm.input_text(Field::VoltageOffset)),
+        ("2835".to_string(), "1100".to_string()),
+        "absolute limits are unsigned"
+    );
+    assert_eq!(vm.core_range_text(), "500 … 5000 MHz (stock 2835)");
+    vm.nudge(Field::CoreOffset, 1);
+    assert_eq!(vm.get(Field::CoreOffset), 2840, "off-grid stock is kept; a step is 5 MHz");
+
+    // The minimum clock sits beside it, read from the driver like the maximum.
+    assert!(vm.has_core_min_clock());
+    assert_eq!(vm.get(Field::CoreMinClock), 500, "stock minimum");
+    vm.nudge_spec("coremin:1");
+    assert_eq!(vm.input_text(Field::CoreMinClock), "505");
+    assert_eq!(vm.field_unit(Field::CoreMinClock), "MHz");
+    assert_eq!(vm.build_profile_from_editor("x").core_min_clock_mhz, 505, "saved with the profile");
+}
+
+#[test]
+fn fan_window_apply_clears_only_fan_edits() {
+    let f = fixture();
+    let mut vm = vm(&f);
+    assert!(!vm.pending_changes());
+    vm.set_fan_mode_index(FanMode::Fixed.as_number());
+    vm.set(Field::FixedFan, 70);
+    vm.mark_curve_dirty();
+    assert!(vm.pending_changes(), "fan edits show as unapplied");
+    vm.sync_fans_from_service(FanMode::Fixed, 70, &[]);
+    assert!(!vm.pending_changes(), "the fan window's Apply wrote them");
+
+    vm.set(Field::CoreOffset, 60);
+    vm.set(Field::FixedFan, 40);
+    vm.sync_fans_from_service(FanMode::Fixed, 40, &[]);
+    assert!(vm.pending_changes(), "a core edit still waits for the main Apply");
+}
+
+#[test]
 fn apply_runs_as_a_job_and_reports() {
     let f = fixture();
     let mut vm = vm(&f);

@@ -306,9 +306,12 @@ fn sliders(ui: &mut Ui, vm: &mut MainViewModel, actions: &mut Vec<MainAction>) {
                 slider_row(ui, vm, label, Field::VoltageBoost, !busy, 12.0);
             }
             if vm.is_voltage_offset() {
-                slider_row(ui, vm, "Voltage Offset (mV)", Field::VoltageOffset, !busy, 12.0);
+                slider_row(ui, vm, vm.voltage_label(), Field::VoltageOffset, !busy, 12.0);
             }
             let can_core = vm.caps.can_set_core_offset && !busy;
+            if vm.has_core_min_clock() {
+                slider_row(ui, vm, "Min Core Clock", Field::CoreMinClock, can_core, 12.0);
+            }
             slider_row(ui, vm, vm.core_label(), Field::CoreOffset, can_core, 12.0);
             if vm.has_xbar() {
                 slider_row(ui, vm, "XBAR Clock Offset", Field::XbarOffset, !busy, 5.0);

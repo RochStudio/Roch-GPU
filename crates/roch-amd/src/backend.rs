@@ -477,6 +477,16 @@ impl AmdBackend {
         Ok(self.ranges_by_gpu.get(&gpu).and_then(|r| r.get(id.index())).copied().unwrap_or_default())
     }
 
+    /// The driver's range for each of the five fan-curve points: temperatures, then speeds.
+    fn fan_ranges(&mut self, gpu: usize) -> Result<([Od8Range; 5], [Od8Range; 5])> {
+        let mut t = [Od8Range::default(); 5];
+        let mut s = [Od8Range::default(); 5];
+        for (r, id) in t.iter_mut().zip(FAN_CURVE_TEMP_IDS).chain(s.iter_mut().zip(FAN_CURVE_SPEED_IDS)) {
+            *r = self.range(gpu, id)?;
+        }
+        Ok((t, s))
+    }
+
     fn has(&mut self, gpu: usize, feature: i32) -> Result<bool> {
         self.range(gpu, Od8Id::GfxClkFMax)?; // ensures caps is populated
         Ok(self.caps.get(&gpu).is_some_and(|&c| c & feature == feature))
@@ -608,12 +618,14 @@ impl AmdBackend {
         let not_reported = |v: f64| if v.is_nan() { "not reported".to_string() } else { format!("{} MHz", f0(v)) };
         let _ = writeln!(sb, "  FCLK: {} · SoC: {}", not_reported(t.fabric_clock_mhz), not_reported(t.soc_clock_mhz));
         sb.push_str("  FCLK adjustment: unavailable through this ADL backend (sensor is read-only).\n");
-        let core_min = if self.range(gpu, Od8Id::GfxClkFMin)?.supported() {
-            "driver range available; absolute-limit writes not implemented"
+        let core_min = if self.capabilities(gpu)?.can_set_core_min_clock {
+            "writable (Min Core Clock)"
+        } else if self.range(gpu, Od8Id::GfxClkFMin)?.supported() {
+            "driver range available, but the maximum is an offset on this card, so no absolute pair"
         } else {
             "locked by driver"
         };
-        let _ = writeln!(sb, "  Core minimum: {core_min}; absolute clock locking is not implemented by this backend.");
+        let _ = writeln!(sb, "  Core minimum: {core_min}.");
         let _ = writeln!(
             sb,
             "  edge {}°C · hotspot {}°C · memory {}°C",
@@ -783,11 +795,13 @@ impl GpuBackend for AmdBackend {
 
     fn capabilities(&mut self, gpu: usize) -> Result<GpuCapabilities> {
         let core = self.range(gpu, Od8Id::GfxClkFMax)?;
+        let core_min = self.range(gpu, Od8Id::GfxClkFMin)?;
         let mem = self.range(gpu, Od8Id::UClkFMax)?;
         let power = self.range(gpu, Od8Id::PowerPercentage)?;
         let volt = self.range(gpu, Od8Id::OdVoltage)?;
-        let fan_t1 = self.range(gpu, Od8Id::FanCurveTemperature1)?;
-        let fan_s1 = self.range(gpu, Od8Id::FanCurveSpeed1)?;
+        let (fan_t, fan_s) = self.fan_ranges(gpu)?;
+        let fan_ok = fan_t[0].supported() && fan_s[0].supported();
+        let (fan_lo, fan_hi) = flat_duty_range(&fan_s);
         let timing = self.range(gpu, Od8Id::AcTiming)?;
         let temp = self.range(gpu, Od8Id::OperatingTempMax)?;
         let zero_rpm = self.range(gpu, Od8Id::FanZeroRpmControl)?;
@@ -797,11 +811,25 @@ impl GpuBackend for AmdBackend {
             Vec::new()
         };
         let n_options = timing_options.len() as i32;
+        // The same OD8 ids mean different things per generation. RDNA 4 reports GfxClkFMax as an
+        // offset (-500..1000, default 0) and OdVoltage as one too; RDNA 3 reports the absolute
+        // maximum clock (500..5000, default 2835 on a 7900 XT) and maximum voltage (700..1100,
+        // default 1100). An offset window always spans 0, so a minimum above it means absolute.
+        let core_absolute = core.supported() && core.min > 0;
+        let volt_absolute = volt.supported() && volt.min > 0;
+        // A minimum only pairs with an absolute maximum; RDNA 4 locks GfxClkFMin at 0..0 anyway.
+        let min_clock = core_absolute && core_min.supported() && self.has(gpu, od8_feature::GFX_CLK_LIMITS)?;
 
         Ok(GpuCapabilities {
             can_set_core_offset: self.has(gpu, od8_feature::GFX_CLK_LIMITS)? && core.supported(),
             core_offset_min_mhz: if core.supported() { core.min } else { 0 },
             core_offset_max_mhz: if core.supported() { core.max } else { 0 },
+            core_clock_is_absolute: core_absolute,
+            core_clock_default_mhz: if core_absolute { core.default } else { 0 },
+            can_set_core_min_clock: min_clock,
+            core_min_clock_min_mhz: if min_clock { core_min.min } else { 0 },
+            core_min_clock_max_mhz: if min_clock { core_min.max } else { 0 },
+            core_min_clock_default_mhz: if min_clock { core_min.default } else { 0 },
 
             // RDNA reports an absolute memory clock, not an offset — the UI reads
             // memory_clock_is_absolute.
@@ -831,6 +859,8 @@ impl GpuBackend for AmdBackend {
             },
             voltage_offset_min_mv: if volt.supported() { volt.min } else { 0 },
             voltage_offset_max_mv: if volt.supported() { volt.max } else { 0 },
+            voltage_offset_is_absolute: volt_absolute,
+            voltage_offset_default_mv: if volt_absolute { volt.default } else { 0 },
             can_set_voltage_curve: false,
             curve_unavailable_reason: if self.has(gpu, od8_feature::GFX_CLK_CURVE)? {
                 String::new()
@@ -851,13 +881,15 @@ impl GpuBackend for AmdBackend {
             memory_timing_options: timing_options,
 
             // A hardware curve: exactly five points, and the driver runs it — no polling loop.
-            can_set_fan_speed: self.has(gpu, od8_feature::FAN_CURVE)? && fan_t1.supported(),
+            // Every window below is the driver's, per point; the fallbacks only fill a card that
+            // offers no fan control, where nothing reads them.
+            can_set_fan_speed: self.has(gpu, od8_feature::FAN_CURVE)? && fan_ok,
             fan_curve_is_hardware: true,
             fan_curve_points: 5,
-            fan_curve_min_temp_c: if fan_t1.supported() { fan_t1.min } else { 25 },
-            fan_curve_max_temp_c: if fan_t1.supported() { fan_t1.max } else { 100 },
-            fan_min_percent: if fan_s1.supported() { fan_s1.min } else { 0 },
-            fan_max_percent: if fan_s1.supported() { fan_s1.max } else { 100 },
+            fan_curve_min_temp_c: if fan_ok { fan_t[0].min } else { 25 },
+            fan_curve_max_temp_c: if fan_ok { fan_t[4].max } else { 100 },
+            fan_min_percent: if fan_ok { fan_lo } else { 0 },
+            fan_max_percent: if fan_ok { fan_hi } else { 100 },
             fan_count: 1,
             ..GpuCapabilities::default()
         })
@@ -917,6 +949,7 @@ impl GpuBackend for AmdBackend {
         let timing_min = self.range(gpu, Od8Id::AcTiming)?.min;
         Ok(GpuTuningState {
             core_offset_mhz: v[Od8Id::GfxClkFMax.index()],
+            core_min_clock_mhz: v[Od8Id::GfxClkFMin.index()],
             memory_offset_mhz: v[Od8Id::UClkFMax.index()],
             power_limit_percent: v[Od8Id::PowerPercentage.index()],
             temp_limit_c: v[Od8Id::OperatingTempMax.index()],
@@ -938,6 +971,14 @@ impl GpuBackend for AmdBackend {
             bail!("This card does not expose a core clock offset.");
         }
         self.write(gpu, &[(Od8Id::GfxClkFMax, clamp_i32(offset_mhz, r.min, r.max))])
+    }
+
+    fn set_core_min_clock(&mut self, gpu: usize, mhz: i32) -> Result<()> {
+        if !self.capabilities(gpu)?.can_set_core_min_clock {
+            bail!("This card does not expose a minimum core clock.");
+        }
+        let r = self.range(gpu, Od8Id::GfxClkFMin)?;
+        self.write(gpu, &[(Od8Id::GfxClkFMin, clamp_i32(mhz, r.min, r.max))])
     }
 
     fn set_memory_offset(&mut self, gpu: usize, mhz: i32) -> Result<()> {
@@ -1005,39 +1046,23 @@ impl GpuBackend for AmdBackend {
     /// Fixed speed is expressed as a flat hardware curve: five points at the same duty. The driver
     /// still owns fan control, so it keeps working when this app is closed.
     fn set_fan_speed(&mut self, gpu: usize, _fan_index: i32, percent: i32) -> Result<()> {
-        let s = self.range(gpu, Od8Id::FanCurveSpeed1)?;
-        let t = self.range(gpu, Od8Id::FanCurveTemperature1)?;
-        if !s.supported() {
+        let (t, s) = self.fan_ranges(gpu)?;
+        if !s[0].supported() {
             bail!("This card does not expose fan control.");
         }
-        let duty = clamp_i32(percent, s.min, s.max);
-        let (lo, hi) = (t.min, t.max);
-        let span = hi.wrapping_sub(lo);
-        self.write(
-            gpu,
-            &[
-                (Od8Id::FanCurveTemperature1, lo),
-                (Od8Id::FanCurveSpeed1, duty),
-                (Od8Id::FanCurveTemperature2, lo.wrapping_add(span / 4)),
-                (Od8Id::FanCurveSpeed2, duty),
-                (Od8Id::FanCurveTemperature3, lo.wrapping_add(span / 2)),
-                (Od8Id::FanCurveSpeed3, duty),
-                (Od8Id::FanCurveTemperature4, lo.wrapping_add(span.wrapping_mul(3) / 4)),
-                (Od8Id::FanCurveSpeed4, duty),
-                (Od8Id::FanCurveTemperature5, hi),
-                (Od8Id::FanCurveSpeed5, duty),
-            ],
-        )
+        let (lo, hi) = flat_duty_range(&s);
+        let duty = clamp_i32(percent, lo, hi);
+        let writes = fan_curve_writes(|_| f64::from(duty), &t, &s);
+        self.write(gpu, &writes)
     }
 
     /// Push a fan curve into the hardware, sampled down to the five points the driver takes.
     fn set_fan_curve(&mut self, gpu: usize, curve: &FanCurve) -> Result<()> {
-        let s = self.range(gpu, Od8Id::FanCurveSpeed1)?;
-        let t = self.range(gpu, Od8Id::FanCurveTemperature1)?;
-        if !s.supported() {
+        let (t, s) = self.fan_ranges(gpu)?;
+        if !s[0].supported() {
             bail!("This card does not expose fan control.");
         }
-        let writes = fan_curve_writes(curve, t, s);
+        let writes = fan_curve_writes(|c| curve.evaluate(c), &t, &s);
         self.write(gpu, &writes)
     }
 
@@ -1098,17 +1123,29 @@ impl GpuBackend for AmdBackend {
 /// Five evenly spaced temperatures across the allowed window, each taking its speed from the
 /// user's curve. Temperatures must stay strictly increasing or the driver rejects the table, and
 /// the speeds must be monotonic.
-fn fan_curve_writes(curve: &FanCurve, t: Od8Range, s: Od8Range) -> Vec<(Od8Id, i32)> {
+/// The duty a flat curve may hold: inside every point's own speed range.
+fn flat_duty_range(s: &[Od8Range; 5]) -> (i32, i32) {
+    let lo = s.iter().map(|r| r.min).max().unwrap_or(0);
+    let hi = s.iter().map(|r| r.max).min().unwrap_or(100);
+    (lo, hi.max(lo))
+}
+
+/// The five hardware points: temperatures spread from the first point's minimum to the last
+/// point's maximum, speeds from `speed_at`. The driver reports a range per point, so each is
+/// clamped to its own rather than to the first point's.
+fn fan_curve_writes(speed_at: impl Fn(f64) -> f64, t: &[Od8Range; 5], s: &[Od8Range; 5]) -> Vec<(Od8Id, i32)> {
     let mut writes = Vec::with_capacity(10);
-    let (mut last_temp, mut last_speed) = (i32::MIN, s.min);
+    let (lo, hi) = (t[0].min, t[4].max);
+    let (mut last_temp, mut last_speed) = (i32::MIN, s[0].min);
     let n = FAN_CURVE_TEMP_IDS.len() as i32;
     for i in 0..FAN_CURVE_TEMP_IDS.len() {
-        let mut temp = t.min.wrapping_add(t.max.wrapping_sub(t.min).wrapping_mul(i as i32) / (n - 1));
+        let spread = lo.wrapping_add(hi.wrapping_sub(lo).wrapping_mul(i as i32) / (n - 1));
+        let mut temp = clamp_i32(spread, t[i].min, t[i].max);
         if temp <= last_temp {
             temp = last_temp.wrapping_add(1);
         }
-        let mut speed = round_even_i32(curve.evaluate(temp as f64));
-        speed = clamp_i32(speed, s.min, s.max);
+        let mut speed = round_even_i32(speed_at(temp as f64));
+        speed = clamp_i32(speed, s[i].min, s[i].max);
         if speed < last_speed {
             speed = last_speed; // the hardware curve must be monotonic
         }
@@ -1200,9 +1237,9 @@ mod tests {
             FanPoint::new(60.0, 40.0),
             FanPoint::new(90.0, 100.0),
         ]);
-        let t = Od8Range { min: 25, max: 100, default: 0 };
-        let s = Od8Range { min: 0, max: 100, default: 0 };
-        let w = fan_curve_writes(&curve, t, s);
+        let t = [Od8Range { min: 25, max: 100, default: 0 }; 5];
+        let s = [Od8Range { min: 0, max: 100, default: 0 }; 5];
+        let w = fan_curve_writes(|c| curve.evaluate(c), &t, &s);
         let temps: Vec<i32> = w.iter().step_by(2).map(|x| x.1).collect();
         let speeds: Vec<i32> = w.iter().skip(1).step_by(2).map(|x| x.1).collect();
         assert_eq!(temps, vec![25, 43, 62, 81, 100]);
@@ -1211,10 +1248,27 @@ mod tests {
         assert_eq!(w[9].0, Od8Id::FanCurveSpeed5);
 
         // A collapsed window still yields strictly increasing temperatures.
-        let flat = Od8Range { min: 50, max: 50, default: 0 };
-        let w = fan_curve_writes(&curve, flat, s);
+        let flat = [Od8Range { min: 50, max: 50, default: 0 }; 5];
+        let w = fan_curve_writes(|c| curve.evaluate(c), &flat, &s);
         let temps: Vec<i32> = w.iter().step_by(2).map(|x| x.1).collect();
         assert_eq!(temps, vec![50, 51, 52, 53, 54]);
+    }
+
+    #[test]
+    fn fan_points_use_their_own_driver_ranges() {
+        // A card whose points differ: the curve spans the first minimum to the last maximum, and
+        // each point stays inside the window the driver reported for it.
+        let r = |min, max| Od8Range { min, max, default: 0 };
+        let t = [r(20, 40), r(30, 60), r(40, 80), r(50, 90), r(60, 110)];
+        let s = [r(0, 60), r(20, 80), r(30, 100), r(30, 100), r(40, 100)];
+        let w = fan_curve_writes(|_| 10.0, &t, &s);
+        let temps: Vec<i32> = w.iter().step_by(2).map(|x| x.1).collect();
+        let speeds: Vec<i32> = w.iter().skip(1).step_by(2).map(|x| x.1).collect();
+        assert_eq!(temps, vec![20, 42, 65, 87, 110], "spread over 20..110, each inside its own range");
+        assert_eq!(speeds, vec![10, 20, 30, 30, 40], "each speed raised to its point's own minimum");
+
+        // A fixed duty must fit every point: the highest minimum to the lowest maximum.
+        assert_eq!(flat_duty_range(&s), (40, 60));
     }
 
     #[test]
