@@ -429,6 +429,54 @@ fn clock_range_is_a_gated_lever() {
     assert_eq!((s.locked_clock_min_mhz, s.locked_clock_max_mhz), (0, 0), "reset unpins the clock");
 }
 
+/// The memory clock range: a window, or both ends at one figure (Kryptex's "Memory clock 810"),
+/// gated like the rest.
+#[test]
+fn memory_clock_range_is_a_gated_lever() {
+    let svc = new_svc();
+    let lock = || mock(&svc, |m| m.memory_lock);
+    let pin = |mhz: i32| TuningProfile {
+        xoc_armed: XocLever::MEMORY_CLOCK,
+        memory_clock_lock_min_mhz: mhz,
+        memory_clock_lock_max_mhz: mhz,
+        ..profile()
+    };
+
+    svc.apply(&TuningProfile { memory_clock_lock_min_mhz: 810, memory_clock_lock_max_mhz: 810, ..profile() });
+    assert_eq!(lock(), (0, 0), "disarmed stays unpinned");
+    assert!(!has_call(&svc, "SetMemoryLock"), "a plain apply never touches the memory lock");
+
+    svc.apply(&pin(810));
+    assert_eq!(lock(), (810, 810), "armed pins the memory");
+    let mem = svc.with_backend(|b| b.read_telemetry(0)).unwrap().memory_clock_mhz;
+    assert_eq!(mem, 810.0, "telemetry shows the pinned clock");
+
+    svc.apply(&pin(99_999));
+    assert_eq!(lock(), (14001, 14001), "clamped to the highest supported clock");
+    svc.apply(&pin(405));
+    assert_eq!(lock(), (810, 810), "never the idle clock that caps the core");
+    svc.apply(&pin(5000));
+    assert_eq!(lock(), (7001, 7001), "snapped to a clock the card lists");
+
+    // A window: a floor keeps the memory off its low speeds; a side left at 0 is the card's end.
+    svc.apply(&TuningProfile { memory_clock_lock_min_mhz: 7001, memory_clock_lock_max_mhz: 14001, ..pin(0) });
+    assert_eq!(lock(), (7001, 14001), "range");
+    svc.apply(&TuningProfile { memory_clock_lock_min_mhz: 13801, ..pin(0) });
+    assert_eq!(lock(), (13801, 14001), "floor only");
+    svc.apply(&TuningProfile { memory_clock_lock_min_mhz: 14001, memory_clock_lock_max_mhz: 7001, ..pin(0) });
+    assert_eq!(lock(), (7001, 7001), "a floor above the ceiling comes down to it");
+
+    let p = pin(810);
+    svc.set_xoc_lever(&p, XocLever::MEMORY_CLOCK, true);
+    assert_eq!(lock(), (810, 810), "Enable pins it");
+    svc.set_xoc_lever(&p, XocLever::MEMORY_CLOCK, false);
+    assert_eq!(lock(), (0, 0), "Disable releases it");
+
+    svc.set_xoc_lever(&p, XocLever::MEMORY_CLOCK, true);
+    svc.reset_to_defaults().unwrap();
+    assert_eq!(lock(), (0, 0), "reset releases it");
+}
+
 /// "XOC gate": never-armed rails belong to the driver; Voltage Boost moves their baseline.
 #[test]
 fn disabled_rails_follow_the_driver_baseline_under_boost() {

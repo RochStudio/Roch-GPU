@@ -152,6 +152,15 @@ pub struct GpuCapabilities {
     pub clock_lock_min_mhz: i32,
     pub clock_lock_max_mhz: i32,
 
+    /// Pinning the memory clock to a min/max window (NVML locked memory clocks, what
+    /// `nvidia-smi --lock-memory-clocks` and mining tools use; equal ends hold one clock). Only the
+    /// clocks in `memory_lock_clocks_mhz` (ascending, the driver's own MHz) can be held; the min and
+    /// max are its ends. Clocks that would cap the core are left out: 810 on a 5070 Ti, not 405.
+    pub can_lock_memory_clock: bool,
+    pub memory_lock_min_mhz: i32,
+    pub memory_lock_max_mhz: i32,
+    pub memory_lock_clocks_mhz: Vec<i32>,
+
     /// A software temperature limit can be offered: the clock can be capped (`can_lock_clocks`)
     /// and the driver has no settable thermal limit of its own (RTX 50). It acts only while the app
     /// runs; see `services::soft_thermal`.
@@ -277,6 +286,10 @@ impl Default for GpuCapabilities {
             can_lock_clocks: false,
             clock_lock_min_mhz: 0,
             clock_lock_max_mhz: 0,
+            can_lock_memory_clock: false,
+            memory_lock_min_mhz: 0,
+            memory_lock_max_mhz: 0,
+            memory_lock_clocks_mhz: Vec::new(),
             can_set_soft_thermal_limit: false,
             soft_thermal_limit_min_c: SOFT_THERMAL_MIN_C,
             soft_thermal_limit_max_c: SOFT_THERMAL_MAX_C,
@@ -341,6 +354,23 @@ pub fn soft_thermal_window(gpu_max_c: Option<i32>, slowdown_c: Option<i32>) -> O
 }
 
 impl GpuCapabilities {
+    /// The lockable memory clock nearest `mhz` (the lower on a tie); `mhz` itself when the card
+    /// lists none.
+    pub fn nearest_memory_lock_mhz(&self, mhz: i32) -> i32 {
+        self.memory_lock_clocks_mhz.iter().copied().min_by_key(|&c| ((c - mhz).abs(), c)).unwrap_or(mhz)
+    }
+
+    /// The lockable memory clock one step from `mhz` in `dir`'s direction, stopping at the ends.
+    pub fn step_memory_lock_mhz(&self, mhz: i32, dir: i32) -> i32 {
+        let list = &self.memory_lock_clocks_mhz;
+        let next = if dir > 0 {
+            list.iter().copied().find(|&c| c > mhz)
+        } else {
+            list.iter().rev().copied().find(|&c| c < mhz)
+        };
+        next.unwrap_or_else(|| self.nearest_memory_lock_mhz(mhz))
+    }
+
     /// The window a software limit is clamped into: the card's own, or the generic one.
     pub fn soft_thermal_limit_range(&self) -> (i32, i32) {
         let (lo, hi) = (self.soft_thermal_limit_min_c, self.soft_thermal_limit_max_c);

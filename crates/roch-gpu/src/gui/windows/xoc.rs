@@ -1,8 +1,8 @@
-//! The gated levers (C# `XocWindow`): NVVDD and MSVDD rail ranges, the two OCP current limits and
-//! the clock range. Each has one Enable/Disable button that writes that lever to the card at once
-//! (or puts it back); its controls are dead while it is disarmed, because a slider that moves but
-//! is never written would claim a setting the card has not got. Shares the main view model, so the
-//! values are the ones a saved profile carries.
+//! The gated levers (C# `XocWindow`): NVVDD and MSVDD rail ranges, the two OCP current limits, and
+//! the core and memory clock ranges. Each has an Enable/Disable button that writes that lever to the
+//! card at once (or puts it back); its controls are dead while it is disarmed, because a slider that
+//! moves but is never written would claim a setting the card has not got.
+//! Shares the main view model, so the values are the ones a saved profile carries.
 
 use eframe::egui::{self, Align, Context, Layout, RichText, Ui, ViewportClass, ViewportId, vec2};
 use roch_core::XocLever;
@@ -33,9 +33,7 @@ impl XocWindow {
         let builder = self
             .chrome
             .builder("XOC", vec2(WIDTH, 767.0), w.icon, Placement::CenterOwner, w.main_rect)
-            .with_resizable(false)
-            .with_minimize_button(false)
-            .with_maximize_button(false);
+            .with_resizable(false);
         let vm = &mut *w.vm;
         ctx.show_viewport_immediate(Self::id(), builder, |ui, _class: ViewportClass| {
             let closed = self.chrome.frame(ui.ctx(), w.dark);
@@ -94,7 +92,7 @@ fn body(ui: &mut Ui, vm: &mut MainViewModel) {
             range_lever(
                 ui,
                 vm,
-                "Clock Range",
+                "Core Clock Range",
                 (Field::ClockLockMin, Field::ClockLockMax),
                 XocLever::CLOCK_RANGE,
                 "Pin the graphics clock inside this window now, or put it back",
@@ -106,26 +104,17 @@ fn body(ui: &mut Ui, vm: &mut MainViewModel) {
                 ui.add_space(6.0);
             }
         }
-    });
-
-    // One warning for the window rather than a paragraph per lever.
-    ui.add_space(8.0);
-    egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 7)).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        let mut job = egui::text::LayoutJob::default();
-        let fmt = |bold: bool| egui::TextFormat {
-            font_id: if bold { theme::bold(BODY) } else { theme::regular(BODY) },
-            color: p.warn,
-            ..Default::default()
-        };
-        job.append("These can damage hardware, not just crash it.", 0.0, fmt(true));
-        job.append(
-            " Nothing here is sanity-checked by the driver, and raising an OCP limit takes away the card's own protection. Arm one at a time and test between each. Nothing here survives a reboot.",
-            0.0,
-            fmt(false),
-        );
-        job.wrap.max_width = ui.available_width();
-        ui.add(egui::Label::new(job).wrap());
+        if vm.has_memory_clock_lock() {
+            range_lever(
+                ui,
+                vm,
+                "Memory Clock Range",
+                (Field::MemoryLockMin, Field::MemoryLockMax),
+                XocLever::MEMORY_CLOCK,
+                "Hold the memory clock inside this window now, or put it back",
+                busy,
+            );
+        }
     });
 }
 

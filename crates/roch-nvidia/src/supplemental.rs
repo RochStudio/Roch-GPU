@@ -69,23 +69,31 @@ impl Sensors {
     }
 }
 
+/// Readings the telemetry sample has already taken this tick (`None` where its call failed), so
+/// the sensors below do not ask the driver for them a second time.
+#[derive(Default)]
+pub struct Already<'a> {
+    pub utilization: Option<&'a [(u32, i32)]>,
+    pub memory: Option<nvapi::MemoryInfo>,
+    pub clocks: Option<&'a nvapi::ClockFrequencies>,
+    pub limit_flags: Option<u32>,
+}
+
 /// `NvidiaSupplementalTelemetry.Read`.
-pub fn read(g: GpuHandle, nvml_index: i32) -> Vec<SupplementalSensor> {
+pub fn read(g: GpuHandle, nvml_index: i32, already: Already) -> Vec<SupplementalSensor> {
     let mut s = Sensors::default();
-    if let Ok(domains) = wrapper::utilization_domains(g) {
-        for (domain, pct) in domains {
-            if domain == wrapper::UTIL_VIDEO_ENGINE {
-                s.add("video-load", "Video engine", "%", pct as f64);
-            }
-            if domain == wrapper::UTIL_BUS_INTERFACE {
-                s.add("bus-load", "Bus interface", "%", pct as f64);
-            }
+    for &(domain, pct) in already.utilization.unwrap_or_default() {
+        if domain == wrapper::UTIL_VIDEO_ENGINE {
+            s.add("video-load", "Video engine", "%", pct as f64);
+        }
+        if domain == wrapper::UTIL_BUS_INTERFACE {
+            s.add("bus-load", "Bus interface", "%", pct as f64);
         }
     }
-    if let Ok(m) = nvapi::memory_info(g) {
+    if let Some(m) = already.memory {
         s.add_memory(m.available_dedicated_kb as f64, m.current_available_dedicated_kb as f64);
     }
-    if let Ok(c) = nvapi::clock_frequencies(g, 0) {
+    if let Some(c) = already.clocks {
         let video = c.clocks[DOMAIN_VIDEO];
         if video.present() {
             s.add("video-clock", "Video clock (reported)", "MHz", video.frequency_khz as f64 / 1000.0);
@@ -96,7 +104,7 @@ pub fn read(g: GpuHandle, nvml_index: i32) -> Vec<SupplementalSensor> {
     {
         s.add("thermal-limit", "GPU thermal limit", "°C", first.target_c() as f64);
     }
-    if let Ok(flags) = nvapi::performance_limit(g) {
+    if let Some(flags) = already.limit_flags {
         s.add_limits(flags);
     }
     s.add_pcie(&nvml::pcie_link(nvml_index));

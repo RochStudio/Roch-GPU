@@ -31,9 +31,9 @@ pub(crate) fn limit_text(limit: u32) -> String {
 }
 
 impl NvidiaBackend {
-    /// The public thermal-sensor call and nothing else — measured at 0.03 ms against 12.9 ms for
-    /// the full read, of which the power-topology query alone is 8.8 ms. Used for background ticks
-    /// that only feed the fan curve.
+    /// The public thermal-sensor call and nothing else — measured at 0.04 ms against 2.4 ms for the
+    /// full read (8.1 ms before the power percentage moved to NVML). Used for background ticks that
+    /// only feed the fan curve.
     pub(super) fn read_temperature_only_impl(&mut self, gpu: usize) -> Result<GpuTelemetry> {
         let g = self.gpu(gpu)?;
         let mut temp = 0.0;
@@ -69,8 +69,11 @@ impl NvidiaBackend {
         let rail_amps: Vec<f64> = rails.iter().map(|r| r.milliamps as f64 / 1000.0).collect();
         let rail_volts: Vec<f64> = rails.iter().map(|r| r.microvolts as f64 / 1_000_000.0).collect();
 
+        // Each of these is also wanted by the supplemental sensors below, which reuse them rather
+        // than asking the driver a second time in the same sample.
+        let clocks = nvapi::clock_frequencies(g, 0).ok();
         let (mut core, mut mem) = (0.0, 0.0);
-        if let Ok(c) = nvapi::clock_frequencies(g, 0) {
+        if let Some(c) = &clocks {
             core = c.clocks[DOMAIN_GRAPHICS as usize].frequency_khz as f64 / 1000.0;
             mem = c.clocks[DOMAIN_MEMORY as usize].frequency_khz as f64 / 1000.0;
         }
@@ -112,20 +115,28 @@ impl NvidiaBackend {
         let nvvdd_mv = uv.get(&private::RAIL_NVVDD).map(|&v| v as f64 / 1000.0).unwrap_or(f64::NAN);
         let msvdd_mv = uv.get(&private::RAIL_MSVDD).map(|&v| v as f64 / 1000.0).unwrap_or(f64::NAN);
 
+        // Board power against the stock limit. The power-topology query says the same thing but
+        // costs ~5 ms of driver time on a 5070 Ti (616.92), most of a whole sample; NVML's watts
+        // are cached by the driver and cost microseconds. The query stays as the fallback.
+        let tdp = *self.tdp_watts.entry(gpu).or_insert_with(|| nvml::default_power_limit_watts(nvml_index));
         let mut power = 0.0;
-        if let Ok(entries) = nvapi::power_topology_status(g)
+        if watts.is_finite() && tdp.is_finite() && tdp > 0.0 {
+            power = watts / tdp * 100.0;
+        } else if let Ok(entries) = nvapi::power_topology_status(g)
             && let Some(e) = entries.iter().find(|e| e.domain == TOPOLOGY_GPU).or(entries.first())
         {
             power = wrapper::pcm_percent(e.usage_pcm);
         }
 
+        let utilization = wrapper::utilization_domains(g).ok();
         let (mut load, mut mem_load) = (0.0, 0.0);
-        if let Ok(domains) = wrapper::utilization_domains(g) {
-            load = wrapper::domain_percent(&domains, wrapper::UTIL_GPU).unwrap_or(0) as f64;
-            mem_load = wrapper::domain_percent(&domains, wrapper::UTIL_FRAME_BUFFER).unwrap_or(0) as f64;
+        if let Some(domains) = &utilization {
+            load = wrapper::domain_percent(domains, wrapper::UTIL_GPU).unwrap_or(0) as f64;
+            mem_load = wrapper::domain_percent(domains, wrapper::UTIL_FRAME_BUFFER).unwrap_or(0) as f64;
         }
 
-        let mem_used = nvapi::memory_info(g)
+        let memory = nvapi::memory_info(g).ok();
+        let mem_used = memory
             .map(|m| m.available_dedicated_kb.wrapping_sub(m.current_available_dedicated_kb) as f64 / 1024.0)
             .unwrap_or(0.0);
 
@@ -138,7 +149,18 @@ impl NvidiaBackend {
         }
 
         let pstate = nvapi::current_pstate(g).map(perf_state_text).unwrap_or_default();
-        let limit = nvapi::performance_limit(g).map(limit_text).unwrap_or_default();
+        let limit_flags = nvapi::performance_limit(g).ok();
+        let limit = limit_flags.map(limit_text).unwrap_or_default();
+        let supplemental_sensors = supplemental::read(
+            g,
+            nvml_index,
+            supplemental::Already {
+                utilization: utilization.as_deref(),
+                memory,
+                clocks: clocks.as_deref(),
+                limit_flags,
+            },
+        );
 
         Ok(GpuTelemetry {
             core_clock_mhz: core,
@@ -160,7 +182,7 @@ impl NvidiaBackend {
             fan_rpm: max_or_zero(&fan_rpms),
             fan_percents: fan_pcts,
             fan_rpms,
-            supplemental_sensors: supplemental::read(g, nvml_index),
+            supplemental_sensors,
             perf_state: pstate,
             limit_reason: limit,
             ..GpuTelemetry::default()

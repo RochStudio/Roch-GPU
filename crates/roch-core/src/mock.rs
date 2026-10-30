@@ -47,6 +47,8 @@ pub struct MockBackend {
     video: i32,
     lock_lo: i32,
     lock_hi: i32,
+    /// The pinned memory clock window in MHz; 0/0 = the driver's own.
+    pub memory_lock: (i32, i32),
     nvvdd_ocp: i32,
     msvdd_ocp: i32,
     load: f64,
@@ -105,6 +107,7 @@ impl MockBackend {
             video: 0,
             lock_lo: 0,
             lock_hi: 0,
+            memory_lock: (0, 0),
             nvvdd_ocp: 300_000,
             msvdd_ocp: 120_000,
             load: 5.0,
@@ -247,6 +250,10 @@ impl GpuBackend for MockBackend {
             can_lock_clocks: true,
             clock_lock_min_mhz: 210,
             clock_lock_max_mhz: 3090,
+            can_lock_memory_clock: true,
+            memory_lock_min_mhz: 810,
+            memory_lock_max_mhz: 14001,
+            memory_lock_clocks_mhz: vec![810, 7001, 13801, 14001],
             can_set_sys_offset: true,
             sys_offset_min_mhz: -150,
             sys_offset_max_mhz: 495,
@@ -300,7 +307,11 @@ impl GpuBackend for MockBackend {
         if self.hardware_temp_limit {
             self.sim_temp = self.sim_temp.min(self.temp as f64 + 1.0);
         }
-        let mem_clock = if self.load < 5.0 { 405.0 } else { 10501.0 + self.mem as f64 };
+        let mut mem_clock = if self.load < 5.0 { 405.0 } else { 10501.0 + self.mem as f64 };
+        let (lo, hi) = self.memory_lock;
+        if hi > 0 {
+            mem_clock = mem_clock.clamp(lo as f64, hi as f64);
+        }
         let volt_ceiling =
             if self.volt_lock_mv > 0 { self.volt_lock_mv as f64 } else { 1100.0 + self.volt_offset as f64 };
         let volt = if self.load < 5.0 {
@@ -424,6 +435,12 @@ impl GpuBackend for MockBackend {
         Ok(())
     }
 
+    fn set_memory_lock(&mut self, _gpu: usize, min_mhz: i32, max_mhz: i32) -> Result<()> {
+        self.call("SetMemoryLock");
+        self.memory_lock = (min_mhz.max(0), max_mhz.max(0));
+        Ok(())
+    }
+
     fn set_core_offset(&mut self, _gpu: usize, offset_mhz: i32) -> Result<()> {
         self.call("SetCoreOffset");
         self.core = offset_mhz;
@@ -532,6 +549,7 @@ impl GpuBackend for MockBackend {
         self.video = 0;
         self.lock_lo = 0;
         self.lock_hi = 0;
+        self.memory_lock = (0, 0);
         self.nvvdd_ocp = 300_000;
         self.msvdd_ocp = 120_000;
         Ok(())

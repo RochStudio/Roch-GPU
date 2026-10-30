@@ -46,9 +46,15 @@ pub enum Placement {
     RightOfOwner,
 }
 
-/// Builder for a decorated child window with the app icon, at `pos` when given.
+/// Builder for a decorated child window with the app icon, at `pos` when given. Pop-ups carry only
+/// a close button: they belong to the main window, which is the one that minimizes.
 fn child_builder(title: &str, size: Vec2, icon: &Arc<IconData>, pos: Option<Pos2>) -> ViewportBuilder {
-    let b = ViewportBuilder::default().with_title(title).with_inner_size(size).with_icon(icon.clone());
+    let b = ViewportBuilder::default()
+        .with_title(title)
+        .with_inner_size(size)
+        .with_icon(icon.clone())
+        .with_minimize_button(false)
+        .with_maximize_button(false);
     match pos {
         Some(p) => b.with_position(p),
         None => b,

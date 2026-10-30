@@ -126,6 +126,12 @@ pub trait GpuBackend: Send {
         0
     }
 
+    /// Pin the memory clock between min and max MHz (equal ends hold one clock); 0/0 hands it back
+    /// to the driver.
+    fn set_memory_lock(&mut self, _gpu: usize, _min_mhz: i32, _max_mhz: i32) -> Result<()> {
+        Ok(())
+    }
+
     /// How many display-driver resets this backend has noticed and recovered from. A reset clears
     /// state written before it (a clock lock, say), so a change means "write it again".
     fn driver_reset_count(&self) -> u64 {

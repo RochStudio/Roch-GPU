@@ -526,6 +526,9 @@ impl EngineState {
         if c.can_lock_clocks {
             l |= XocLever::CLOCK_RANGE;
         }
+        if c.can_lock_memory_clock {
+            l |= XocLever::MEMORY_CLOCK;
+        }
         l
     }
 }
@@ -656,6 +659,14 @@ fn add_clamp_notes(notes: &mut Vec<String>, caps: &GpuCapabilities, asked: &Tuni
         }
         if asked.clock_lock_max_mhz > 0 {
             note("clock ceiling", asked.clock_lock_max_mhz, applied.clock_lock_max_mhz, " MHz");
+        }
+    }
+    if asked.xoc_armed.has(XocLever::MEMORY_CLOCK) && caps.can_lock_memory_clock {
+        if asked.memory_clock_lock_min_mhz > 0 {
+            note("memory clock floor", asked.memory_clock_lock_min_mhz, applied.memory_clock_lock_min_mhz, " MHz");
+        }
+        if asked.memory_clock_lock_max_mhz > 0 {
+            note("memory clock ceiling", asked.memory_clock_lock_max_mhz, applied.memory_clock_lock_max_mhz, " MHz");
         }
     }
     // 0 means "no cap" and never clamps.
@@ -790,7 +801,21 @@ fn write_xoc(
         // 0/0 hands the range back to the driver, which is exactly what disarmed means here.
         let armed = on.has(XocLever::CLOCK_RANGE);
         let (lo, hi) = if armed { (p.clock_lock_min_mhz, p.clock_lock_max_mhz) } else { (0, 0) };
-        t.run("Clock range", b.set_clock_range(gpu, lo, hi));
+        t.run("Core clock range", b.set_clock_range(gpu, lo, hi));
+    }
+
+    if which.has(XocLever::MEMORY_CLOCK) && c.can_lock_memory_clock {
+        // 0/0 hands the memory clock back to the driver. Released only when this service pinned it,
+        // or on Reset (a lock from an earlier run outlives it), so a plain Apply never touches it.
+        // A side left at 0 is the end of what the card can hold.
+        let (min, max) = (p.memory_clock_lock_min_mhz, p.memory_clock_lock_max_mhz);
+        if on.has(XocLever::MEMORY_CLOCK) && (min > 0 || max > 0) {
+            let hi = if max > 0 { max } else { c.memory_lock_max_mhz };
+            let lo = (if min > 0 { min } else { c.memory_lock_min_mhz }).min(hi);
+            t.run("Memory clock range", b.set_memory_lock(gpu, lo, hi));
+        } else if force_restore_disarmed || was_on.has(XocLever::MEMORY_CLOCK) {
+            t.run("Memory clock range", b.set_memory_lock(gpu, 0, 0));
+        }
     }
 }
 
@@ -1792,6 +1817,9 @@ impl TuningService {
             } else if lever == XocLever::CLOCK_RANGE {
                 ap.clock_lock_min_mhz = v(p.clock_lock_min_mhz);
                 ap.clock_lock_max_mhz = v(p.clock_lock_max_mhz);
+            } else if lever == XocLever::MEMORY_CLOCK {
+                ap.memory_clock_lock_min_mhz = v(p.memory_clock_lock_min_mhz);
+                ap.memory_clock_lock_max_mhz = v(p.memory_clock_lock_max_mhz);
             }
         }
         // The NVVDD ceiling is one of the inputs to the boosted ceiling, so refresh.

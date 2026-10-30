@@ -67,9 +67,14 @@ pub enum Field {
     SoftTempLimit,
     /// AMD RDNA 3's minimum core clock, in MHz, beside the absolute maximum (`CoreOffset`).
     CoreMinClock,
+    /// The memory clock window the XOC window pins, like `ClockLockMin`/`Max` for the core, in the
+    /// driver's MHz. Only the clocks the card lists; both ends at one figure hold it there (810 on a
+    /// 5070 Ti is the step mining tools use).
+    MemoryLockMin,
+    MemoryLockMax,
 }
 
-const FIELD_COUNT: usize = 21;
+const FIELD_COUNT: usize = 23;
 
 impl Field {
     pub const ALL: [Field; FIELD_COUNT] = [
@@ -94,6 +99,8 @@ impl Field {
         Field::MsvddOcpAmps,
         Field::SoftTempLimit,
         Field::CoreMinClock,
+        Field::MemoryLockMin,
+        Field::MemoryLockMax,
     ];
 
     /// The nudge-command name the WPF arrows used ("core:-1").
@@ -604,6 +611,9 @@ impl MainViewModel {
     pub fn has_clock_lock(&self) -> bool {
         self.caps.can_lock_clocks
     }
+    pub fn has_memory_clock_lock(&self) -> bool {
+        self.caps.can_lock_memory_clock
+    }
     pub fn has_sys(&self) -> bool {
         self.caps.can_set_sys_offset
     }
@@ -618,6 +628,7 @@ impl MainViewModel {
         self.has_voltage_rail()
             || self.has_msvdd_rail()
             || self.has_ocp()
+            || self.has_memory_clock_lock()
             || (self.has_clock_lock() && !self.intel_tuning())
     }
     pub fn has_intel_clock_range(&self) -> bool {
@@ -722,7 +733,9 @@ impl MainViewModel {
             | Field::SysOffset
             | Field::VideoOffset
             | Field::ClockLockMin
-            | Field::ClockLockMax => "MHz",
+            | Field::ClockLockMax
+            | Field::MemoryLockMin
+            | Field::MemoryLockMax => "MHz",
             Field::MemoryOffset => {
                 if self.caps.memory_clock_unit == "Mbps" {
                     "Mbps"
@@ -944,6 +957,9 @@ impl MainViewModel {
             Field::MsvddOcpAmps => (self.msvdd_ocp_min_a(), self.msvdd_ocp_max_a()),
             Field::SoftTempLimit => c.soft_thermal_limit_range(),
             Field::CoreMinClock => (c.core_min_clock_min_mhz, c.core_min_clock_min_mhz.max(c.core_min_clock_max_mhz)),
+            Field::MemoryLockMin | Field::MemoryLockMax => {
+                (c.memory_lock_min_mhz, c.memory_lock_min_mhz.max(c.memory_lock_max_mhz))
+            }
         }
     }
 
@@ -990,6 +1006,8 @@ impl MainViewModel {
             Field::VoltageBoost => within(self.editor_step(clock_step::VOLTAGE_BOOST_PERCENT)),
             Field::XbarOffset | Field::SysOffset | Field::VideoOffset => within(self.core_step_mhz()),
             Field::FixedFan => within(clock_step::FAN_PERCENT),
+            // The card holds only the clocks it lists; anything between would be rounded by the driver.
+            Field::MemoryLockMin | Field::MemoryLockMax => self.caps.nearest_memory_lock_mhz(v),
             _ => v,
         }
     }
@@ -1052,6 +1070,10 @@ impl MainViewModel {
     /// Step one value by one increment (the arrow buttons, and the WPF `NudgeCommand`).
     pub fn nudge(&mut self, f: Field, dir: i32) {
         if dir == 0 {
+            return;
+        }
+        if matches!(f, Field::MemoryLockMin | Field::MemoryLockMax) {
+            self.set(f, self.caps.step_memory_lock_mhz(self.get(f), dir));
             return;
         }
         let step = match f {
@@ -1210,7 +1232,8 @@ impl MainViewModel {
             (XocLever::XBAR, "XBAR"),
             (XocLever::SYS, "SYS"),
             (XocLever::VIDEO, "video"),
-            (XocLever::CLOCK_RANGE, "clock range"),
+            (XocLever::CLOCK_RANGE, "core clock range"),
+            (XocLever::MEMORY_CLOCK, "memory clock"),
         ] {
             if self.xoc_armed.has(lever) {
                 names.push(name);
@@ -1414,8 +1437,19 @@ impl MainViewModel {
     }
     pub fn clock_lock_range_text(&self) -> String {
         format!(
-            "{} … {} MHz. Holds the graphics clock inside a window; Disable to restore driver defaults.",
+            "{} … {} MHz. Holds the graphics clock inside a window; both ends at one figure lock it there. Disable to restore driver defaults.",
             self.caps.clock_lock_min_mhz, self.caps.clock_lock_max_mhz
+        )
+    }
+    /// The full window constrains nothing, so it means unpinned, as for the core.
+    pub fn memory_lock_is_off(&self) -> bool {
+        self.get(Field::MemoryLockMin) <= self.caps.memory_lock_min_mhz
+            && self.get(Field::MemoryLockMax) >= self.caps.memory_lock_max_mhz
+    }
+    pub fn memory_lock_range_text(&self) -> String {
+        format!(
+            "{} MHz. Holds the memory inside a window: the driver picks among the clocks in it. Both ends at one figure lock it there (810 is what mining tools use); a floor of 7001 or more stops it dropping to its low speeds. The full window is unpinned. Disable to restore driver defaults.",
+            self.caps.memory_lock_clocks_mhz.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" / ")
         )
     }
     pub fn sys_offset_range_text(&self) -> String {
@@ -1479,6 +1513,7 @@ impl MainViewModel {
             Field::MsvddOcpAmps => self.msvdd_ocp_range_text(),
             Field::SoftTempLimit => self.soft_temp_range_text(),
             Field::CoreMinClock => self.core_min_range_text(),
+            Field::MemoryLockMin | Field::MemoryLockMax => self.memory_lock_range_text(),
         }
     }
 
@@ -1977,6 +2012,7 @@ impl MainViewModel {
     pub fn build_profile_from_editor(&self, name: &str) -> TuningProfile {
         let g = |f| self.get(f);
         let lock_on = self.has_clock_lock() && !self.clock_lock_is_off();
+        let mem_lock_on = self.has_memory_clock_lock() && !self.memory_lock_is_off();
         TuningProfile {
             name: name.to_string(),
             gpu_name: Some(self.device.name.clone()),
@@ -1998,6 +2034,8 @@ impl MainViewModel {
             clock_lock_min_mhz: if lock_on { g(Field::ClockLockMin) } else { 0 },
             clock_lock_max_mhz: if lock_on { g(Field::ClockLockMax) } else { 0 },
             video_offset_mhz: if self.has_video() { g(Field::VideoOffset) } else { 0 },
+            memory_clock_lock_min_mhz: if mem_lock_on { g(Field::MemoryLockMin) } else { 0 },
+            memory_clock_lock_max_mhz: if mem_lock_on { g(Field::MemoryLockMax) } else { 0 },
             xoc_armed: XocLever(self.xoc_armed.0 | self.main_clock_levers().0),
             // The cap has no slider here (the curve editor's flatten owns it), but it has a value:
             // at or above the reachable ceiling it caps nothing and is stored as 0.
@@ -2046,6 +2084,9 @@ impl MainViewModel {
         self.set(Field::ClockLockMin, pick(p.clock_lock_min_mhz, c.clock_lock_min_mhz));
         self.set(Field::ClockLockMax, pick(p.clock_lock_max_mhz, c.clock_lock_max_mhz));
         self.set(Field::VideoOffset, p.video_offset_mhz);
+        // 0/0 is unpinned, which the slider shows as the full window.
+        self.set(Field::MemoryLockMin, pick(p.memory_clock_lock_min_mhz, c.memory_lock_min_mhz));
+        self.set(Field::MemoryLockMax, pick(p.memory_clock_lock_max_mhz, c.memory_lock_max_mhz));
         // Only the genuinely gated XOC bits live in editor state; the main clocks are added back
         // by build_profile_from_editor for every Apply.
         self.xoc_armed = XocLever(p.xoc_armed.0 & !self.main_clock_levers().0);
@@ -2140,6 +2181,9 @@ impl MainViewModel {
             // Full range is how this slider says "unpinned"; its floor cannot reach zero.
             self.set(Field::ClockLockMin, c.clock_lock_min_mhz);
             self.set(Field::ClockLockMax, c.clock_lock_max_mhz);
+        } else if lever == XocLever::MEMORY_CLOCK {
+            self.set(Field::MemoryLockMin, c.memory_lock_min_mhz);
+            self.set(Field::MemoryLockMax, c.memory_lock_max_mhz);
         }
     }
 
@@ -2285,7 +2329,8 @@ fn lever_label(lever: XocLever) -> String {
         XocLever::XBAR => "XBAR clock offset".into(),
         XocLever::SYS => "SYS clock offset".into(),
         XocLever::VIDEO => "Video clock offset".into(),
-        XocLever::CLOCK_RANGE => "Clock range".into(),
+        XocLever::CLOCK_RANGE => "Core clock range".into(),
+        XocLever::MEMORY_CLOCK => "Memory clock range".into(),
         other => other.to_string(),
     }
 }

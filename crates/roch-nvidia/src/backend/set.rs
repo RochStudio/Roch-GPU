@@ -111,6 +111,25 @@ impl NvidiaBackend {
         Ok(())
     }
 
+    /// Pin the memory clock (NVML) inside [min, max]; equal ends hold one figure, as mining tools do.
+    /// 0/0 releases it.
+    pub(super) fn set_memory_lock_impl(&mut self, gpu: usize, min_mhz: i32, max_mhz: i32) -> Result<()> {
+        let nvml_index = self.nvml_index_for(gpu);
+        if min_mhz <= 0 && max_mhz <= 0 {
+            // Always asked, like the graphics clock: the lock lives in the driver and outlives us.
+            if let Some(e) = nvml::reset_memory_clocks(nvml_index) {
+                roch_core::bail!("Failed to release the memory clock: {e}");
+            }
+            return Ok(());
+        }
+        let hi = if max_mhz > 0 { max_mhz } else { min_mhz };
+        let lo = if min_mhz > 0 { min_mhz.min(hi) } else { hi };
+        if let Some(e) = nvml::lock_memory_clocks(nvml_index, lo, hi) {
+            roch_core::bail!("Failed to pin the memory clock to {lo}-{hi} MHz: {e}");
+        }
+        Ok(())
+    }
+
     /// Offset a private clock domain (crossbar, SYS, video). Verified by the private layer reading
     /// the offset back; the crossbar was also confirmed against the GPU's own frequency counter
     /// (+100 MHz moved it 2414 → 2514 MHz with the core unchanged).
@@ -345,6 +364,11 @@ impl NvidiaBackend {
         let boost = self.gpu(gpu).and_then(|g| self.try_write_boost_lock(g, 0, 0));
         attempt(boost);
         let nvml_err = nvml::reset_graphics_clocks(self.nvml_index_for(gpu));
+        // A memory clock lock outlives the process too. Not reported: a card that cannot lock its
+        // memory refuses the reset as well, and the service's disarmed write reports a real failure.
+        if caps.can_lock_memory_clock {
+            let _ = nvml::reset_memory_clocks(self.nvml_index_for(gpu));
+        }
         self.nvml_clock_cap_mhz = 0;
         self.nvml_cap_voltage_mv = 0;
         self.voltage_lock_mechanism = "none".into();

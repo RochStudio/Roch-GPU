@@ -208,6 +208,8 @@ impl NvidiaBackend {
         let nvml_index = self.nvml_index_for(gpu);
         let max_lock = crate::nvml::max_graphics_clock_mhz(nvml_index);
         let min_lock = crate::nvml::min_graphics_clock_mhz(nvml_index);
+        // Memory clock lock: the same NVML family, spanning the clocks the driver lists.
+        let mem_lock = crate::nvml::memory_lock_clocks_mhz(nvml_index);
 
         // Software temperature limit: offered where the clock can be capped and the driver has no
         // thermal limit of its own — every RTX 50 so far (no NVAPI thermal policy, and NVML refuses
@@ -276,6 +278,10 @@ impl NvidiaBackend {
             can_lock_clocks: max_lock > 0,
             clock_lock_min_mhz: if min_lock > 0 { min_lock } else { MIN_LOCKABLE_MHZ },
             clock_lock_max_mhz: max_lock,
+            can_lock_memory_clock: !mem_lock.is_empty(),
+            memory_lock_min_mhz: mem_lock.first().copied().unwrap_or(0),
+            memory_lock_max_mhz: mem_lock.last().copied().unwrap_or(0),
+            memory_lock_clocks_mhz: mem_lock,
             can_set_soft_thermal_limit: soft_window.is_some(),
             soft_thermal_limit_min_c: soft_min,
             soft_thermal_limit_max_c: soft_max,

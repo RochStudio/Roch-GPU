@@ -131,6 +131,9 @@ pub struct NvidiaBackend {
     devices: Vec<GpuDevice>,
     caps_cache: HashMap<usize, GpuCapabilities>,
     thermal_mask: HashMap<usize, u32>,
+    /// The default power limit per GPU in watts (NaN when NVML has none), read once: the
+    /// denominator of the power percentage. See `nvml::default_power_limit_watts`.
+    tdp_watts: HashMap<usize, f64>,
     initialized: bool,
 
     /// How the voltage cap is currently being held, for the UI and diagnostics.
@@ -180,6 +183,7 @@ impl NvidiaBackend {
             devices: Vec::new(),
             caps_cache: HashMap::new(),
             thermal_mask: HashMap::new(),
+            tdp_watts: HashMap::new(),
             initialized: false,
             voltage_lock_mechanism: "none".into(),
             nvml_clock_cap_mhz: 0,
@@ -482,6 +486,9 @@ impl GpuBackend for NvidiaBackend {
     }
     fn set_clock_range(&mut self, gpu: usize, min_mhz: i32, max_mhz: i32) -> Result<()> {
         self.set_clock_range_impl(gpu, min_mhz, max_mhz)
+    }
+    fn set_memory_lock(&mut self, gpu: usize, min_mhz: i32, max_mhz: i32) -> Result<()> {
+        self.set_memory_lock_impl(gpu, min_mhz, max_mhz)
     }
     /// The NVML clock cap standing in for an ignored voltage lock (see `set_voltage_lock_impl`).
     fn voltage_cap_clock_mhz(&self, _gpu: usize) -> i32 {

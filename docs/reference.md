@@ -117,6 +117,7 @@ apply --volt 25 --uv -100     voltage boost %, and an undervolt in mV under the 
 apply --nvvdd 1100 --msvdd 1050 --xbar 30 --sys 45 --video 30
 apply --nvvdd-ocp 280 --msvdd-ocp 110      OCP current limits, in whole amps
 apply --clock-min 1500 --clock-max 1800    pin the graphics clock
+apply --mem-min 810 --mem-max 810         pin the memory clock (min = max holds one clock)
 apply-profile "Slot 1"        apply a profile saved in the GUI
 reset                         everything back to driver defaults
 diag                          full dump: capabilities, raw tables, sensors
@@ -191,6 +192,9 @@ Provided as-is, with no warranty. You are responsible for what you do to your ow
   verification. Its ceiling and floor are set and read back normally.
 - **A clock range can't be read back**, only remembered — NVML won't report one. The window forgets
   it after a driver reset rather than claiming a range nothing holds.
+- **The same goes for the memory clock range**, which also outlives the app. Apply leaves it alone
+  (so it never fights a miner's own memory lock); Disable or Reset to Defaults releases it. It only
+  offers memory clocks that leave the core free: the 5070 Ti's 405 MHz step caps the core at 885 MHz.
 - The AMD core-clock offset is a **ceiling**, not a shift; a power-limited card will ignore it.
 - RDNA 4 exposes no editable V/F curve and no temperature limit — both hidden rather than faked.
 - The V/F curve editor is NVIDIA-only. Multi-GPU is implemented but untested.

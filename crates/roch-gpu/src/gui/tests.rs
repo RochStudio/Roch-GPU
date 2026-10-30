@@ -748,9 +748,46 @@ fn soft_temp_and_an_armed_clock_range_agree() {
     let live = f.shared.service.read_tuning_state().unwrap();
     assert_eq!(live.locked_clock_min_mhz, 1500);
     assert!(live.locked_clock_max_mhz < 2700, "{live:?}");
-    assert_eq!(vm.xoc_status_text(), "Live on the card: clock range.");
+    assert_eq!(vm.xoc_status_text(), "Live on the card: core clock range.");
     // Exit: the user's own range comes back.
     f.shared.service.release_soft_thermal_limit();
     let live = f.shared.service.read_tuning_state().unwrap();
     assert_eq!((live.locked_clock_min_mhz, live.locked_clock_max_mhz), (1500, 2700));
+}
+
+#[test]
+fn memory_clock_range_steps_through_the_cards_clocks() {
+    let f = fixture();
+    let mut vm = vm(&f);
+    vm.commit_input(Field::MemoryLockMin, "405");
+    assert_eq!(vm.get(Field::MemoryLockMin), 810, "never the clock that caps the core");
+    vm.nudge(Field::MemoryLockMin, 1);
+    assert_eq!(vm.get(Field::MemoryLockMin), 7001);
+    vm.nudge(Field::MemoryLockMin, -1);
+    vm.nudge(Field::MemoryLockMin, -1);
+    assert_eq!(vm.get(Field::MemoryLockMin), 810, "stops at the lowest");
+}
+
+#[test]
+fn memory_clock_range_is_written_and_full_means_unpinned() {
+    let f = fixture();
+    let mut vm = vm(&f);
+    assert!(vm.memory_lock_is_off(), "the full window to start");
+    vm.set_lever(XocLever::MEMORY_CLOCK, true);
+    vm.run_jobs_inline();
+    let mock = |f: &Fixture| f.shared.service.with_backend(|b| b.as_mock().unwrap().memory_lock);
+    assert_eq!(mock(&f), (0, 0), "Enable on the full window pins nothing");
+
+    vm.commit_input(Field::MemoryLockMin, "6000");
+    assert_eq!(vm.get(Field::MemoryLockMin), 7001, "snapped to a listed clock");
+    vm.apply();
+    vm.run_jobs_inline();
+    assert_eq!(mock(&f), (7001, 14001), "{}", vm.status);
+
+    // Both ends at one figure lock it there, as mining tools do.
+    vm.commit_input(Field::MemoryLockMax, "810");
+    vm.commit_input(Field::MemoryLockMin, "810");
+    vm.apply();
+    vm.run_jobs_inline();
+    assert_eq!(mock(&f), (810, 810), "{}", vm.status);
 }

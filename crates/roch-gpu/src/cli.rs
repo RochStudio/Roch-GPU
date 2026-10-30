@@ -361,6 +361,14 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
     );
     outln!(
         out,
+        "Memory lock   : {}",
+        range_or(c.can_lock_memory_clock, || format!(
+            "{} MHz lockable",
+            c.memory_lock_clocks_mhz.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(" / ")
+        ))
+    );
+    outln!(
+        out,
         "Crossbar      : {}",
         range_or(c.can_set_xbar_offset, || format!("{}..{} MHz offset", c.xbar_offset_min_mhz, c.xbar_offset_max_mhz))
     );
@@ -613,6 +621,16 @@ pub fn build_apply_profile(
     if let Some(v) = o.get("clock-max") {
         p.clock_lock_max_mhz = int(v)?;
     }
+    // A memory window, like --clock-min/-max; both at one figure hold it there.
+    if let Some(v) = o.get("mem-min") {
+        p.memory_clock_lock_min_mhz = int(v)?;
+    }
+    if let Some(v) = o.get("mem-max") {
+        p.memory_clock_lock_max_mhz = int(v)?;
+    }
+    if !caps.can_lock_memory_clock && ["mem-min", "mem-max"].iter().any(|f| o.contains(f)) {
+        notes.push(format!("{NOTE_PREFIX} this card cannot lock its memory clock — ignored."));
+    }
     if let Some(v) = o.get("sys") {
         p.sys_offset_mhz = int(v)?;
         if !caps.can_set_sys_offset {
@@ -667,7 +685,7 @@ pub fn build_apply_profile(
     // Typing a gated flag is the arming gesture for that lever alone. A lever nobody named stays
     // disarmed, and the apply puts it back to the driver's own value rather than leaving an earlier
     // tune half-standing underneath.
-    let arms: [(XocLever, &[&str]); 8] = [
+    let arms: [(XocLever, &[&str]); 9] = [
         (XocLever::NVVDD, &["nvvdd", "nvvdd-min"]),
         (XocLever::MSVDD, &["msvdd", "msvdd-min"]),
         (XocLever::XBAR, &["xbar"]),
@@ -676,6 +694,7 @@ pub fn build_apply_profile(
         (XocLever::NVVDD_OCP, &["nvvdd-ocp"]),
         (XocLever::MSVDD_OCP, &["msvdd-ocp"]),
         (XocLever::CLOCK_RANGE, &["clock-min", "clock-max"]),
+        (XocLever::MEMORY_CLOCK, &["mem-min", "mem-max"]),
     ];
     for (lever, flags) in arms {
         if flags.iter().any(|f| o.contains(f)) {
@@ -1001,7 +1020,7 @@ RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
   RochGPU.exe info [--gpu 0]
   RochGPU.exe sensors [--gpu 0]          list supplemental native sensor readings
   RochGPU.exe monitor [--gpu 0] [--interval 1000]
-  RochGPU.exe apply [--gpu 0] [--core +150] [--core-min 500] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83|card] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--fan 60|auto]
+  RochGPU.exe apply [--gpu 0] [--core +150] [--core-min 500] [--mem +800] [--power 90] [--temp 80] [--soft-temp 83|card] [--volt 25] [--uv -100] [--nvvdd 1100] [--nvvdd-min 800] [--msvdd 1050] [--msvdd-min 800] [--nvvdd-ocp 300] [--msvdd-ocp 120] [--xbar +100] [--sys +50] [--video +50] [--clock-min 210 --clock-max 2800] [--mem-min 810 --mem-max 810] [--fan 60|auto]
     each gated flag arms its own lever for that apply; a lever you do not name goes back to the driver's own value
     --soft-temp: a software temperature limit below the card's own (RTX 50); 'card' leaves it to the card; only enforced while the app runs
     --core / --uv on AMD RDNA 3: the maximum core clock (MHz) and maximum voltage (mV), not offsets; see `info` for the range

@@ -20,10 +20,11 @@ impl XocLever {
     pub const CLOCK_RANGE: XocLever = XocLever(32);
     pub const NVVDD_OCP: XocLever = XocLever(64);
     pub const MSVDD_OCP: XocLever = XocLever(128);
-    pub const ALL: XocLever = XocLever(255);
+    pub const MEMORY_CLOCK: XocLever = XocLever(256);
+    pub const ALL: XocLever = XocLever(511);
 
     /// Every single lever, in bit order, with the name .NET's enum formatting uses.
-    pub const NAMED: [(XocLever, &'static str); 8] = [
+    pub const NAMED: [(XocLever, &'static str); 9] = [
         (Self::NVVDD, "Nvvdd"),
         (Self::MSVDD, "Msvdd"),
         (Self::XBAR, "Xbar"),
@@ -32,6 +33,7 @@ impl XocLever {
         (Self::CLOCK_RANGE, "ClockRange"),
         (Self::NVVDD_OCP, "NvvddOcp"),
         (Self::MSVDD_OCP, "MsvddOcp"),
+        (Self::MEMORY_CLOCK, "MemoryClock"),
     ];
 
     /// `(set & one) == one`.

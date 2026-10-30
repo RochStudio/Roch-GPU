@@ -61,6 +61,37 @@ Notes on the numbers:
 
 egui's ~0.7 MB of embedded fonts sat in `.rdata`, which `--crates` does not show.
 
+## Driver time per telemetry sample (October 30, 2026)
+
+The cost that matters while gaming is driver time, not CPU: each sample takes driver calls that the
+game's own work can queue behind. Timed per call on the real card (RTX 5070 Ti, 616.92, under a
+mining load) with `cargo run --release -p roch-nvidia --example telemetry_cost`, 30 runs each:
+
+| | median | worst |
+|---|---|---|
+| Full sample before | 8.07 ms | 16.6 ms |
+| …of which `power_topology_status` (the "% of TDP" figure) | 5.07 ms | 8.4 ms |
+| **Full sample after** | **2.39 ms** | **4.2 ms** |
+| Background temperature-only read (fan curve, soft limit) | 0.04 ms | 0.04 ms |
+
+Two changes:
+
+1. **Power percentage from NVML.** It is board watts (`nvmlDeviceGetPowerUsage`, which the driver
+   caches: under a microsecond) over the default power limit
+   (`nvmlDeviceGetPowerManagementDefaultLimit`, read once per GPU). It matched the topology query
+   to within 0.2 points (246.6 W / 300 W = 82.2% against 82.0–82.3%). The query is kept as the
+   fallback when NVML is unavailable.
+2. **Supplemental sensors reuse the sample's readings.** Utilization, memory, clock and limit-flag
+   calls were each made twice per sample; the sensor list now takes them from the sample.
+
+Also measured on the real card: the main window open and idle for 30 s drew no frames and used no
+measurable CPU (0 ms), and with no window showing readings the poll makes no driver calls unless a
+fan curve or the software temperature limit needs a temperature.
+
+Considered and rejected: **lower process or poll-thread priority, or EcoQoS** (efficiency cores).
+The poll thread holds driver locks during its calls; slowing or preempting it can make a game
+thread wait longer on those locks (priority inversion), the opposite of the goal.
+
 ## How to measure
 
 ### UI customization follow-up (October 24, 2026)

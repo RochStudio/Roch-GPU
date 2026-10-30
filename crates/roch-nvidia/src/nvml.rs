@@ -1,5 +1,6 @@
 //! Minimal NVML binding: board watts, PCIe link, BAR1 size, clock limits, and locking the graphics
-//! clock range — the same thing `nvidia-smi --lock-gpu-clocks` does.
+//! clock range and the memory clock — the same things `nvidia-smi --lock-gpu-clocks` and
+//! `--lock-memory-clocks` do.
 //!
 //! NVML is a public, documented driver API, unlike the private clock-boost lock, so it is the
 //! dependable way to hold the core at a chosen point on the V/F curve. Writes need administrator
@@ -43,6 +44,8 @@ type GetClockFn = unsafe extern "C" fn(Device, i32, *mut u32) -> i32;
 type GetMinMaxPStateFn = unsafe extern "C" fn(Device, i32, i32, *mut u32, *mut u32) -> i32;
 type GetMemoryFn = unsafe extern "C" fn(Device, *mut NvmlMemory) -> i32;
 type GetThresholdFn = unsafe extern "C" fn(Device, i32, *mut u32) -> i32;
+type GetSupportedClocksFn = unsafe extern "C" fn(Device, *mut u32, *mut u32) -> i32;
+type GetSupportedGraphicsFn = unsafe extern "C" fn(Device, u32, *mut u32, *mut u32) -> i32;
 
 /// Every entry point, each resolved independently: the C# DllImports bound lazily, so a missing
 /// one only failed the call that needed it.
@@ -53,9 +56,14 @@ struct Api {
     get_handle: Option<GetHandleFn>,
     set_locked: Option<SetLockedFn>,
     reset_locked: Option<DeviceFn>,
+    set_mem_locked: Option<SetLockedFn>,
+    reset_mem_locked: Option<DeviceFn>,
+    get_supported_mem_clocks: Option<GetSupportedClocksFn>,
+    get_supported_gr_clocks: Option<GetSupportedGraphicsFn>,
     error_string: Option<ErrorStringFn>,
     get_name: Option<GetNameFn>,
     get_power_usage: Option<GetU32Fn>,
+    get_default_power_limit: Option<GetU32Fn>,
     get_max_clock: Option<GetClockFn>,
     get_min_max_of_pstate: Option<GetMinMaxPStateFn>,
     get_memory_info: Option<GetMemoryFn>,
@@ -82,9 +90,14 @@ fn api() -> Result<&'static Api, &'static String> {
                 get_handle: sym(&lib, "nvmlDeviceGetHandleByIndex_v2"),
                 set_locked: sym(&lib, "nvmlDeviceSetGpuLockedClocks"),
                 reset_locked: sym(&lib, "nvmlDeviceResetGpuLockedClocks"),
+                set_mem_locked: sym(&lib, "nvmlDeviceSetMemoryLockedClocks"),
+                reset_mem_locked: sym(&lib, "nvmlDeviceResetMemoryLockedClocks"),
+                get_supported_mem_clocks: sym(&lib, "nvmlDeviceGetSupportedMemoryClocks"),
+                get_supported_gr_clocks: sym(&lib, "nvmlDeviceGetSupportedGraphicsClocks"),
                 error_string: sym(&lib, "nvmlErrorString"),
                 get_name: sym(&lib, "nvmlDeviceGetName"),
                 get_power_usage: sym(&lib, "nvmlDeviceGetPowerUsage"),
+                get_default_power_limit: sym(&lib, "nvmlDeviceGetPowerManagementDefaultLimit"),
                 get_max_clock: sym(&lib, "nvmlDeviceGetMaxClockInfo"),
                 get_min_max_of_pstate: sym(&lib, "nvmlDeviceGetMinMaxClockOfPState"),
                 get_memory_info: sym(&lib, "nvmlDeviceGetMemoryInfo"),
@@ -292,6 +305,75 @@ pub fn reset_graphics_clocks(gpu_index: i32) -> Option<String> {
     })
 }
 
+/// Pin the memory clock to [min, max] MHz. `None` on success, else the reason.
+pub fn lock_memory_clocks(gpu_index: i32, min_mhz: i32, max_mhz: i32) -> Option<String> {
+    write(gpu_index, &format!("nvmlDeviceSetMemoryLockedClocks({min_mhz},{max_mhz})"), |a, dev| {
+        let f = a.set_mem_locked.ok_or_else(|| missing("nvmlDeviceSetMemoryLockedClocks"))?;
+        // SAFETY: device handle from GetHandleByIndex; plain integers.
+        Ok(unsafe { f(dev, min_mhz.max(0) as u32, max_mhz.max(0) as u32) })
+    })
+}
+
+/// Hand the memory clock back to the driver. `None` on success, else the reason.
+pub fn reset_memory_clocks(gpu_index: i32) -> Option<String> {
+    write(gpu_index, "nvmlDeviceResetMemoryLockedClocks", |a, dev| {
+        let f = a.reset_mem_locked.ok_or_else(|| missing("nvmlDeviceResetMemoryLockedClocks"))?;
+        // SAFETY: device handle from GetHandleByIndex.
+        Ok(unsafe { f(dev) })
+    })
+}
+
+/// The memory clocks a lock can safely hold, in MHz, ascending; empty when NVML will not say.
+///
+/// Only the ones that leave the whole graphics clock range open. Each memory clock carries its own
+/// list of graphics clocks, and the lowest does not: a 5070 Ti lists 14001, 13801, 7001, 810 and
+/// 405 MHz, and pinning 405 caps the core at 885 MHz (measured: the card mined at 885). 810, the
+/// figure mining tools use, still runs the core to 3090.
+pub fn memory_lock_clocks_mhz(gpu_index: i32) -> Vec<i32> {
+    let mems = supported(gpu_index, |a, dev, count, out| {
+        let f = a.get_supported_mem_clocks.ok_or_else(|| missing("nvmlDeviceGetSupportedMemoryClocks"))?;
+        // SAFETY: `out` has room for `*count` entries.
+        Ok(unsafe { f(dev, count, out) })
+    });
+    let tops: Vec<(i32, u32)> = mems
+        .iter()
+        .filter(|&&m| m > 0)
+        .map(|&m| {
+            let gr = supported(gpu_index, |a, dev, count, out| {
+                let f = a.get_supported_gr_clocks.ok_or_else(|| missing("nvmlDeviceGetSupportedGraphicsClocks"))?;
+                // SAFETY: `out` has room for `*count` entries.
+                Ok(unsafe { f(dev, m, count, out) })
+            });
+            (m as i32, gr.into_iter().max().unwrap_or(0))
+        })
+        .collect();
+    let top = tops.iter().map(|t| t.1).max().unwrap_or(0);
+    let mut safe: Vec<i32> = tops.into_iter().filter(|&(_, g)| top > 0 && g == top).map(|(m, _)| m).collect();
+    safe.sort_unstable();
+    safe.dedup();
+    safe
+}
+
+/// A `nvmlDeviceGetSupported*Clocks` list. Empty when NVML will not say.
+fn supported(
+    gpu_index: i32,
+    mut call: impl FnMut(&Api, Device, *mut u32, *mut u32) -> Result<i32, String>,
+) -> Vec<u32> {
+    let mut clocks = vec![0u32; 1024];
+    let mut count = 0u32;
+    let ok = read(gpu_index, |a, dev| {
+        // In: the buffer's capacity, as the header asks; out: how many it filled. Set on every try,
+        // because a retry after a stale session would otherwise pass the first try's answer.
+        count = clocks.len() as u32;
+        call(a, dev, &mut count, clocks.as_mut_ptr())
+    });
+    if !ok {
+        return Vec::new();
+    }
+    clocks.truncate((count as usize).min(clocks.len()));
+    clocks
+}
+
 /// `nvmlTemperatureThresholds_t`. The acoustic trio is the GPU target temperature (`nvidia-smi
 /// -gtt`): the temperature the boost algorithm holds the card at by shedding clocks, and the only
 /// one NVML lets an administrator move. A GeForce RTX 5070 Ti (616.92) reports none of the acoustic
@@ -328,6 +410,19 @@ pub fn power_watts(gpu_index: i32) -> f64 {
         Ok(unsafe { f(dev, &mut mw) })
     });
     if ok { mw as f64 / 1000.0 } else { f64::NAN }
+}
+
+/// The card's default (stock TDP) power limit in watts, or NaN when NVML cannot say. NVAPI's
+/// power-topology percentage is board power against this figure (247 W read 82.4% of a 5070 Ti's
+/// 300 W), so with [`power_watts`] it gives the same percentage without that 5 ms call.
+pub fn default_power_limit_watts(gpu_index: i32) -> f64 {
+    let mut mw = 0u32;
+    let ok = read(gpu_index, |a, dev| {
+        let f = a.get_default_power_limit.ok_or_else(|| missing("nvmlDeviceGetPowerManagementDefaultLimit"))?;
+        // SAFETY: valid out-pointer.
+        Ok(unsafe { f(dev, &mut mw) })
+    });
+    if ok && mw > 0 { mw as f64 / 1000.0 } else { f64::NAN }
 }
 
 /// Highest graphics clock the driver will report, in MHz; 0 when NVML cannot say. The top of the

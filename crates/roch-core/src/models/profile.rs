@@ -156,6 +156,10 @@ pub struct TuningProfile {
     /// Graphics clock window in MHz, 0/0 for unpinned. Armed by `XocLever::CLOCK_RANGE`.
     pub clock_lock_min_mhz: i32,
     pub clock_lock_max_mhz: i32,
+    /// Memory clock window in MHz, 0/0 for unpinned; both ends at one figure pin it there (what
+    /// mining tools call the memory clock). Armed by `XocLever::MEMORY_CLOCK`.
+    pub memory_clock_lock_min_mhz: i32,
+    pub memory_clock_lock_max_mhz: i32,
     /// SYS and video clock offsets in MHz. Each armed separately.
     pub sys_offset_mhz: i32,
     pub video_offset_mhz: i32,
@@ -237,6 +241,8 @@ impl Default for TuningProfile {
             msvdd_ocp_milliamps: 0,
             clock_lock_min_mhz: 0,
             clock_lock_max_mhz: 0,
+            memory_clock_lock_min_mhz: 0,
+            memory_clock_lock_max_mhz: 0,
             sys_offset_mhz: 0,
             video_offset_mhz: 0,
             xoc_armed: XocLever::NONE,
@@ -381,6 +387,25 @@ impl TuningProfile {
                 && self.clock_lock_min_mhz > self.clock_lock_max_mhz
             {
                 self.clock_lock_min_mhz = self.clock_lock_max_mhz;
+            }
+        }
+        if caps.can_lock_memory_clock {
+            // Only clocks the card lists, and never one that caps the core (see the caps field). 0 on
+            // one side is "not asked for", as with the graphics clock.
+            let fit = |v: i32| {
+                if v > 0 {
+                    caps.nearest_memory_lock_mhz(clamp_i32(v, caps.memory_lock_min_mhz, caps.memory_lock_max_mhz))
+                } else {
+                    0
+                }
+            };
+            self.memory_clock_lock_min_mhz = fit(self.memory_clock_lock_min_mhz);
+            self.memory_clock_lock_max_mhz = fit(self.memory_clock_lock_max_mhz);
+            if self.memory_clock_lock_min_mhz > 0
+                && self.memory_clock_lock_max_mhz > 0
+                && self.memory_clock_lock_min_mhz > self.memory_clock_lock_max_mhz
+            {
+                self.memory_clock_lock_min_mhz = self.memory_clock_lock_max_mhz;
             }
         }
         if self.target_voltage_mv > 0 && caps.max_voltage_mv > 0 {
