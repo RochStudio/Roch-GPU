@@ -103,6 +103,16 @@ type Od8SettingSet = unsafe extern "C" fn(
 type QueryPmLogDataGet = unsafe extern "C" fn(context: *mut c_void, adapter: i32, data_output: *mut c_void) -> i32;
 type ContextBuffer = unsafe extern "C" fn(context: *mut c_void, buffer: *mut c_void) -> i32;
 type AdapterBuffer = unsafe extern "C" fn(context: *mut c_void, adapter: i32, buffer: *mut c_void) -> i32;
+pub type PmLogDeviceCreate = unsafe extern "C" fn(context: *mut c_void, adapter: i32, device: *mut u32) -> i32;
+pub type PmLogDeviceDestroy = unsafe extern "C" fn(context: *mut c_void, device: u32) -> i32;
+pub type PmLogStart = unsafe extern "C" fn(
+    context: *mut c_void,
+    adapter: i32,
+    start_input: *mut PmLogStartInput,
+    start_output: *mut PmLogStartOutput,
+    device: u32,
+) -> i32;
+pub type PmLogStop = unsafe extern "C" fn(context: *mut c_void, adapter: i32, device: u32) -> i32;
 
 /// The resolved ADL entry points. Only `ADL2_Main_Control_Create` is required up front; every other
 /// export is resolved optionally, and a call site that needs a missing one reports it as an error
@@ -119,6 +129,15 @@ pub struct AdlApi {
     pub od8_current_setting_x2_get: Option<Od8CurrentSettingX2Get>,
     pub od8_setting_set: Option<Od8SettingSet>,
     pub new_query_pm_log_data_get: Option<QueryPmLogDataGet>,
+    /// Streaming PMLog. An adapter with no display attached answers
+    /// `ADL2_New_QueryPMLogData_Get` with nothing while still streaming every sensor it supports,
+    /// so these five are the only way to read such a card. Optional like the rest: a driver
+    /// without them simply has no fallback.
+    pub adapter_pm_log_support_get: Option<AdapterBuffer>,
+    pub adapter_pm_log_start: Option<PmLogStart>,
+    pub adapter_pm_log_stop: Option<PmLogStop>,
+    pub device_pm_log_device_create: Option<PmLogDeviceCreate>,
+    pub device_pm_log_device_destroy: Option<PmLogDeviceDestroy>,
     pub graphics_versions_x2_get: Option<ContextBuffer>,
     pub graphics_versions_get: Option<ContextBuffer>,
     pub adapter_video_bios_info_get: Option<AdapterBuffer>,
@@ -149,6 +168,11 @@ impl AdlApi {
                 od8_current_setting_x2_get: native::optional_symbol(&lib, "ADL2_Overdrive8_Current_SettingX2_Get"),
                 od8_setting_set: native::optional_symbol(&lib, "ADL2_Overdrive8_Setting_Set"),
                 new_query_pm_log_data_get: native::optional_symbol(&lib, "ADL2_New_QueryPMLogData_Get"),
+                adapter_pm_log_support_get: native::optional_symbol(&lib, "ADL2_Adapter_PMLog_Support_Get"),
+                adapter_pm_log_start: native::optional_symbol(&lib, "ADL2_Adapter_PMLog_Start"),
+                adapter_pm_log_stop: native::optional_symbol(&lib, "ADL2_Adapter_PMLog_Stop"),
+                device_pm_log_device_create: native::optional_symbol(&lib, "ADL2_Device_PMLog_Device_Create"),
+                device_pm_log_device_destroy: native::optional_symbol(&lib, "ADL2_Device_PMLog_Device_Destroy"),
                 graphics_versions_x2_get: native::optional_symbol(&lib, "ADL2_Graphics_VersionsX2_Get"),
                 graphics_versions_get: native::optional_symbol(&lib, "ADL2_Graphics_Versions_Get"),
                 adapter_video_bios_info_get: native::optional_symbol(&lib, "ADL2_Adapter_VideoBiosInfo_Get"),
@@ -373,6 +397,39 @@ pub mod od8_feature {
     ];
 }
 
+/// `ADLPMLogSupportInfo`: the sensor IDs this adapter can stream, zero-terminated.
+#[repr(C)]
+pub struct PmLogSupportInfo {
+    pub ids: [u16; 256],
+    pub reserved: [i32; 16],
+}
+
+/// `ADLPMLogStartInput`: which sensors to stream, and how often the driver refreshes them.
+#[repr(C)]
+pub struct PmLogStartInput {
+    pub ids: [u16; 256],
+    pub sample_ms: u32,
+    pub reserved: [i32; 15],
+}
+
+/// `ADLPMLogStartOutput`: the address of the driver-owned block the samples land in.
+#[repr(C)]
+pub struct PmLogStartOutput {
+    pub address: u64,
+    pub reserved: [i32; 14],
+}
+
+/// `ADLPMLogData`: the streamed block. Unlike the one-shot buffer, which is indexed *by* sensor
+/// ID, this is a packed `(id, value)` list terminated by a zero ID.
+#[repr(C)]
+pub struct PmLogData {
+    pub version: u32,
+    pub sample_ms: u32,
+    pub timestamp: u64,
+    pub values: [[u32; 2]; 256],
+    pub reserved: [u32; 256],
+}
+
 /// ADLSensorType — indices into the PMLog output array.
 pub mod pm_log {
     pub const CORE_CLOCK_MHZ: i32 = 1;
@@ -427,6 +484,16 @@ mod tests {
         assert_eq!(Od8Id::FanCurveSpeed5.index(), 28);
         assert_eq!(Od8Id::TdcPercentage.name(), "TdcPercentage");
         assert!(od8_feature::ALL.windows(2).all(|w| w[0].0 < w[1].0));
+    }
+
+    #[test]
+    fn pm_log_streaming_layouts_match_the_sdk() {
+        assert_eq!(size_of::<PmLogSupportInfo>(), 576);
+        assert_eq!(size_of::<PmLogStartInput>(), 576);
+        assert_eq!(offset_of!(PmLogStartInput, sample_ms), 512);
+        assert_eq!(size_of::<PmLogStartOutput>(), 64);
+        assert_eq!(offset_of!(PmLogData, values), 16);
+        assert_eq!(size_of::<PmLogData>(), 16 + 256 * 8 + 256 * 4);
     }
 
     #[test]

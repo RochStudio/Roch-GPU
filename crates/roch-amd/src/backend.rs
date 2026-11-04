@@ -25,6 +25,7 @@ use crate::adl::{
 };
 use crate::adlx::AdlxTelemetry;
 use crate::mapper::AmdTelemetryMapper;
+use crate::pmlog::PmLogStream;
 
 /// min/max/default for one OD8 feature. Unsupported features report min == max.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -68,6 +69,10 @@ pub struct AmdBackend {
     // other's ranges would silently truncate them.
     caps: HashMap<usize, i32>,
     ranges_by_gpu: HashMap<usize, [Od8Range; OD8_COUNT]>,
+    /// Per device: a streaming PMLog session, or `None` once starting one has failed. Held so a
+    /// card the driver will not stream is not retried on every poll, and so the sessions can be
+    /// stopped before the ADL context goes away.
+    streams: HashMap<usize, Option<PmLogStream>>,
     adlx: AdlxTelemetry,
 }
 
@@ -232,6 +237,7 @@ impl AmdBackend {
             adapter_failures: Vec::new(),
             caps: HashMap::new(),
             ranges_by_gpu: HashMap::new(),
+            streams: HashMap::new(),
             adlx: AdlxTelemetry::new(),
         }
     }
@@ -268,13 +274,58 @@ impl AmdBackend {
         self.adapter_index.get(gpu).copied().ok_or_else(|| missing_adapter(gpu))
     }
 
+    /// Open this device's streaming PMLog session if one has not been tried yet, reporting
+    /// whether it is running. The attempt is remembered either way, so a card the driver will not
+    /// stream costs one failed start rather than one per poll.
+    fn ensure_stream(&mut self, gpu: usize) -> bool {
+        if !self.streams.contains_key(&gpu) {
+            let started = match (self.api(), self.live(), self.adapter(gpu)) {
+                // SAFETY: `live` returns this backend's own ADL context, and `dispose` stops every
+                // stream before destroying it, so the context outlives the session.
+                (Ok(api), Ok(context), Ok(adapter)) => unsafe { PmLogStream::start(api, context, adapter) }.ok(),
+                _ => None,
+            };
+            self.streams.insert(gpu, started);
+        }
+        self.stream(gpu).is_some()
+    }
+
+    fn stream(&self, gpu: usize) -> Option<&PmLogStream> {
+        self.streams.get(&gpu).and_then(|s| s.as_ref())
+    }
+
+    /// A sample from this device's streaming PMLog session, opening one the first time it is
+    /// needed. Empty when the driver will not stream this adapter.
+    fn stream_sample(&mut self, gpu: usize) -> HashMap<i32, f64> {
+        let fresh = !self.streams.contains_key(&gpu);
+        if !self.ensure_stream(gpu) {
+            return HashMap::new();
+        }
+        // A new block is empty until the driver's first write, which would otherwise make the poll
+        // that opened the stream — a one-shot `sensors` call, say — read as unsupported.
+        if fresh && let Some(stream) = self.stream(gpu) {
+            stream.wait_for_first_sample();
+        }
+        self.stream(gpu).map(PmLogStream::sample).unwrap_or_default()
+    }
+
+    /// Whether this device reports nothing it can tune. True for an adapter with no display
+    /// attached that has no PMLog session open: the driver answers with the power-gauge bit alone
+    /// and a zeroed range table, and only admits to the rest while something is streaming it.
+    fn reports_nothing_tunable(&self, gpu: usize) -> bool {
+        self.caps.get(&gpu).copied().unwrap_or(0) & !od8_feature::POWER_GAUGE == 0
+    }
+
     /// Release ADLX, destroy the ADL context and forget every adapter. Note that the ADLX helper
     /// is disposed permanently, as in the original.
     fn dispose(&mut self) {
         if self.context.is_null() {
             return;
         }
-        // ADLX borrows the caller-owned ADL context, so it goes first.
+        // Streaming PMLog sessions hold a driver-side device created against this context, and
+        // stopping one needs the context alive, so they go before anything is torn down.
+        self.streams.clear();
+        // ADLX borrows the caller-owned ADL context, so it goes next.
         self.adlx.dispose();
         if let Some(destroy) = self.api.as_ref().and_then(|a| a.main_control_destroy) {
             // SAFETY: the context came from Main_Control_Create and is destroyed once.
@@ -286,6 +337,7 @@ impl AmdBackend {
         self.pnp_ids.clear();
         self.caps.clear();
         self.ranges_by_gpu.clear();
+        self.streams.clear();
         self.adapter_failures.clear();
     }
 
@@ -333,6 +385,14 @@ impl AmdBackend {
                 self.ranges_by_gpu.remove(&gpu);
                 self.adapter_failures.push(format!("{name} (ADL {}): {}", ai.i_adapter_index, e.message));
                 continue;
+            }
+            // A card with no display attached reports the power-gauge bit and nothing else — until
+            // a PMLog session is open on it, at which point the driver hands over the whole of
+            // Overdrive 8, same capability mask and ranges as a card driving a monitor. So open one
+            // and ask again rather than presenting a tunable card as locked. Measured on a second
+            // RX 7900 XT: mask 0x10000000 with every range zeroed before, 0x10433F0D after.
+            if self.reports_nothing_tunable(gpu) && self.ensure_stream(gpu) {
+                let _ = self.load_ranges(gpu);
             }
             seen.insert(key);
 
@@ -911,6 +971,14 @@ impl GpuBackend for AmdBackend {
                 }
             }
         }
+        // An adapter with no display attached answers the one-shot query with nothing at all:
+        // rc can even be OK with every sensor marked unsupported. The driver still streams that
+        // card, so fall back to a streaming session rather than reporting a column of NaN.
+        if !pm.contains_key(&pm_log::CORE_CLOCK_MHZ) && !pm.contains_key(&pm_log::TEMPERATURE_EDGE) {
+            for (id, value) in self.stream_sample(gpu) {
+                pm.entry(id).or_insert(value);
+            }
+        }
         // A failed PMLog query must not prevent the independent ADLX fallback.
         let adlx = self.adlx.read(context, adapter);
         let mut t = AmdTelemetryMapper::map(&pm, &adlx);
@@ -928,7 +996,7 @@ impl GpuBackend for AmdBackend {
     /// curve still needs it. What it does avoid is building a whole sample for one number. Never
     /// fails: any problem yields an empty sample, as in the original.
     fn read_temperature_only(&mut self, gpu: usize) -> Result<GpuTelemetry> {
-        let sample = (|| {
+        let edge = (|| {
             let context = self.live().ok()?;
             let adapter = self.adapter(gpu).ok()?;
             let query = self.api.as_ref()?.new_query_pm_log_data_get?;
@@ -938,9 +1006,16 @@ impl GpuBackend for AmdBackend {
                 return None;
             }
             let edge = pm_value(&buf, pm_log::TEMPERATURE_EDGE);
-            Some(GpuTelemetry { temperature_c: if edge.is_nan() { 0.0 } else { edge }, ..GpuTelemetry::default() })
+            edge.is_finite().then_some(edge)
         })();
-        Ok(sample.unwrap_or_default())
+        // A card the one-shot query will not answer has its temperature in the streaming session
+        // instead. Only one already running is read: a tick that exists to step a fan curve must
+        // not block on starting a stream, and `read_telemetry` has already started it if it can.
+        let edge = edge.or_else(|| {
+            let sample = self.stream(gpu)?.sample();
+            sample.get(&pm_log::TEMPERATURE_EDGE).copied().filter(|edge| edge.is_finite())
+        });
+        Ok(GpuTelemetry { temperature_c: edge.unwrap_or(0.0), ..GpuTelemetry::default() })
     }
 
     fn read_tuning_state(&mut self, gpu: usize) -> Result<GpuTuningState> {
@@ -1172,6 +1247,17 @@ mod tests {
         assert!(build_timing_options(-1, 1).is_empty(), "negative range rejected");
         assert!(build_timing_options(0, i32::MAX).is_empty(), "oversized range rejected");
         assert_eq!(AdlBackend::build_timing_options(0, 255).len(), 256);
+    }
+
+    #[test]
+    fn a_power_gauge_only_mask_reports_nothing_tunable() {
+        // What a card with no display attached answers before a PMLog session is open on it.
+        let mut backend = AmdBackend::new();
+        backend.caps.insert(0, od8_feature::POWER_GAUGE);
+        assert!(backend.reports_nothing_tunable(0), "the power-gauge bit alone is nothing to tune");
+        backend.caps.insert(1, od8_feature::POWER_GAUGE | od8_feature::GFX_CLK_LIMITS);
+        assert!(!backend.reports_nothing_tunable(1), "one real feature is enough");
+        assert!(backend.reports_nothing_tunable(2), "an adapter with no mask read has nothing either");
     }
 
     #[test]

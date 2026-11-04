@@ -5,7 +5,9 @@ pub mod adl;
 pub mod adlx;
 mod backend;
 pub mod mapper;
+pub mod pmlog;
 
 pub use adlx::{AdlxTelemetry, Metric};
 pub use backend::{AdlBackend, AmdBackend, build_timing_options, infer_fan_mode};
 pub use mapper::{AmdTelemetryMapper, Sensor};
+pub use pmlog::PmLogStream;
