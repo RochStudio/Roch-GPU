@@ -18,6 +18,10 @@ struct Options {
     apply: bool,
     adapter: Option<i32>,
     offset: i32,
+    /// Which OD8 feature to write. 0 (core clock) runs the four historical write shapes; any
+    /// other index writes that feature alone, for a card whose core-clock baseline is not safe to
+    /// restore (a display-less adapter reports floor values, so "restoring" FMAX would clamp it).
+    feature: usize,
     out: Option<std::path::PathBuf>,
 }
 impl Options {
@@ -34,7 +38,7 @@ impl Options {
                 );
             }
         };
-        let mut value = Self { mode, mock: false, apply: false, adapter: None, offset: 200, out: None };
+        let mut value = Self { mode, mock: false, apply: false, adapter: None, offset: 200, feature: 0, out: None };
         let mut args = args[1..].iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -54,6 +58,17 @@ impl Options {
                         .parse()
                         .map_err(|e: std::num::ParseIntError| e.to_string())?
                 }
+                "--feature" => {
+                    let n = args
+                        .next()
+                        .ok_or("--feature needs an OD8 index")?
+                        .parse::<usize>()
+                        .map_err(|e: std::num::ParseIntError| e.to_string())?;
+                    if n >= 75 {
+                        return Err("OD8 feature index must be below 75".into());
+                    }
+                    value.feature = n;
+                }
                 "--out" => value.out = Some(args.next().ok_or("--out needs a filename")?.into()),
                 _ => return Err(format!("Unknown AMD option: {arg}")),
             }
@@ -61,8 +76,8 @@ impl Options {
         if value.mode == Mode::WriteCheck && !value.mock && !value.apply {
             return Err("Real write-check requires --apply. Use --mock to test without hardware.".into());
         }
-        if value.mode != Mode::WriteCheck && (value.apply || value.offset != 200) {
-            return Err("--apply and --offset are only for write-check".into());
+        if value.mode != Mode::WriteCheck && (value.apply || value.offset != 200 || value.feature != 0) {
+            return Err("--apply, --offset and --feature are only for write-check".into());
         }
         Ok(value)
     }
@@ -140,7 +155,7 @@ fn report(options: &Options, driver: &mut impl Driver, text: &mut String) -> Res
     for adapter in selected {
         writeln!(text, "\nAdapter {}: {}", adapter.index, adapter.name).unwrap();
         match options.mode {
-            Mode::WriteCheck => write_check(driver, adapter.index, options.offset, text)?,
+            Mode::WriteCheck => write_check(driver, adapter.index, options.offset, options.feature, text)?,
             Mode::Telemetry => text.push_str(&driver.stream(adapter.index)?),
             mode => {
                 text.push_str(&driver.details(adapter.index)?);
@@ -219,22 +234,32 @@ impl<D: Driver> Drop for Restore<'_, D> {
     }
 }
 
-fn write_check(driver: &mut impl Driver, adapter: i32, offset: i32, text: &mut String) -> Result<()> {
+/// One write attempt: a label, the element count to declare to the driver, and the
+/// (feature, value) pairs to write.
+type Recipe = (String, i32, Vec<(usize, i32)>);
+
+fn write_check(driver: &mut impl Driver, adapter: i32, offset: i32, feature: usize, text: &mut String) -> Result<()> {
     let (_, features) = driver.features(adapter, 75)?;
-    let core = features.iter().find(|f| f.id == 0).ok_or("No core-clock offset feature")?;
-    if offset < core.minimum || offset > core.maximum || core.minimum == core.maximum {
-        return Err("Requested offset is outside the driver's adjustable range".into());
+    let target = features.iter().find(|f| f.id == feature).ok_or("No such OD8 feature on this adapter")?;
+    if offset < target.minimum || offset > target.maximum || target.minimum == target.maximum {
+        return Err("Requested value is outside the driver's adjustable range".into());
     }
     let baseline = driver.current(adapter)?;
     if baseline.len() <= 37 {
         return Err("Incomplete OD8 snapshot; refusing to write".into());
     }
-    let recipes = [
-        ("FMAX, count=75", 75, vec![(0, offset)]),
-        ("FMAX, count=77", 77, vec![(0, offset)]),
-        ("FMAX + original FMIN", 75, vec![(0, offset), (1, baseline[1])]),
-        ("FMAX + original UCLK/VOLT", 75, vec![(0, offset), (8, baseline[8]), (37, baseline[37])]),
-    ];
+    // The four shapes exist because the core-clock write is the one the original C# build had to
+    // get right; writing any other feature touches that feature alone, and nothing else.
+    let recipes: Vec<Recipe> = if feature == 0 {
+        vec![
+            ("FMAX, count=75".into(), 75, vec![(0, offset)]),
+            ("FMAX, count=77".into(), 77, vec![(0, offset)]),
+            ("FMAX + original FMIN".into(), 75, vec![(0, offset), (1, baseline[1])]),
+            ("FMAX + original UCLK/VOLT".into(), 75, vec![(0, offset), (8, baseline[8]), (37, baseline[37])]),
+        ]
+    } else {
+        vec![(native::feature_name(feature), 75, vec![(feature, offset)])]
+    };
     let mut guard = Restore { driver, adapter, baseline, touched: Vec::new(), armed: false };
     for (name, count, pairs) in recipes {
         guard.armed = true; // Arm before calling: a failed native write can still partially apply.
@@ -242,7 +267,7 @@ fn write_check(driver: &mut impl Driver, adapter: i32, offset: i32, text: &mut S
         let write = guard.driver.write(adapter, &pairs, count);
         guard.driver.wait(400);
         let read = guard.driver.current(adapter);
-        let stuck = write.is_ok() && read.as_ref().is_ok_and(|v| v.first() == Some(&offset));
+        let stuck = write.is_ok() && read.as_ref().is_ok_and(|v| v.get(feature) == Some(&offset));
         writeln!(text, "{name}: {}", if stuck { "readback matched" } else { "did not match" }).unwrap();
         if let Err(error) = write {
             writeln!(text, "  {error}").unwrap();
@@ -327,6 +352,12 @@ mod tests {
         assert!(Options::parse(&["write-check".into()]).is_err());
         assert!(Options::parse(&["write-check".into(), "--mock".into()]).is_ok());
         assert!(Options::parse(&["probe".into(), "--apply".into()]).is_err());
+        assert!(Options::parse(&["probe".into(), "--feature".into(), "9".into()]).is_err());
+        assert!(Options::parse(&["write-check".into(), "--mock".into(), "--feature".into(), "99".into()]).is_err());
+        assert_eq!(
+            Options::parse(&["write-check".into(), "--mock".into(), "--feature".into(), "9".into()]).map(|o| o.feature),
+            Ok(9)
+        );
     }
     #[test]
     fn all_four_shapes_restore_nonzero_original_settings_even_after_partial_failure() {
@@ -334,7 +365,7 @@ mod tests {
             let mut fake = Fake { fail_after_write, ..Default::default() };
             let baseline = fake.values.clone();
             let mut report = String::new();
-            write_check(&mut fake, 0, 200, &mut report).unwrap();
+            write_check(&mut fake, 0, 200, 0, &mut report).unwrap();
             assert_eq!(fake.values, baseline);
             assert_eq!(fake.writes, 8);
             assert_eq!(report.matches("original snapshot restored and verified").count(), 4);
@@ -343,21 +374,21 @@ mod tests {
     #[test]
     fn invalid_range_is_rejected_before_the_first_write() {
         let mut fake = Fake::default();
-        assert!(write_check(&mut fake, 0, 2000, &mut String::new()).is_err());
+        assert!(write_check(&mut fake, 0, 2000, 0, &mut String::new()).is_err());
         assert_eq!(fake.writes, 0);
     }
     #[test]
     fn telemetry_failure_after_a_write_restores_the_original_snapshot() {
         let mut fake = Fake { fail_sensors: true, ..Default::default() };
         let original = fake.values.clone();
-        assert!(write_check(&mut fake, 0, 200, &mut String::new()).is_err());
+        assert!(write_check(&mut fake, 0, 200, 0, &mut String::new()).is_err());
         assert_eq!(fake.values, original);
         assert_eq!(fake.writes, 2);
     }
     #[test]
     fn read_only_modes_never_write() {
         for mode in [Mode::Probe, Mode::Exports, Mode::Features, Mode::Telemetry] {
-            let options = Options { mode, mock: true, apply: false, adapter: None, offset: 200, out: None };
+            let options = Options { mode, mock: true, apply: false, adapter: None, offset: 200, feature: 0, out: None };
             let mut fake = Fake::default();
             let mut text = String::new();
             report(&options, &mut fake, &mut text).unwrap();

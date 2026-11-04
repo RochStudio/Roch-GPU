@@ -9,8 +9,13 @@ The historical PowerShell probes are replaced by native Rust commands. Run from 
 | `cargo xtask amd features` | OD8 capability bits, feature names, min/max/default/current values and X3 adjustability |
 | `cargo xtask amd telemetry` | Legacy power/temperature/performance APIs and a three-second streaming PMLog sample |
 | `cargo xtask amd write-check --apply` | Four core-clock write shapes, readback and live clocks; restore and verify the original OD8 snapshot after each attempt |
+| `cargo xtask amd write-check --apply --feature N` | The same, writing OD8 feature `N` alone instead of the four core-clock shapes |
 
-Common options: `--adapter INDEX`, `--out report.txt`, and `--mock`. Mock mode never loads a driver and exercises every command on simulated data. Write-check accepts `--offset MHz` (default 200), validates the driver's range, and requires `--apply` on real hardware. It restores the original values, including nonzero offsets, rather than resetting them to zero. An early error also attempts restoration; a failed restoration is reported.
+Note these take a **raw ADL adapter index** (ADL lists one per display output, so a two-card machine numbers them 0-4 and 5-9), not the device index `RochGPU.exe --gpu` takes.
+
+A card with no display attached reports a zeroed OD8 table to these tools, because they do not open a PMLog session the way the backend does — so `features`, `write-check` and friends see nothing adjustable on it even while the app itself can tune that card. Read it through `RochGPU.exe info --gpu N` / `diag --gpu N` instead.
+
+Common options: `--adapter INDEX`, `--out report.txt`, and `--mock`. Mock mode never loads a driver and exercises every command on simulated data. Write-check accepts `--offset MHz` (default 200) — an *absolute* `GfxClkFMax` on RDNA 3, not a delta, so it has to sit inside the driver's range (500..5000 MHz on an RX 7900 XT) — plus `--feature N` to write one other OD8 feature on its own, and it requires `--apply` on real hardware. It validates the chosen feature's range. It restores the original values, including nonzero offsets, rather than resetting them to zero. An early error also attempts restoration; a failed restoration is reported.
 
 Examples:
 
