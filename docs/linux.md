@@ -17,6 +17,7 @@ The program is one binary that links nothing beyond libc, so the command line al
 This installs a release's binary as a package, so nothing is compiled and no Rust is needed:
 
 ```bash
+sudo pacman -S --needed git base-devel
 git clone --depth 1 https://github.com/RochStudio/Roch-GPU
 cd Roch-GPU/packaging/arch
 makepkg -si
