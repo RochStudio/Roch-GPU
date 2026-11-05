@@ -94,6 +94,12 @@ pub struct RochApp {
     tray: Option<Tray>,
     hidden: bool,
     hidden_children: HiddenChildren,
+    /// Frames until a window that started minimized hides itself. It has to be on screen before the
+    /// compositor can move it. Only on Linux: there is no tray to start in.
+    #[cfg(not(windows))]
+    hide_after_frames: u8,
+    #[cfg(not(windows))]
+    asked_for_frames: bool,
     really_close: bool,
     dialog: Option<Dialog>,
     content_height: f32,
@@ -176,6 +182,10 @@ impl RochApp {
             tray,
             hidden: false,
             hidden_children: HiddenChildren::default(),
+            #[cfg(not(windows))]
+            hide_after_frames: 0,
+            #[cfg(not(windows))]
+            asked_for_frames: false,
             really_close: false,
             dialog: None,
             content_height: main_window::MIN_HEIGHT,
@@ -193,7 +203,13 @@ impl RochApp {
             app.minimize_to_tray(&ctx);
         }
         if auto_monitor {
-            app.set_monitor_open(true);
+            // Starting out of sight on the scratchpad, it opens when the window comes back, like one
+            // that was open when the window was hidden.
+            if cfg!(not(windows)) && app.hidden {
+                app.hidden_children.monitor = true;
+            } else {
+                app.set_monitor_open(true);
+            }
         }
         app
     }
@@ -203,8 +219,10 @@ impl RochApp {
     /// Hide to the tray (there is no button for it: minimising is the gesture). The child windows
     /// that show live readings are closed and reopened on restore, so the poll can drop to its
     /// background rate while nothing is on screen; the service keeps stepping a fan curve.
+    ///
+    /// Hyprland has neither a tray nor a minimized state, and its scratchpad stands in for the tray.
     fn minimize_to_tray(&mut self, ctx: &Context) {
-        if self.tray.is_none() {
+        if !self.can_hide() {
             ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
             return;
         }
@@ -217,10 +235,30 @@ impl RochApp {
         self.settings_window = None;
         self.update_poll_detail();
         self.hidden = true;
+        #[cfg(windows)]
         ctx.send_viewport_cmd(ViewportCommand::Visible(false));
+        // A few frames on: the child windows only close on a frame, which a window out of sight does
+        // not get, and at startup the window to move does not exist yet.
+        #[cfg(not(windows))]
+        {
+            self.hide_after_frames = 3;
+            ctx.request_repaint();
+        }
+    }
+
+    /// Whether there is somewhere to hide the windows, so that minimizing can leave nothing on screen.
+    fn can_hide(&self) -> bool {
+        #[cfg(windows)]
+        return self.tray.is_some();
+        #[cfg(not(windows))]
+        native::can_hide_in_scratchpad()
     }
 
     fn restore_from_tray(&mut self, ctx: &Context) {
+        #[cfg(not(windows))]
+        {
+            self.hide_after_frames = 0;
+        }
         if self.hidden {
             self.hidden = false;
             ctx.send_viewport_cmd(ViewportCommand::Visible(true));
@@ -270,11 +308,14 @@ impl RochApp {
     fn request_close(&mut self, ctx: &Context) {
         let fan_active = self.vm.is_curve_fan() || self.vm.is_fixed_fan() || self.shared.service.drives_other_fans();
         if !self.really_close
-            && self.tray.is_some()
             && !self.shared.service.capabilities().fan_curve_is_hardware
             && fan_active
+            && self.can_hide()
         {
             if self.hidden {
+                // Out of sight on the scratchpad, nothing could answer the question.
+                #[cfg(not(windows))]
+                native::bring_back_from_scratchpad();
                 self.restore_from_tray(ctx);
             }
             self.dialog = Some(Dialog::CloseWithFanControl);
@@ -287,6 +328,21 @@ impl RochApp {
     // ------------------------------------------------------------------ per-frame plumbing
 
     fn pump(&mut self, ctx: &Context) {
+        #[cfg(not(windows))]
+        if self.hide_after_frames > 0 {
+            self.hide_after_frames -= 1;
+            if self.hide_after_frames > 0 {
+                ctx.request_repaint();
+            } else if !native::hide_in_scratchpad() {
+                self.restore_from_tray(ctx);
+            }
+        }
+        // See `close_on_signal`: past the fan question, because the session is going either way.
+        #[cfg(not(windows))]
+        if crate::console::ctrl_c_pressed() && !self.really_close {
+            self.really_close = true;
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
         // Tray menu and double-click.
         let commands: Vec<TrayCommand> =
             self.tray.as_ref().map(|t| t.commands.try_iter().collect()).unwrap_or_default();
@@ -337,6 +393,25 @@ impl RochApp {
         self.dispatch_jobs();
         if self.vm.busy() {
             ctx.request_repaint_after(Duration::from_millis(100));
+        }
+    }
+
+    /// On Wayland a window out of sight can stop getting frames, and `ui` with them, while this keeps
+    /// running. The samples sent to the windows are taken here so that they don't pile up until it is
+    /// seen again.
+    #[cfg(not(windows))]
+    fn tend_unseen_windows(&mut self, ctx: &Context) {
+        // The second pass: the first frame has reached the compositor, so the window exists there.
+        if !self.asked_for_frames && self.first_frame_drawn {
+            self.asked_for_frames = true;
+            let _ = std::thread::Builder::new().name("RochGPU frames".into()).spawn(native::keep_frames_coming);
+        }
+        let w = WinCtx { vm: &mut self.vm, shared: &self.shared, icon: &self.icon, dark: self.dark, main_rect: None };
+        if let Some(window) = &mut self.monitor {
+            window.receive(ctx, &w);
+        }
+        if let Some(window) = &mut self.curve {
+            window.receive();
         }
     }
 
@@ -542,7 +617,9 @@ impl RochApp {
                 ctx.send_viewport_cmd(ViewportCommand::OuterPosition(at));
             }
         }
-        if self.prefs.theme == ThemeMode::System {
+        // Asking is a new process on Linux, so not every 2 s for a window nobody can see. It asks again
+        // as soon as the window is back.
+        if self.prefs.theme == ThemeMode::System && (cfg!(windows) || !self.hidden) {
             if self.last_system_check.elapsed() >= Duration::from_secs(2) {
                 self.last_system_check = Instant::now();
                 if native::system_dark() != self.dark {
@@ -604,7 +681,8 @@ impl RochApp {
         let mut answer: Option<u8> = None; // 0 = yes, 1 = no, 2 = cancel
         let text = match dialog {
             Dialog::ClearSlot(n) => format!("Clear slot {n}?"),
-            Dialog::CloseWithFanControl => "Fan control is active. Minimize to tray to keep it running?\n\nYes = minimize to tray\nNo = exit (fans return to automatic)".to_string(),
+            Dialog::CloseWithFanControl if cfg!(windows) => "Fan control is active. Minimize to tray to keep it running?\n\nYes = minimize to tray\nNo = exit (fans return to automatic)".to_string(),
+            Dialog::CloseWithFanControl => "Fan control is active. Hide the window to keep it running?\n\nYes = hide on the scratchpad\nNo = exit (fans return to automatic)".to_string(),
         };
         let modal = egui::Modal::new(egui::Id::unique("roch_dialog"))
             .frame(egui::Frame::popup(&ctx.global_style()).fill(p.bg).inner_margin(egui::Margin::same(16)))
@@ -724,6 +802,8 @@ impl eframe::App for RochApp {
             crate::trace!("app: tray");
         }
         self.pump(ctx);
+        #[cfg(not(windows))]
+        self.tend_unseen_windows(ctx);
 
         // Alt+F4, or the taskbar's Close: run our own close path instead.
         if ctx.input(|i| i.viewport().close_requested()) && !self.really_close {
@@ -739,6 +819,13 @@ impl eframe::App for RochApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Only `logic` runs for a window out of sight. A frame here means the compositor wants to show
+        // it, which is how the app learns of Super+S or anything else that brought it back. It stays on
+        // the scratchpad, so the same key can hide it again.
+        #[cfg(not(windows))]
+        if self.hidden && self.hide_after_frames == 0 && native::back_in_view() {
+            self.restore_from_tray(&ctx);
+        }
         let started = crate::trace::enabled().then(std::time::Instant::now);
         let mut actions = Vec::new();
         let needed = main_window::show(ui, &mut self.vm, self.icon_tex.as_ref(), &mut actions);

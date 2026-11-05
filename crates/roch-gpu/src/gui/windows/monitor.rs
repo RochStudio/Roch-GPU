@@ -140,8 +140,8 @@ impl MonitorWindow {
         self.elapsed = format!("{} sensors  ·  {}", table.sensor_count(), hms(self.stats_since.elapsed().as_secs()));
     }
 
-    pub fn show(&mut self, ctx: &Context, w: &mut WinCtx) -> bool {
-        self.ensure_tap(ctx, w);
+    /// Take in the samples that have arrived.
+    pub fn receive(&mut self, ctx: &Context, w: &WinCtx) {
         let samples = self.tap.as_ref().map(Tap::drain).unwrap_or_default();
         let rows_before = self.table.as_ref().map_or(0, |t| t.rows().len());
         for (t, extra) in &samples {
@@ -152,10 +152,15 @@ impl MonitorWindow {
             // it settle now rather than at the next sample (samples wake one frame each).
             ctx.request_repaint();
         }
+    }
+
+    pub fn show(&mut self, ctx: &Context, w: &mut WinCtx) -> bool {
+        self.ensure_tap(ctx, w);
+        self.receive(ctx, w);
         let builder = self
             .chrome
             .builder("Roch GPU — Telemetry", vec2(800.0, 900.0), w.icon, Placement::RightOfOwner, w.main_rect)
-            .with_min_inner_size(vec2(740.0, 480.0));
+            .with_min_inner_size(self.chrome.min_size(vec2(740.0, 480.0)));
         ctx.show_viewport_immediate(Self::id(), builder, |ui, _class: ViewportClass| {
             let closed = self.chrome.frame(ui.ctx(), w.dark);
             content_frame(ui.ctx(), 0).inner_margin(egui::Margin { left: 20, right: 20, top: 16, bottom: 14 }).show(

@@ -63,6 +63,10 @@ pub unsafe fn co_free(ptr: *mut c_void) {
     }
 }
 
+/// Only here so this crate's tests build beyond Windows, where the driver can have allocated nothing.
+///
+/// # Safety
+/// Nothing to uphold: it does nothing.
 #[cfg(not(windows))]
 pub unsafe fn co_free(_ptr: *mut c_void) {}
 

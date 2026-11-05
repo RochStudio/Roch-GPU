@@ -1,0 +1,9 @@
+[package]
+name = "roch-amdgpu"
+description = "Linux AMD backend: tuning and telemetry through the kernel amdgpu driver's sysfs files."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+roch-core.workspace = true

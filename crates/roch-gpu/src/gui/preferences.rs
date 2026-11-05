@@ -24,7 +24,13 @@ impl ThemeMode {
         match self {
             ThemeMode::Light => "Light",
             ThemeMode::Dark => "Dark",
-            ThemeMode::System => "Follow Windows",
+            ThemeMode::System => {
+                if cfg!(windows) {
+                    "Follow Windows"
+                } else {
+                    "Follow system"
+                }
+            }
         }
     }
 

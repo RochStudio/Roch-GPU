@@ -11,15 +11,26 @@ path = "src/main.rs"
 
 [dependencies]
 roch-core.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+eframe = { version = "0.37", default-features = false, features = ["glow", "clipboard"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
 roch-nvidia.workspace = true
 roch-amd.workspace = true
 roch-intel.workspace = true
-chrono.workspace = true
-serde_json.workspace = true
-winreg.workspace = true
-eframe = { version = "0.37", default-features = false, features = ["glow", "clipboard"] }
-image = { version = "0.25", default-features = false, features = ["png"] }
 tray-icon = "0.26"
+winreg.workspace = true
+
+# On Linux there is no vendor DLL to load: the kernel's amdgpu driver is the interface. The window
+# talks to Wayland or X11 directly, and both client libraries are loaded at run time, so the same
+# binary also runs the command line on a machine with no desktop installed.
+[target.'cfg(target_os = "linux")'.dependencies]
+roch-amdgpu.workspace = true
+libc.workspace = true
+eframe = { version = "0.37", default-features = false, features = ["wayland", "x11", "default_fonts"] }
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen", "x11"] }
 
 [target.'cfg(windows)'.dependencies.windows-sys]
 workspace = true

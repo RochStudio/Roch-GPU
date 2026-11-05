@@ -21,11 +21,17 @@ pub struct Attempt {
 pub type Maker = fn() -> Box<dyn GpuBackend>;
 
 /// NVIDIA first, then AMD, then Intel — the C# order.
+#[cfg(windows)]
 pub const VENDORS: [Maker; 3] = [
     || Box::new(roch_nvidia::NvidiaBackend::new()),
     || Box::new(roch_amd::AmdBackend::new()),
     || Box::new(roch_intel::IntelBackend::new()),
 ];
+
+/// The vendor DLLs the Windows backends are built on do not exist here. The kernel's amdgpu driver
+/// is the Linux interface; it names any other vendor's card when none of its own is found.
+#[cfg(target_os = "linux")]
+pub const VENDORS: [Maker; 1] = [|| Box::new(roch_amdgpu::AmdgpuBackend::new())];
 
 /// Initialise the first vendor backend that works. On failure the error lists every attempt.
 /// On success the attempts that failed before it are returned alongside.

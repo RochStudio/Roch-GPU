@@ -14,7 +14,7 @@ defaults:
     shell: cmd
 
 jobs:
-  # Windows only: the backends are Win32 FFI and the GUI is a Windows app. Tests touch no driver.
+  # The NVIDIA, AMD (ADL) and Intel backends are Win32 FFI, and their tests touch no driver.
   build-and-test:
     name: Build, test and package (windows)
     runs-on: windows-latest
@@ -44,5 +44,39 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: roch-gpu-dist
+          path: dist/
+          retention-days: 14
+
+  # The amdgpu backend and the same app on Linux. Its tests run against a fake /sys, so no card is
+  # needed, and the system libraries for the window are all loaded at run time, so none are installed.
+  build-and-test-linux:
+    name: Build, test and package (linux)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Test, lint, build and smoke-test with Rust
+        run: cargo xtask build
+
+      - name: The binary needs nothing beyond libc
+        run: |
+          ldd dist/RochGPU
+          ! ldd dist/RochGPU | grep -vE 'linux-vdso|ld-linux|libc\.so|libm\.so|libgcc_s\.so'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: roch-gpu-dist-linux
           path: dist/
           retention-days: 14

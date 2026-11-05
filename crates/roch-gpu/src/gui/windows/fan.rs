@@ -112,7 +112,7 @@ impl FanWindow {
         let builder = self
             .chrome
             .builder("Fan Control", vec2(WIDTH, 697.0), w.icon, Placement::CenterOwner, w.main_rect)
-            .with_min_inner_size(vec2(460.0, 200.0));
+            .with_min_inner_size(self.chrome.min_size(vec2(460.0, 200.0)));
         ctx.show_viewport_immediate(Self::id(), builder, |ui, _class: ViewportClass| {
             let closed = self.chrome.frame(ui.ctx(), w.dark);
             let width = ui.ctx().input(|i| i.viewport().inner_rect.map(|r| r.width())).unwrap_or(WIDTH);

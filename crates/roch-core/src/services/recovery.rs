@@ -118,6 +118,7 @@ impl ProfileRecovery {
             file.sync_all()?;
         }
         fs::rename(&temp, &self.path)?;
+        super::profile_store::storage_root::restore_owner(&self.path);
         self.state = next;
         Ok(())
     }

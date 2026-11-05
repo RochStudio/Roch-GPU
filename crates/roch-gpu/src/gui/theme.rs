@@ -162,8 +162,8 @@ pub fn regular(size: f32) -> FontId {
 /// Segoe UI Symbol cover every glyph the UI draws (° — – … · × − → ↑ ↓, and ◀ ▶ ☀, which only
 /// Segoe UI Symbol has). Should Consolas be missing, the first of Segoe UI, Tahoma and Arial
 /// stands in for it. A file that cannot be read is skipped, never fatal.
-pub fn install_fonts(ctx: &Context, family: &str) {
-    let mut fonts = FontDefinitions::empty();
+#[cfg(windows)]
+fn base_fonts(fonts: &mut FontDefinitions) -> BaseFonts {
     let dir = std::env::var_os("WINDIR").map(std::path::PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
     let mut load = |key: &'static str, file: &str| -> Option<String> {
         let bytes = std::fs::read(dir.join("Fonts").join(file)).ok()?;
@@ -179,6 +179,42 @@ pub fn install_fonts(ctx: &Context, family: &str) {
             .into_iter()
             .find_map(|(key, file)| load(key, file)),
     };
+    BaseFonts { regular, bold, symbols, stand_ins: stand_in.into_iter().collect() }
+}
+
+/// The system's monospace by fontconfig's reckoning, in place of Consolas. No font can be assumed on a
+/// Linux machine, or even fontconfig, so egui's built-in fonts are compiled in as the last resort.
+#[cfg(not(windows))]
+fn base_fonts(fonts: &mut FontDefinitions) -> BaseFonts {
+    let (regular, bold, symbols) = super::fonts::system_faces();
+    let mut load = |key: &'static str, path: Option<std::path::PathBuf>| -> Option<String> {
+        let bytes = std::fs::read(path?).ok()?;
+        fonts.font_data.insert(key.to_owned(), std::sync::Arc::new(FontData::from_owned(bytes)));
+        Some(key.to_owned())
+    };
+    let (regular, bold, symbols) =
+        (load("system-mono", regular), load("system-mono-bold", bold), load("system-symbols", symbols));
+    let built_in = FontDefinitions::default();
+    let mut stand_ins = Vec::new();
+    for (name, data) in built_in.font_data {
+        fonts.font_data.insert(name.clone(), data);
+        stand_ins.push(name);
+    }
+    stand_ins.sort();
+    BaseFonts { regular, bold, symbols, stand_ins }
+}
+
+/// The font keys `base_fonts` loaded, each `None` if its file could not be read.
+struct BaseFonts {
+    regular: Option<String>,
+    bold: Option<String>,
+    symbols: Option<String>,
+    stand_ins: Vec<String>,
+}
+
+pub fn install_fonts(ctx: &Context, family: &str) {
+    let mut fonts = FontDefinitions::empty();
+    let BaseFonts { regular, bold, symbols, stand_ins } = base_fonts(&mut fonts);
 
     let custom = if family.eq_ignore_ascii_case("Consolas") { None } else { super::fonts::find_family(family) };
     let custom_regular = custom.as_ref().and_then(|f| std::fs::read(&f.regular).ok());
@@ -193,7 +229,7 @@ pub fn install_fonts(ctx: &Context, family: &str) {
     });
 
     let chain = |first: Option<String>| -> Vec<String> {
-        [first, stand_in.clone(), symbols.clone()].into_iter().flatten().collect()
+        [first, symbols.clone()].into_iter().flatten().chain(stand_ins.iter().cloned()).collect()
     };
     let regular_chain = chain(selected_regular.clone().or(regular.clone()));
     fonts.families.insert(FontFamily::Name("settings-mono".into()), chain(regular.clone()));

@@ -16,6 +16,8 @@ mod cli;
 mod console;
 mod elevation;
 mod gui;
+#[cfg(target_os = "linux")]
+mod linux_setup;
 mod single_instance;
 mod trace;
 

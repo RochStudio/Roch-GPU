@@ -51,6 +51,7 @@ pub enum Placement {
 fn child_builder(title: &str, size: Vec2, icon: &Arc<IconData>, pos: Option<Pos2>) -> ViewportBuilder {
     let b = ViewportBuilder::default()
         .with_title(title)
+        .with_app_id("RochGPU")
         .with_inner_size(size)
         .with_icon(icon.clone())
         .with_minimize_button(false)
@@ -84,7 +85,17 @@ pub struct ChildChrome {
     placed: Option<Pos2>,
     focus_requested: bool,
     fitted: Option<Vec2>,
+    /// See [`OPENING_FRAMES`].
+    frames_drawn: u8,
+    opening_size: Option<Vec2>,
 }
+
+/// How long a new window holds one fixed size on Linux. A tiling compositor decides at the moment a
+/// window first appears whether to float it or tile it, and a fixed size is what says "float": without
+/// it these windows open squeezed into whatever tile is free. Once that is settled the limits relax,
+/// so the window is still resizable. Hyprland decides on the first buffer, which the first frame
+/// delivers; three leaves room for a frame or two more on a busy desktop.
+const OPENING_FRAMES: u8 = 3;
 
 impl ChildChrome {
     /// The viewport builder: placed beside or over the main window when it opens, then left
@@ -102,13 +113,46 @@ impl ChildChrome {
         if self.placed.is_none() {
             self.placed = main.map(|m| place(placement, size, m));
         }
-        child_builder(title, size, icon, self.placed)
+        let builder = child_builder(title, size, icon, self.placed);
+        if self.opening() {
+            self.opening_size = Some(size);
+            builder.with_min_inner_size(size).with_max_inner_size(size)
+        } else {
+            builder
+        }
+    }
+
+    /// Still holding the fixed size described at [`OPENING_FRAMES`]? Never on Windows, where the shell
+    /// does not care and the window can have its real limits from the start.
+    fn opening(&self) -> bool {
+        cfg!(not(windows)) && self.frames_drawn < OPENING_FRAMES
+    }
+
+    /// The minimum size to give the builder: `minimum`, once the window has finished opening.
+    pub fn min_size(&self, minimum: Vec2) -> Vec2 {
+        match self.opening_size {
+            Some(size) if self.opening() => size,
+            _ => minimum,
+        }
     }
 
     /// Call at the top of the viewport's ui callback. Returns true when the user closed it.
     pub fn frame(&mut self, ctx: &Context, dark: bool) -> bool {
+        // eframe clears a child window to fully transparent. Windows ignores that; a Wayland compositor
+        // honours it, so anything the content does not cover would show what is behind the window. Some
+        // of it always goes uncovered on Hyprland, which ignores `fit` and leaves the window its opening
+        // size when the content is shorter.
+        if cfg!(not(windows)) {
+            ctx.layer_painter(egui::LayerId::background()).rect_filled(ctx.content_rect(), 0.0, theme::pal(ctx).bg);
+        }
+        let opening = self.opening();
+        if opening {
+            self.frames_drawn += 1;
+            // Nothing else is due to draw the frame that relaxes the limits.
+            ctx.request_repaint();
+        }
         let maximum = maximum_size(ctx);
-        if self.maximum_sent != Some(maximum) {
+        if !opening && self.maximum_sent != Some(maximum) {
             ctx.send_viewport_cmd(ViewportCommand::MaxInnerSize(maximum));
             self.maximum_sent = Some(maximum);
         }

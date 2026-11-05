@@ -147,7 +147,7 @@ impl CurveWindow {
         self.tap = Some(tap);
     }
 
-    fn receive(&mut self) {
+    pub fn receive(&mut self) {
         let msgs = self.tap.as_ref().map(Tap::drain).unwrap_or_default();
         for m in msgs {
             match m {
@@ -190,7 +190,7 @@ impl CurveWindow {
         let builder = self
             .chrome
             .builder("Voltage / Frequency curve", vec2(960.0, 620.0), w.icon, Placement::CenterOwner, w.main_rect)
-            .with_min_inner_size(vec2(700.0, 460.0));
+            .with_min_inner_size(self.chrome.min_size(vec2(700.0, 460.0)));
         ctx.show_viewport_immediate(Self::id(), builder, |ui, _class: ViewportClass| {
             let closed = self.chrome.frame(ui.ctx(), w.dark);
             content_frame(ui.ctx(), 12).show(ui, |ui| {

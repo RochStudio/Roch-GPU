@@ -25,6 +25,9 @@ use roch_core::{FanMode, GpuError, GpuTelemetry, NOTE_PREFIX, TuningProfile, Vol
 
 use crate::{backends, console};
 
+/// What this program is called on the command line.
+pub const EXE_NAME: &str = if cfg!(windows) { "RochGPU.exe" } else { "rochgpu" };
+
 macro_rules! outln {
     ($w:expr) => { let _ = writeln!($w); };
     ($w:expr, $($arg:tt)*) => { let _ = writeln!($w, $($arg)*); };
@@ -73,7 +76,7 @@ pub fn run_with(args: &[String], store_root: Option<PathBuf>, out: &mut dyn Writ
             2
         }
         Err(CliError::BadGpuIndex) => {
-            outln!(err, "No GPU at that --gpu index. Run 'RochGPU.exe info' to list what was found.");
+            outln!(err, "No GPU at that --gpu index. Run '{EXE_NAME} info' to list what was found.");
             2
         }
         Err(CliError::Gpu(e)) => {
@@ -90,6 +93,12 @@ fn dispatch(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> CliResult<i32> {
+    // Before the backend: this is how a machine gets ready to use one, and it talks to no driver.
+    #[cfg(target_os = "linux")]
+    if args[0].eq_ignore_ascii_case("setup") {
+        return Ok(crate::linux_setup::run(opts, out, err));
+    }
+
     let mock = opts.contains("mock");
     // int.TryParse semantics: anything unparsable is GPU 0; a negative index is simply out of range.
     let gpu = opts.get("gpu").and_then(|s| s.trim().parse::<i32>().ok()).unwrap_or(0);
@@ -428,12 +437,17 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
     } else {
         format!("core {} MHz", signed(s.core_offset_mhz))
     };
-    let mut current = vec![
-        core,
-        format!("mem {} {}", s.memory_offset_mhz, c.memory_clock_unit),
-        format!("power {}%", s.power_limit_percent),
-        format!("temp {temp_limit}"),
-    ];
+    let mut current = Vec::new();
+    if c.can_set_core_offset || c.can_set_core_min_clock {
+        current.push(core);
+    }
+    if c.can_set_memory_offset {
+        current.push(format!("mem {} {}", s.memory_offset_mhz, c.memory_clock_unit));
+    }
+    if c.can_set_power_limit {
+        current.push(format!("power {}%", s.power_limit_percent));
+    }
+    current.push(format!("temp {temp_limit}"));
     if c.can_set_voltage_boost {
         let key = if c.voltage_style == VoltageControlStyle::Percent { "vlimit" } else { "vboost" };
         current.push(format!("{key} {}%", s.voltage_boost_percent));
@@ -462,6 +476,14 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
     outln!(out, "Current: {}", current.join(", "));
     let t = sample_telemetry(svc)?;
     outln!(out, "{}", fmt_telemetry(&t));
+    let gpu = svc.gpu_index();
+    let notes = svc.with_backend(|b| b.notes(gpu));
+    if !notes.is_empty() {
+        outln!(out);
+        for note in notes {
+            outln!(out, "{NOTE_PREFIX} {note}");
+        }
+    }
     Ok(0)
 }
 
@@ -793,8 +815,8 @@ pub fn report(errs: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 
 }
 
 fn startup(o: &Opts, out: &mut dyn Write, err: &mut dyn Write) -> CliResult<i32> {
-    if !startup_task::is_windows() {
-        outln!(err, "Windows only.");
+    if !startup_task::is_supported() {
+        outln!(err, "Not supported on this platform.");
         return Ok(1);
     }
     if o.contains("status") {
@@ -808,8 +830,18 @@ fn startup(o: &Opts, out: &mut dyn Write, err: &mut dyn Write) -> CliResult<i32>
     }
     if let Some(prof) = o.get("enable") {
         let exe = std::env::current_exe().map_err(|e| GpuError::context("cannot resolve own path", e))?;
-        startup_task::register(&exe.with_extension("exe").to_string_lossy(), prof)?;
-        outln!(out, "Startup task registered: apply '{prof}' at logon (elevated).");
+        if cfg!(windows) {
+            startup_task::register(&exe.with_extension("exe").to_string_lossy(), prof)?;
+            outln!(out, "Startup task registered: apply '{prof}' at logon (elevated).");
+        } else {
+            startup_task::register(&exe.to_string_lossy(), prof)?;
+            outln!(out, "Startup entry registered: apply '{prof}' at logon.");
+            outln!(
+                out,
+                "{NOTE_PREFIX} a profile only runs at logon once it has been confirmed: tick Startup for it in the \
+                 window. Without `rochgpu setup` the apply is refused; either way the reason is in the log."
+            );
+        }
         return Ok(0);
     }
     outln!(err, "use --enable <profile> | --disable | --status");
@@ -869,6 +901,7 @@ fn fmt_domain(d: &nv_domains::ClockDomain) -> String {
 /// verb body can be tested against a fake without a card.
 pub mod nv_domains {
     use roch_core::GpuBackend;
+    #[cfg(windows)]
     use roch_nvidia::NvidiaBackend;
 
     /// One private clock domain as the `domains` verb prints it.
@@ -892,11 +925,19 @@ pub mod nv_domains {
     }
 
     /// The backend as an NVIDIA one, or `None` for any other vendor (and the mock).
+    #[cfg(windows)]
     pub fn nvidia(b: &mut dyn GpuBackend) -> Option<&mut dyn DomainAccess> {
         let nv = b.as_any_mut()?.downcast_mut::<NvidiaBackend>()?;
         Some(nv)
     }
 
+    /// No NVIDIA backend on this platform, so there is nothing to reach.
+    #[cfg(not(windows))]
+    pub fn nvidia(_b: &mut dyn GpuBackend) -> Option<&mut dyn DomainAccess> {
+        None
+    }
+
+    #[cfg(windows)]
     impl DomainAccess for NvidiaBackend {
         fn read(&mut self, gpu: usize) -> Vec<ClockDomain> {
             self.read_clock_domains(gpu)
@@ -970,9 +1011,9 @@ pub fn fmt_telemetry(t: &GpuTelemetry) -> String {
         if t.memory_speed_mbps.is_finite() { (t.memory_speed_mbps, "Mbps") } else { (t.memory_clock_mhz, "MHz") };
     format!(
         "{time}  {:>5} MHz core  {:>6} {mem_unit} mem  {:>4}°C{hs}{mem}  {volt}  {:>5}% TDP  load {:>3}%  fan {:>3}% ({} rpm)  {} {}",
-        num(t.core_clock_mhz, 0),
-        num(mem_value, 0),
-        num(t.temperature_c, 1),
+        reading(t.core_clock_mhz, 0),
+        reading(mem_value, 0),
+        reading(t.temperature_c, 1),
         reading(t.power_percent, 1),
         reading(t.gpu_load_percent, 0),
         reading(t.fan_percent, 0),
@@ -1034,7 +1075,23 @@ RochGPU.exe — Roch GPU command line / undervolt CLI (needs admin for writes)
    --mock multi for a two-card machine)";
 
 fn usage(out: &mut dyn Write) {
-    outln!(out, "{USAGE}");
+    if cfg!(windows) {
+        outln!(out, "{USAGE}");
+    } else {
+        // The same verbs, under this platform's name for the program and for the permission.
+        let text =
+            USAGE.replace("RochGPU.exe", EXE_NAME).replace("needs admin for writes", "writes need `setup`, once");
+        outln!(out, "{text}");
+        outln!(
+            out,
+            "  {EXE_NAME} setup [--overdrive] [--keep-awake] [--user NAME]   run with sudo: allow this user to change"
+        );
+        outln!(
+            out,
+            "                                 the card without root, and optionally turn on overdrive or stop idle power-down"
+        );
+        outln!(out, "  {EXE_NAME} setup --status | --show | --undo");
+    }
 }
 
 #[cfg(test)]
@@ -1277,11 +1334,11 @@ mod tests {
         let store = temp_store("verbs");
         let (code, out, _) = run_mock("--help", &store);
         assert_eq!(code, 0);
-        assert!(out.starts_with("RochGPU.exe — Roch GPU command line"));
+        assert!(out.starts_with(&format!("{EXE_NAME} — Roch GPU command line")));
 
         let (code, out, _) = run_mock("bogus --mock", &store);
         assert_eq!(code, 2, "an unknown verb prints usage and exits 2");
-        assert!(out.contains("RochGPU.exe list-profiles"));
+        assert!(out.contains(&format!("{EXE_NAME} list-profiles")));
 
         let (code, out, err) = run_mock("info --mock", &store);
         assert_eq!(code, 0, "{err}");
@@ -1315,7 +1372,7 @@ mod tests {
         let (code, _, err) = run_mock("apply --mock --gpu 3", &store);
         assert_eq!(
             (code, err.as_str()),
-            (2, "No GPU at that --gpu index. Run 'RochGPU.exe info' to list what was found.\n")
+            (2, format!("No GPU at that --gpu index. Run '{EXE_NAME} info' to list what was found.\n").as_str())
         );
         let (code, out, _) = run_mock("reset --mock", &store);
         assert_eq!((code, out.as_str()), (0, "Reset to defaults.\n"));

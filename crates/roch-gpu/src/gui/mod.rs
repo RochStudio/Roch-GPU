@@ -22,6 +22,10 @@ pub mod shared;
 pub mod startup;
 pub mod telemetry_table;
 pub mod theme;
+#[cfg(windows)]
+pub mod tray;
+#[cfg(not(windows))]
+#[path = "tray_none.rs"]
 pub mod tray;
 pub mod vf_editor;
 pub mod view_model;
@@ -84,6 +88,8 @@ pub fn run(args: &[String]) -> i32 {
     if !isolated {
         let wake = wake.clone();
         single_instance::listen_for_show_requests(move || {
+            #[cfg(not(windows))]
+            native::bring_back_from_scratchpad();
             let _ = show_tx.send(());
             if let Some(ctx) = wake.lock().ok().and_then(|g| g.clone()) {
                 ctx.request_repaint();
@@ -91,12 +97,30 @@ pub fn run(args: &[String]) -> i32 {
         });
     }
 
+    // Linux waits for the driver half, because the window has to be the right size from its first
+    // frame: Hyprland marks every window tiled, and winit then ignores a client's resize request, so
+    // the fit-to-content the window does later never lands. Reading sysfs is quick enough not to miss.
+    #[cfg(not(windows))]
+    let mut ready = match boot.wait() {
+        Some(Booted::Exit(code)) => return code,
+        other => other,
+    };
+    #[cfg(not(windows))]
+    let (width, height) = match &mut ready {
+        Some(Booted::Window { shared, vm, .. }) => measured_size(shared, vm),
+        _ => (windows::main_window::WIDTH, windows::main_window::MIN_HEIGHT),
+    };
+    #[cfg(windows)]
+    let (width, height) = (windows::main_window::WIDTH, windows::main_window::MIN_HEIGHT);
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Roch GPU")
             .with_app_id("RochGPU")
-            .with_inner_size([windows::main_window::WIDTH, windows::main_window::MIN_HEIGHT])
-            .with_min_inner_size([420.0, 300.0])
+            .with_inner_size([width, height])
+            // A fixed size is what tells a tiling compositor this window floats, and the minimum is
+            // half of how it says so. The window scrolls if it is ever asked to be smaller.
+            .with_min_inner_size(if cfg!(windows) { [420.0, 300.0] } else { [width, height] })
             .with_decorations(false)
             .with_resizable(false)
             .with_maximize_button(false)
@@ -112,13 +136,19 @@ pub fn run(args: &[String]) -> i32 {
         options,
         Box::new(|cc| {
             crate::trace!("gui: eframe created (window + GL context)");
-            let Some(Booted::Window { shared, minimized, vm }) = boot.wait() else {
+            #[cfg(not(windows))]
+            let booted = ready.take();
+            #[cfg(windows)]
+            let booted = boot.wait();
+            let Some(Booted::Window { shared, minimized, vm }) = booted else {
                 return Err("startup ended before the window opened".into());
             };
             crate::trace!("gui: driver startup joined");
             if let Ok(mut g) = wake.lock() {
                 *g = Some(cc.egui_ctx.clone());
             }
+            #[cfg(not(windows))]
+            close_on_signal(cc.egui_ctx.clone());
             let app = app::RochApp::new(cc, shared, *vm, minimized, show_rx);
             crate::trace!("gui: app created");
             Ok(Box::new(app))
@@ -148,6 +178,54 @@ pub fn run(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// Close properly on a signal. A session ending or Ctrl+C in the terminal that started the window
+/// arrives as one, and by default the process just dies, skipping the exit path that hands a software
+/// fan curve back to the driver: the fan would stay at its last duty with nothing managing it. A signal
+/// handler cannot touch the UI, so it raises a flag and this wakes the window to read it.
+#[cfg(not(windows))]
+fn close_on_signal(ctx: egui::Context) {
+    crate::console::install_ctrl_c_handler();
+    let _ = std::thread::Builder::new().name("RochGPU signal watch".into()).spawn(move || {
+        while !crate::console::ctrl_c_pressed() {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        // A hidden window's UI thread may be waiting for a frame that will not come until it is shown.
+        native::bring_back_from_scratchpad();
+        ctx.request_repaint();
+    });
+}
+
+/// The size the main window needs, from a layout pass with no window: egui is only a library until
+/// something paints its output. Two passes, as egui itself takes to settle a layout on first sight.
+#[cfg(not(windows))]
+fn measured_size(shared: &Shared, vm: &mut MainViewModel) -> (f32, f32) {
+    use windows::main_window;
+    /// Roomy on a 1080p screen, and without a window there is no monitor yet to ask. Anything taller
+    /// scrolls, which is what the window does whenever its content outgrows it.
+    const TALLEST: f32 = 960.0;
+
+    let settings = shared.settings().clone();
+    let prefs = preferences::Prefs::from_json(&settings.ui_preferences, settings.dark_mode, settings.poll_interval_ms);
+    let ctx = egui::Context::default();
+    theme::install_fonts(&ctx, &prefs.font_family);
+    theme::apply(&ctx, &prefs, prefs.theme.is_dark(native::system_dark()));
+    ctx.set_zoom_factor(prefs.ui_scale);
+    let width = main_window::width();
+    let mut height = main_window::MIN_HEIGHT;
+    for _ in 0..2 {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 4096.0))),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            height = main_window::show(ui, vm, None, &mut Vec::new());
+        });
+        // Nothing will ever paint this pass, and egui insists on being told so.
+        output.textures_delta.clear();
+    }
+    (width, height.clamp(main_window::MIN_HEIGHT, TALLEST).round())
 }
 
 /// Wake the window for something another thread just delivered (a sample, a job's result): one

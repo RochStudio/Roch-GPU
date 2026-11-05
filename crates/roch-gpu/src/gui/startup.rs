@@ -197,7 +197,13 @@ pub fn start(
         // A fan curve cannot survive without a resident process; the startup docs say so.
         return Started::Exit(0);
     }
-    shared.recovery_notice = notice;
+    // A recovery problem matters more; otherwise say what is keeping this card's controls away.
+    let gpu = service.gpu_index();
+    let notes = service.with_backend(|b| b.notes(gpu));
+    for note in &notes {
+        log(note);
+    }
+    shared.recovery_notice = notice.or_else(|| notes.first().cloned());
     Started::Window { shared, minimized }
 }
 

@@ -41,7 +41,7 @@ Backend crates depend only on `roch-core`, so each compiles and tests on its own
   driver — be meticulous; where a buffer-based approach (`Vec<u8>` + offsets) is what the C# does,
   do the same.
 - Windows-only code behind `#[cfg(windows)]` where it touches Win32; the crates must still `cargo
-  check` cleanly on Windows (that is the only target that matters).
+  check` cleanly on Windows. They also build and test on Linux, though only `roch-amdgpu` is linked there.
 - Tests: port the relevant checks from `tests/GpuTuner.Core.Tests/Program.cs` (and the Telemetry/App
   tests where applicable) into `#[cfg(test)]` unit tests next to the code.
 - Do **not** run anything that writes to the GPU. Read-only calls against the real RTX 5070 Ti in

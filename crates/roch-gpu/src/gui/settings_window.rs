@@ -76,7 +76,7 @@ impl SettingsWindow {
         let builder = self
             .chrome
             .builder("Roch GPU — Settings", vec2(640.0, 600.0), icon, Placement::CenterOwner, main)
-            .with_min_inner_size(vec2(520.0, 420.0));
+            .with_min_inner_size(self.chrome.min_size(vec2(520.0, 420.0)));
         ctx.show_viewport_immediate(Self::id(), builder, |ui, _| {
             let mut closed = self.chrome.frame(ui.ctx(), dark) || ui.input(|i| i.key_pressed(egui::Key::Escape));
             let palette = theme::pal(ui.ctx());
@@ -259,7 +259,7 @@ impl SettingsWindow {
             if ui
                 .add_enabled(
                     !prefs.font_family.eq_ignore_ascii_case("Consolas"),
-                    egui::Button::new("Consolas (default)"),
+                    egui::Button::new(fonts::DEFAULT_FONT_LABEL),
                 )
                 .clicked()
             {
@@ -293,7 +293,11 @@ impl SettingsWindow {
             });
         hint(
             ui,
-            "Fixed-width fonts keep the columns most even. Consolas is laid out to match the original window exactly.",
+            if cfg!(windows) {
+                "Fixed-width fonts keep the columns most even. Consolas is laid out to match the original window exactly."
+            } else {
+                "Fixed-width fonts keep the columns most even."
+            },
         );
 
         section(ui, "Size");
@@ -430,13 +434,17 @@ impl SettingsWindow {
         });
         section(ui, "On screen");
         ui.checkbox(&mut p.always_on_top, "Keep the windows above other programs");
-        let mut opacity = p.opacity * 100.0;
-        ui.horizontal(|ui| {
-            ui.label("Opacity");
-            if ui.add(egui::Slider::new(&mut opacity, 30.0..=100.0).fixed_decimals(0).suffix("%")).changed() {
-                p.opacity = opacity / 100.0;
-            }
-        });
+        // Wayland gives a client no way to set its own window's opacity; a slider that moves and does
+        // nothing would be worse than none.
+        if cfg!(windows) {
+            let mut opacity = p.opacity * 100.0;
+            ui.horizontal(|ui| {
+                ui.label("Opacity");
+                if ui.add(egui::Slider::new(&mut opacity, 30.0..=100.0).fixed_decimals(0).suffix("%")).changed() {
+                    p.opacity = opacity / 100.0;
+                }
+            });
+        }
     }
     fn behaviour(ui: &mut Ui, p: &mut Prefs, shared: &Shared) {
         section(ui, "Live readings");
