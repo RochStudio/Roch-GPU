@@ -35,7 +35,7 @@ source=("RochGPU-linux-x86_64-$pkgver::$url/releases/download/v$pkgver/RochGPU-l
         "RochGPU-$pkgver.png::$_raw/crates/roch-gpu/assets/icon.png"
         "THIRD-PARTY-NOTICES-$pkgver.md::$_raw/THIRD-PARTY-NOTICES.md"
         RochGPU.desktop)
-sha256sums=('a270356ca64ac31069721eee401bb2a6d7f0b57fcf1e6e11fa62d10477f5dca0'
+sha256sums=('e1a62a72f7ab150c5b06dd8c3353ec99f3af4869a9e99cbba6180156a5dcb9f5'
             '10d94d0e2e548248d6b32586f0ab9de42875ec75d4ef4ba9b07c4679a5ec33ba'
             'eb5d1e8c827ed3c98d31dac2a8d537f5b4b3314e1098d64cd0d67d0148829631'
             'bd9c93d3956aafc10e13164a509fb3881e548e940944c7fc5ba37808306444a9')
