@@ -113,7 +113,9 @@ mod tests {
         assert!(prefix_from(&["--prefix".into(), "relative".into()]).is_err());
         assert!(prefix_from(&["--prefix".into()]).is_err());
         assert!(prefix_from(&["--other".into(), "/x".into()]).is_err());
-        assert_eq!(prefix_from(&["--prefix".into(), "/opt/roch".into()]).unwrap(), PathBuf::from("/opt/roch"));
+        // What counts as absolute depends on the platform: `/opt/roch` is not, on Windows.
+        let absolute = std::env::temp_dir().join("roch");
+        assert_eq!(prefix_from(&["--prefix".into(), absolute.display().to_string()]).unwrap(), absolute);
     }
 
     #[test]
