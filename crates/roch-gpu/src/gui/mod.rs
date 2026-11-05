@@ -188,9 +188,7 @@ pub fn run(args: &[String]) -> i32 {
 fn close_on_signal(ctx: egui::Context) {
     crate::console::install_ctrl_c_handler();
     let _ = std::thread::Builder::new().name("RochGPU signal watch".into()).spawn(move || {
-        while !crate::console::ctrl_c_pressed() {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-        }
+        crate::console::wait_for_ctrl_c();
         // A hidden window's UI thread may be waiting for a frame that will not come until it is shown.
         native::bring_back_from_scratchpad();
         ctx.request_repaint();

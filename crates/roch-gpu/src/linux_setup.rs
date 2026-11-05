@@ -42,12 +42,15 @@ pub fn is_safe_user_name(name: &str) -> bool {
 /// device path from the kernel, `$$` a literal `$`, and every path is the kernel's own, so nothing a
 /// user controls is run or followed. Quotes are left off the shell's variables because a udev value
 /// cannot hold a double quote, and these file names have no spaces.
-pub fn udev_rules(user: &str) -> String {
+///
+/// `owner` is what the rule hands the files to: the account's number when it is known, because udev
+/// runs rules with no network, where a name from a directory service could not be looked up.
+pub fn udev_rules(user: &str, owner: &str) -> String {
     let device_files = sysfs::OWNED_FILES.join(" ");
     let hwmon_files = sysfs::OWNED_HWMON_FILES.join(" ");
     let hwmon_globs: Vec<String> = sysfs::OWNED_HWMON_FILES.iter().map(|f| format!("hwmon/hwmon*/{f}")).collect();
     let hwmon_globs = hwmon_globs.join(" ");
-    let chown = |files: &str| format!("for f in {files}; do [ -f $$f ] && /bin/chown {user} $$f; done; true");
+    let chown = |files: &str| format!("for f in {files}; do [ -f $$f ] && /bin/chown {owner} $$f; done; true");
     format!(
         "# Written by `rochgpu setup`. Lets {user} change AMD GPU clocks, voltage, power and fans without root.\n\
          # Delete this file, or run `sudo rochgpu setup --undo`, to take that back.\n\
@@ -187,15 +190,11 @@ fn allow_user(o: &Opts, out: &mut dyn Write, err: &mut dyn Write) -> i32 {
         say!(err, "'{name}' is not a user name this can safely put in a udev rule.");
         return 2;
     }
-    let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
-    let Some(uid) = passwd.lines().find_map(|line| {
-        let mut fields = line.split(':');
-        (fields.next() == Some(name.as_str())).then(|| fields.nth(1)?.parse::<u32>().ok())?
-    }) else {
+    let Some(uid) = storage_root::account_named(&name).map(|account| account.uid) else {
         say!(err, "There is no user called '{name}'.");
         return 2;
     };
-    if let Err(e) = std::fs::write(RULES_PATH, udev_rules(&name)) {
+    if let Err(e) = std::fs::write(RULES_PATH, udev_rules(&name, &uid.to_string())) {
         say!(err, "Could not write {RULES_PATH}: {e}");
         return 1;
     }
@@ -262,7 +261,8 @@ fn show(o: &Opts, out: &mut dyn Write) -> i32 {
         .filter(|n| is_safe_user_name(n))
         .unwrap_or_else(|| "USER".into());
     say!(out, "# {RULES_PATH}");
-    let _ = out.write_all(udev_rules(&name).as_bytes());
+    let owner = storage_root::account_named(&name).map_or_else(|| name.clone(), |account| account.uid.to_string());
+    let _ = out.write_all(udev_rules(&name, &owner).as_bytes());
     let mask = sysfs::read_text(Path::new(FEATURE_MASK)).as_deref().and_then(parse_hex).unwrap_or(0xffff_ffff);
     say!(out);
     say!(out, "# {MODPROBE_PATH}, with --overdrive and --keep-awake");
@@ -313,9 +313,10 @@ mod tests {
 
     #[test]
     fn the_rules_name_the_user_and_every_file_the_backend_writes() {
-        let rules = udev_rules("local");
+        let rules = udev_rules("local", "1000");
         assert_eq!(rules.lines().filter(|l| !l.starts_with('#')).count(), 2, "{rules}");
-        assert!(rules.contains("/bin/chown local $$f"));
+        assert!(rules.contains("/bin/chown 1000 $$f"), "by number, which needs no directory service at boot");
+        assert!(rules.contains("Lets local change"), "`setup --status` reads the name from here");
         for file in [
             "pp_od_clk_voltage",
             "power_dpm_force_performance_level",

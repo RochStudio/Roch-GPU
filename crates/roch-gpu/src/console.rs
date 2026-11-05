@@ -38,6 +38,12 @@ pub fn install_ctrl_c_handler() {
     imp::install_ctrl_c_handler();
 }
 
+/// Sleep until [`ctrl_c_pressed`] would say yes.
+#[cfg(not(windows))]
+pub fn wait_for_ctrl_c() {
+    imp::wait_for_ctrl_c();
+}
+
 pub fn ctrl_c_pressed() -> bool {
     CTRL_C.load(Ordering::SeqCst)
 }
@@ -119,7 +125,10 @@ mod imp {
 
 #[cfg(not(windows))]
 mod imp {
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicI32, Ordering};
+
+    /// The pipe `wait_for_ctrl_c` sleeps on, once something is sleeping on it.
+    static WAKE_FD: AtomicI32 = AtomicI32::new(-1);
 
     /// There is no console to borrow here. What this run does need is to end with its pipe: Rust
     /// ignores SIGPIPE, and every line goes through a `let _ = writeln!`, so `monitor | head` would
@@ -135,12 +144,39 @@ mod imp {
     pub fn set_output_code_page(_cp: u32) {}
 
     extern "C" fn handler(signal: libc::c_int) {
-        // An atomic store is one of the few things a signal handler may safely do; signal() is another.
+        // Atomics, write() and signal() are among the few things a signal handler may safely do.
         super::CTRL_C.store(true, Ordering::SeqCst);
-        // The first asks nicely. Should this run be stuck, a second one ends it the usual way.
-        // SAFETY: restores the default disposition, and signal() is async-signal-safe.
+        // SAFETY: errno is this thread's own, and is put back for the code this signal interrupted.
+        // write() and signal() are async-signal-safe, and the byte outlives the call. The first signal
+        // asks nicely; should this run be stuck, the default disposition lets a second one end it.
         unsafe {
+            let errno = *libc::__errno_location();
+            let fd = WAKE_FD.load(Ordering::SeqCst);
+            if fd >= 0 {
+                libc::write(fd, [1u8].as_ptr().cast(), 1);
+            }
             libc::signal(signal, libc::SIG_DFL);
+            *libc::__errno_location() = errno;
+        }
+    }
+
+    /// Sleep until the handler has run, on a pipe it writes to, so a thread waiting for a signal costs
+    /// nothing until there is one. The flag is checked after the pipe is in place: a signal before that
+    /// has set the flag, and one after it wakes the read.
+    pub fn wait_for_ctrl_c() {
+        let mut fds = [0; 2];
+        // SAFETY: there is room for the two descriptors pipe2 fills in.
+        let piped = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } == 0;
+        if piped {
+            WAKE_FD.store(fds[1], Ordering::SeqCst);
+        }
+        while !super::ctrl_c_pressed() {
+            let mut byte = 0u8;
+            // SAFETY: reads at most one byte into a live local.
+            let read = if piped { unsafe { libc::read(fds[0], (&raw mut byte).cast(), 1) } } else { -1 };
+            if read < 0 {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
         }
     }
 

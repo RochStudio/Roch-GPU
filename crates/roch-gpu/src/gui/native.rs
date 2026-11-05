@@ -158,10 +158,41 @@ pub fn system_dark() -> bool {
         .is_some_and(|v| v == 0)
 }
 
-/// The desktop's light or dark preference, from the GNOME setting that most desktops keep in step
-/// with their own; a desktop with neither falls back to the app's own default (not dark).
+/// The desktop's light or dark preference. Asking starts a process, which the window cannot stop for
+/// every couple of seconds, so only the first call waits for the answer. Later ones say what is known
+/// and ask again on the side, which puts a change on screen one check later.
 #[cfg(not(windows))]
 pub fn system_dark() -> bool {
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    const UNKNOWN: u8 = 0;
+    const LIGHT: u8 = 1;
+    const DARK: u8 = 2;
+    static KNOWN: AtomicU8 = AtomicU8::new(UNKNOWN);
+    static ASKING: AtomicBool = AtomicBool::new(false);
+    let learn = |dark: bool| KNOWN.store(if dark { DARK } else { LIGHT }, Ordering::SeqCst);
+
+    let known = KNOWN.load(Ordering::SeqCst);
+    if known == UNKNOWN {
+        let dark = ask_system_dark();
+        learn(dark);
+        return dark;
+    }
+    if !ASKING.swap(true, Ordering::SeqCst) {
+        let spawned = std::thread::Builder::new().name("RochGPU theme".into()).spawn(move || {
+            learn(ask_system_dark());
+            ASKING.store(false, Ordering::SeqCst);
+        });
+        if spawned.is_err() {
+            ASKING.store(false, Ordering::SeqCst);
+        }
+    }
+    known == DARK
+}
+
+/// The GNOME setting, which most desktops keep in step with their own. A desktop with neither falls back
+/// to the app's own default (not dark).
+#[cfg(not(windows))]
+fn ask_system_dark() -> bool {
     let scheme = std::process::Command::new("gsettings")
         .args(["get", "org.gnome.desktop.interface", "color-scheme"])
         .output()
@@ -364,11 +395,31 @@ fn my_windows() -> Vec<(String, String)> {
     hyprctl(&["clients", "-j"]).map_or_else(Vec::new, |json| windows_of(&json, std::process::id()))
 }
 
+/// Text for the inside of a double-quoted Lua string. A workspace can be called anything.
+#[cfg(not(windows))]
+fn lua_string(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
+}
+
+/// How a dispatch should name a workspace, from `hyprctl activeworkspace -j`. A numbered one goes by its
+/// number. A named one has a negative id, which a dispatcher would read as that many workspaces back,
+/// so it goes by its name.
+#[cfg(not(windows))]
+fn workspace_selector(workspace: &serde_json::Value) -> Option<String> {
+    let name = workspace["name"].as_str().unwrap_or_default();
+    match workspace["id"].as_i64()? {
+        id if id > 0 => Some(id.to_string()),
+        _ if !name.is_empty() && !name.starts_with("special:") => Some(format!("name:{name}")),
+        _ => None,
+    }
+}
+
 #[cfg(not(windows))]
 fn move_window(address: &str, workspace: &str) -> bool {
+    let lua_workspace = lua_string(workspace);
     dispatch(
         &format!(
-            "hl.dsp.window.move({{ window = \"address:{address}\", workspace = \"{workspace}\", follow = false }})"
+            "hl.dsp.window.move({{ window = \"address:{address}\", workspace = \"{lua_workspace}\", follow = false }})"
         ),
         &["movetoworkspacesilent", &format!("{workspace},address:{address}")],
     )
@@ -459,10 +510,10 @@ pub fn bring_back_from_scratchpad() {
     }
     let active = hyprctl(&["activeworkspace", "-j"])
         .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
-        .and_then(|workspace| workspace["id"].as_i64());
+        .and_then(|workspace| workspace_selector(&workspace));
     let Some(active) = active else { return };
     for address in &hidden {
-        move_window(address, &active.to_string());
+        move_window(address, &active);
     }
     if let Some(address) = hidden.first() {
         dispatch(
@@ -494,6 +545,23 @@ mod tests {
             ]
         );
         assert_eq!(windows_of(CLIENTS, 300), vec![]);
+    }
+
+    #[test]
+    fn a_workspace_goes_by_its_number_or_else_its_name() {
+        let selector = |json: &str| workspace_selector(&serde_json::from_str(json).unwrap());
+        assert_eq!(selector(r#"{"id": 3, "name": "3"}"#).as_deref(), Some("3"));
+        assert_eq!(selector(r#"{"id": -1337, "name": "games"}"#).as_deref(), Some("name:games"));
+        assert_eq!(selector(r#"{"id": -98, "name": "special:scratchpad"}"#), None, "that is where it is hiding");
+        assert_eq!(selector(r#"{"id": -1337, "name": ""}"#), None);
+        assert_eq!(selector("{}"), None);
+    }
+
+    #[test]
+    fn a_workspace_name_cannot_break_out_of_its_lua_string() {
+        assert_eq!(lua_string("name:games"), "name:games");
+        assert_eq!(lua_string(r#"a"b\c"#), r#"a\"b\\c"#);
+        assert_eq!(lua_string("two\nlines"), r"two\nlines");
     }
 
     #[test]

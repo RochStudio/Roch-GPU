@@ -154,41 +154,128 @@ pub mod storage_root {
             .unwrap_or_else(|| PathBuf::from("."))
     }
 
-    /// Who ran `sudo` or `pkexec`.
+    /// A user account.
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct Invoker {
+    pub struct Account {
         pub name: String,
         pub uid: u32,
         pub gid: u32,
         pub home: PathBuf,
     }
 
-    /// This line of /etc/passwd, when it is the user with this number.
-    pub fn parse_passwd_line(line: &str, uid: u32) -> Option<Invoker> {
+    /// One line of the account database: `name:password:uid:gid:comment:home:shell`.
+    pub fn parse_passwd_line(line: &str) -> Option<Account> {
         let mut fields = line.split(':');
         let name = fields.next()?;
-        let (found, gid) = (fields.nth(1)?.parse::<u32>().ok()?, fields.next()?.parse::<u32>().ok()?);
+        let (uid, gid) = (fields.nth(1)?.parse::<u32>().ok()?, fields.next()?.parse::<u32>().ok()?);
         let home = fields.nth(1)?;
-        (found == uid).then(|| Invoker { name: name.to_string(), uid, gid, home: PathBuf::from(home) })
+        Some(Account { name: name.to_string(), uid, gid, home: PathBuf::from(home) })
+    }
+
+    /// The first account `matches` picks, from the local list and, if it is not there, from the answer
+    /// to asking the system.
+    #[cfg(not(windows))]
+    fn pick_account(
+        local: Option<String>,
+        ask: impl FnOnce() -> Option<String>,
+        matches: impl Fn(&Account) -> bool,
+    ) -> Option<Account> {
+        let pick = |text: &str| text.lines().filter_map(parse_passwd_line).find(&matches);
+        local.as_deref().and_then(pick).or_else(|| pick(&ask()?))
+    }
+
+    /// An account by name or number. /etc/passwd holds most of them, and reading it starts nothing.
+    /// `getent` asks whatever else this system looks in: LDAP, Active Directory, systemd-homed.
+    #[cfg(not(windows))]
+    fn find_account(key: &str, matches: impl Fn(&Account) -> bool) -> Option<Account> {
+        use std::process::{Command, Stdio};
+        let ask = || {
+            let out = Command::new("getent")
+                .args(["passwd", key])
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .output()
+                .ok()?;
+            Some(String::from_utf8_lossy(&out.stdout).into_owned())
+        };
+        pick_account(std::fs::read_to_string("/etc/passwd").ok(), ask, matches)
+    }
+
+    #[cfg(not(windows))]
+    pub fn account_named(name: &str) -> Option<Account> {
+        find_account(name, |account| account.name == name)
+    }
+
+    #[cfg(not(windows))]
+    pub fn account_with_id(uid: u32) -> Option<Account> {
+        find_account(&uid.to_string(), |account| account.uid == uid)
     }
 
     /// The person behind this process, when it is root on someone's behalf. `None` otherwise, which is
-    /// every run on Windows.
+    /// every run on Windows. Found once: the answer cannot change, and it is wanted for every file written.
     #[cfg(not(windows))]
-    pub fn invoker() -> Option<Invoker> {
+    pub fn invoker() -> Option<Account> {
         use std::os::unix::fs::MetadataExt;
-        // /proc/self belongs to the effective user, and asking it needs no unsafe code.
-        if std::fs::metadata("/proc/self").ok()?.uid() != 0 {
-            return None;
-        }
-        let uid = std::env::var("SUDO_UID").or_else(|_| std::env::var("PKEXEC_UID")).ok()?.trim().parse().ok()?;
-        let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
-        passwd.lines().find_map(|line| parse_passwd_line(line, uid))
+        static FOUND: std::sync::OnceLock<Option<Account>> = std::sync::OnceLock::new();
+        FOUND
+            .get_or_init(|| {
+                // /proc/self belongs to the effective user, and asking it needs no unsafe code.
+                if std::fs::metadata("/proc/self").ok()?.uid() != 0 {
+                    return None;
+                }
+                let uid = std::env::var("SUDO_UID").or_else(|_| std::env::var("PKEXEC_UID")).ok()?;
+                account_with_id(uid.trim().parse().ok()?)
+            })
+            .clone()
     }
 
     #[cfg(windows)]
-    pub fn invoker() -> Option<Invoker> {
+    pub fn invoker() -> Option<Account> {
         None
+    }
+
+    #[cfg(all(test, not(windows)))]
+    mod tests {
+        use super::*;
+
+        const LOCAL: &str = "root:x:0:0:root:/root:/bin/sh\nme:x:1000:984:Me:/home/me:/bin/bash\n";
+        const DIRECTORY: &str = "ada:*:4100:4100:Ada:/home/ada:/bin/bash\n";
+
+        #[test]
+        fn a_line_of_the_account_database_is_read() {
+            let account = parse_passwd_line("me:x:1000:984:Me:/home/me:/bin/bash").unwrap();
+            assert_eq!(account.name, "me");
+            assert_eq!((account.uid, account.gid), (1000, 984));
+            assert_eq!(account.home, PathBuf::from("/home/me"));
+            assert_eq!(parse_passwd_line("not a passwd line"), None);
+        }
+
+        #[test]
+        fn the_local_list_answers_first_and_the_system_only_when_it_cannot() {
+            let local = || Some(LOCAL.to_string());
+            let found = pick_account(local(), || panic!("nothing to ask"), |a| a.name == "me").unwrap();
+            assert_eq!(found.uid, 1000);
+
+            // An account from a directory service, which /etc/passwd knows nothing about.
+            let found = pick_account(local(), || Some(DIRECTORY.to_string()), |a| a.name == "ada").unwrap();
+            assert_eq!((found.uid, found.home), (4100, PathBuf::from("/home/ada")));
+            let found = pick_account(None, || Some(DIRECTORY.to_string()), |a| a.uid == 4100);
+            assert_eq!(found.map(|a| a.name).as_deref(), Some("ada"), "no readable /etc/passwd");
+
+            // An answer only counts when it is the one that was asked for.
+            assert_eq!(pick_account(local(), || Some(DIRECTORY.to_string()), |a| a.name == "bob"), None);
+            assert_eq!(pick_account(local(), || None, |a| a.name == "ada"), None, "getent is not installed");
+        }
+
+        #[test]
+        fn this_system_can_be_asked() {
+            use std::os::unix::fs::MetadataExt;
+            let uid = std::fs::metadata("/proc/self").unwrap().uid();
+            if let Some(me) = account_with_id(uid) {
+                assert_eq!(account_named(&me.name).map(|a| a.uid), Some(uid));
+            }
+            assert_eq!(account_named("no-such-user-for-this-test"), None);
+        }
     }
 
     /// Give a file made under sudo back to the person it belongs to. A settings file left owned by
