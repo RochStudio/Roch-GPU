@@ -402,8 +402,14 @@ impl AmdgpuBackend {
     }
 
     /// See [`OdStock`]. `od` is this card's table as it reads now, which is the record if none exists.
+    ///
+    /// The driver prints a blank table when the firmware has nothing to say. So a record missing a value
+    /// this table has came from one of those, and does not stand: a stock of 0 would take the floor off
+    /// the memory clock for the rest of the boot.
     fn od_stock(&mut self, gpu: usize, od: &OdTable) -> OdStock {
-        if let Some(stock) = self.stock.get(&gpu) {
+        let complete =
+            |s: &OdStock| (od.mclk_max.is_none() || s.mclk_max > 0) && (od.sclk_max.is_none() || s.sclk_max > 0);
+        if let Some(stock) = self.stock.get(&gpu).filter(|s| complete(s)) {
             return *stock;
         }
         let path = self.card(gpu).ok().and_then(|c| self.stock_path(&c.pci.clone()));
@@ -411,13 +417,14 @@ impl AmdgpuBackend {
             let mut values = text.split_whitespace().map(|v| v.parse::<i32>().ok());
             Some(OdStock { sclk_min: values.next()??, sclk_max: values.next()??, mclk_max: values.next()?? })
         });
+        let saved = saved.filter(|s| complete(s));
         let stock = saved.unwrap_or_else(|| {
             let stock = OdStock {
                 sclk_min: od.sclk_min.unwrap_or(0),
                 sclk_max: od.sclk_max.unwrap_or(0),
                 mclk_max: od.mclk_max.unwrap_or(0),
             };
-            if let Some(p) = &path {
+            if let Some(p) = path.as_ref().filter(|_| od.mclk_max.is_some() || od.sclk_max.is_some()) {
                 // Best effort: without it the record lasts as long as this process.
                 let _ = fs::write(p, format!("{} {} {}\n", stock.sclk_min, stock.sclk_max, stock.mclk_max));
             }
@@ -811,14 +818,15 @@ impl GpuBackend for AmdgpuBackend {
         })
     }
 
-    /// Never fails, as on Windows: a tick that exists to step a fan curve gets an empty sample.
+    /// Never fails, as on Windows: a tick that exists to step a fan curve gets an empty sample. Its
+    /// temperature is NaN, which the curve skips, because 0 °C would drop the fan to its lowest duty.
     fn read_temperature_only(&mut self, gpu: usize) -> Result<GpuTelemetry> {
         let edge = if self.is_awake(gpu) {
             self.card(gpu).ok().and_then(|c| c.hw_i64("temp1_input")).map(|v| v as f64 / 1000.0)
         } else {
             None
         };
-        Ok(GpuTelemetry { temperature_c: edge.unwrap_or(0.0), ..GpuTelemetry::default() })
+        Ok(GpuTelemetry { temperature_c: edge.unwrap_or(f64::NAN), ..GpuTelemetry::default() })
     }
 
     fn read_tuning_state(&mut self, gpu: usize) -> Result<GpuTuningState> {
@@ -910,6 +918,9 @@ impl GpuBackend for AmdgpuBackend {
     /// here (1250 stock) while it ran a compute job hung its power management firmware and the machine
     /// with it: "SMU: No response" in the kernel log, then nothing, and a hard reset. Lowering it gives up
     /// nothing, since the card already drops its memory clock when idle.
+    ///
+    /// Unlike the other controls here, it is written even when the card already has the value, because
+    /// the Windows build sends it on every Apply. That has not been tried on a busy card.
     fn set_memory_offset(&mut self, gpu: usize, mhz: i32) -> Result<()> {
         self.require_awake(gpu)?;
         let od = self.read_od(gpu).unwrap_or_default();
@@ -919,9 +930,6 @@ impl GpuBackend for AmdgpuBackend {
         let stock = self.od_stock(gpu, &od).mclk_max;
         let scale = self.card(gpu)?.memory_scale;
         let target = memory_window(range, stock).clamp(mhz.saturating_add(scale / 2) / scale);
-        if od.mclk_max == Some(target) {
-            return Ok(());
-        }
         self.od_write(gpu, &format!("m 1 {target}"))
     }
 

@@ -114,6 +114,9 @@ mod imp {
     }
 
     pub(super) fn desktop_entry(exe_path: &str, profile_name: &str) -> String {
+        // The running copy's path gains this once an install has replaced the file under it. The entry
+        // has to name what the next login can start.
+        let exe_path = exe_path.strip_suffix(" (deleted)").unwrap_or(exe_path);
         format!(
             "[Desktop Entry]\nType=Application\nName=Roch GPU apply profile\n\
              Comment=Applies the Roch GPU startup profile at logon, then exits\n\
@@ -126,6 +129,7 @@ mod imp {
     pub(super) fn write_entry(path: &Path, exe_path: &str, profile_name: &str) -> Result<()> {
         if let Some(dir) = path.parent() {
             fs::create_dir_all(dir)?;
+            storage_root::restore_owner(dir);
         }
         fs::write(path, desktop_entry(exe_path, profile_name))?;
         storage_root::restore_owner(path);
@@ -164,6 +168,12 @@ mod tests {
             "{entry}"
         );
         assert!(entry.contains("\nType=Application\n"));
+    }
+
+    #[test]
+    fn a_program_replaced_while_running_is_named_by_its_real_path() {
+        let entry = desktop_entry("/home/me/.local/bin/rochgpu (deleted)", "Slot 1");
+        assert!(entry.contains("\nExec=\"/home/me/.local/bin/rochgpu\" --apply-profile"), "{entry}");
     }
 
     #[test]

@@ -6,6 +6,12 @@ use std::path::Path;
 
 use roch_core::GpuError;
 
+/// A program's path as the running copy reports it. Replacing the file under a running program, as an
+/// install does, makes the kernel add this to the path, which names nothing a later run could start.
+pub fn live_path(path: &str) -> &str {
+    path.strip_suffix(" (deleted)").unwrap_or(path)
+}
+
 /// The command that runs `rochgpu setup`, spelled so it works from here. sudo searches its own short
 /// `secure_path`, which on most distributions leaves out `~/.local/bin` where this usually lives, so a
 /// bare `sudo rochgpu` would only answer "command not found".
@@ -15,7 +21,8 @@ pub fn setup_command(flags: &str) -> String {
     let program = match &exe {
         Some(path) if !path.parent().is_some_and(|dir| ON_SUDO_PATH.iter().any(|d| dir == Path::new(d))) => {
             let path = path.display().to_string();
-            if path.contains(' ') { format!("'{path}'") } else { path }
+            let path = live_path(&path);
+            if path.contains(' ') { format!("'{path}'") } else { path.to_string() }
         }
         _ => "rochgpu".to_string(),
     };
@@ -140,6 +147,12 @@ mod tests {
         // The test binary is not on sudo's path, so it has to be named in full.
         let exe = std::env::current_exe().unwrap();
         assert_eq!(setup_command(" --overdrive"), format!("sudo {} setup --overdrive", exe.display()));
+    }
+
+    #[test]
+    fn a_program_replaced_while_running_still_has_its_real_path() {
+        assert_eq!(live_path("/home/me/.local/bin/rochgpu (deleted)"), "/home/me/.local/bin/rochgpu");
+        assert_eq!(live_path("/home/me/.local/bin/rochgpu"), "/home/me/.local/bin/rochgpu");
     }
 
     #[test]

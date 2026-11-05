@@ -438,13 +438,15 @@ fn info(svc: &TuningService, out: &mut dyn Write) -> CliResult<i32> {
         format!("core {} MHz", signed(s.core_offset_mhz))
     };
     let mut current = Vec::new();
-    if c.can_set_core_offset || c.can_set_core_min_clock {
+    // Windows lists them all, as it always has. Here a control overdrive has not switched on would only
+    // read as a setting of 0.
+    if cfg!(windows) || c.can_set_core_offset || c.can_set_core_min_clock {
         current.push(core);
     }
-    if c.can_set_memory_offset {
+    if cfg!(windows) || c.can_set_memory_offset {
         current.push(format!("mem {} {}", s.memory_offset_mhz, c.memory_clock_unit));
     }
-    if c.can_set_power_limit {
+    if cfg!(windows) || c.can_set_power_limit {
         current.push(format!("power {}%", s.power_limit_percent));
     }
     current.push(format!("temp {temp_limit}"));
@@ -999,6 +1001,12 @@ pub fn reading(value: f64, decimals: usize) -> String {
     if value.is_finite() { num(value, decimals) } else { "—".into() }
 }
 
+/// A card's core readings: as the Windows build has always printed them, and on Linux with a dash for
+/// the sleeping card that leaves them empty.
+fn main_reading(value: f64, decimals: usize) -> String {
+    if cfg!(windows) { num(value, decimals) } else { reading(value, decimals) }
+}
+
 /// One telemetry line, as `info`, `sensors` and `monitor` print it.
 pub fn fmt_telemetry(t: &GpuTelemetry) -> String {
     let time = t.timestamp.with_timezone(&chrono::Local).format("%H:%M:%S");
@@ -1011,9 +1019,9 @@ pub fn fmt_telemetry(t: &GpuTelemetry) -> String {
         if t.memory_speed_mbps.is_finite() { (t.memory_speed_mbps, "Mbps") } else { (t.memory_clock_mhz, "MHz") };
     format!(
         "{time}  {:>5} MHz core  {:>6} {mem_unit} mem  {:>4}°C{hs}{mem}  {volt}  {:>5}% TDP  load {:>3}%  fan {:>3}% ({} rpm)  {} {}",
-        reading(t.core_clock_mhz, 0),
-        reading(mem_value, 0),
-        reading(t.temperature_c, 1),
+        main_reading(t.core_clock_mhz, 0),
+        main_reading(mem_value, 0),
+        main_reading(t.temperature_c, 1),
         reading(t.power_percent, 1),
         reading(t.gpu_load_percent, 0),
         reading(t.fan_percent, 0),
@@ -1079,8 +1087,13 @@ fn usage(out: &mut dyn Write) {
         outln!(out, "{USAGE}");
     } else {
         // The same verbs, under this platform's name for the program and for the permission.
-        let text =
-            USAGE.replace("RochGPU.exe", EXE_NAME).replace("needs admin for writes", "writes need `setup`, once");
+        let text = USAGE
+            .replace("RochGPU.exe", EXE_NAME)
+            .replace("needs admin for writes", "writes need `setup`, once")
+            .replace(
+                "--core / --uv on AMD RDNA 3: the maximum core clock (MHz) and maximum voltage (mV), not offsets;",
+                "--core on AMD RDNA 2 and 3: the maximum core clock (MHz), not an offset; --uv: a negative voltage offset (mV);",
+            );
         outln!(out, "{text}");
         outln!(
             out,

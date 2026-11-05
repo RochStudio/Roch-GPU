@@ -132,12 +132,16 @@ mod imp {
 
     pub fn claim() -> bool {
         let path = socket_path();
-        if UnixStream::connect(&path).is_ok() {
-            return false;
-        }
+        // Binding comes first because only one of two launches at the same moment can win it. Removing
+        // the file is for when that fails and nothing answers: what a crashed run left behind.
+        let listener = match UnixListener::bind(&path) {
+            Ok(listener) => Some(listener),
+            Err(_) if UnixStream::connect(&path).is_ok() => return false,
+            Err(_) => bind(&path),
+        };
         // Failing to make the socket is no reason to refuse to run: it only loses the second-launch
         // handshake, the same as on a machine without one.
-        if let (Some(listener), Ok(mut held)) = (bind(&path), LISTENER.lock()) {
+        if let (Some(listener), Ok(mut held)) = (listener, LISTENER.lock()) {
             *held = Some(listener);
         }
         true

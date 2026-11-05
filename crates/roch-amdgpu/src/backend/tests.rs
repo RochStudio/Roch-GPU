@@ -447,7 +447,7 @@ fn a_sleeping_card_is_never_asked_anything_that_blocks() {
     assert!(!caps.can_set_core_offset && !caps.can_set_power_limit && !caps.can_set_fan_speed);
     assert!(telemetry.temperature_c.is_nan() && telemetry.core_clock_mhz.is_nan());
     assert_eq!(telemetry.limit_reason, "Asleep");
-    assert_eq!(temperature.temperature_c, 0.0);
+    assert!(temperature.temperature_c.is_nan());
     assert_eq!(state.power_limit_percent, 0);
     assert_eq!(info.bios_version, "113-D70401XT-P11");
     assert_eq!(info.memory_vendor, "");
@@ -728,8 +728,12 @@ fn the_memory_clock_can_never_be_capped_below_stock() {
     let (mut b, sim) = backend(&tree);
     for asked in [800, 97, 0, -1, 1249] {
         b.set_memory_offset(0, asked).unwrap();
-        assert!(sim.log().is_empty(), "{asked} MHz reached the card: {:?}", sim.log());
     }
+    assert!(
+        sim.log().iter().all(|l| matches!(l.as_str(), "pp_od_clk_voltage m 1 1250" | "pp_od_clk_voltage c")),
+        "a value under stock reached the card: {:?}",
+        sim.log()
+    );
     assert_eq!(b.read_tuning_state(0).unwrap().memory_offset_mhz, 1250);
 
     // Busy or not, and after a raise too: back down to stock is as far as it goes.
@@ -753,6 +757,15 @@ fn the_memory_clock_moves_on_a_busy_card_too_as_on_windows() {
     assert_eq!(sim.log(), ["pp_od_clk_voltage m 1 1300", "pp_od_clk_voltage c"]);
 }
 
+#[test]
+fn the_memory_clock_is_written_even_when_unchanged_as_on_windows() {
+    let (tree, _) = rdna3("mem-resend");
+    let (mut b, sim) = backend(&tree);
+    assert_eq!(b.read_tuning_state(0).unwrap().memory_offset_mhz, 1250);
+    b.set_memory_offset(0, 1250).unwrap();
+    assert_eq!(sim.log(), ["pp_od_clk_voltage m 1 1250", "pp_od_clk_voltage c"]);
+}
+
 /// What the Windows driver reports for a real RX 7900 XT: 2500 to 3000 MHz, default 2500. The driver here
 /// counts the memory controller's clock, half of that, and prints a bottom of 97.
 #[test]
@@ -773,13 +786,13 @@ fn gddr6_memory_is_in_the_same_units_and_range_as_windows() {
     let info = b.read_graphics_info(0);
     assert_eq!((info.code_name.as_str(), info.memory_type.as_str()), ("Navi 31", "GDDR6"));
 
-    // Stock is already on the card, so nothing is sent.
+    // Stock is already on the card and is sent anyway, as on Windows.
     b.set_memory_offset(0, 2500).unwrap();
-    assert!(sim.log().is_empty(), "{:?}", sim.log());
+    assert_eq!(sim.log(), ["pp_od_clk_voltage m 1 1250", "pp_od_clk_voltage c"]);
 
     // The driver gets its own number, and it reads back in the shown one.
     b.set_memory_offset(0, 2600).unwrap();
-    assert_eq!(sim.log(), ["pp_od_clk_voltage m 1 1300", "pp_od_clk_voltage c"]);
+    assert_eq!(sim.log()[2..], ["pp_od_clk_voltage m 1 1300", "pp_od_clk_voltage c"]);
     assert_eq!(b.read_tuning_state(0).unwrap().memory_offset_mhz, 2600);
 
     // Both ends of the window hold in these units too. The 800 that hung a real card here would have
@@ -797,7 +810,6 @@ fn a_value_already_on_the_card_is_not_written() {
     let (mut b, sim) = backend(&tree);
     b.set_core_offset(0, 2525).unwrap();
     b.set_core_min_clock(0, 500).unwrap();
-    b.set_memory_offset(0, 1250).unwrap();
     b.set_voltage_curve_offset(0, 0, 0).unwrap();
     b.set_power_limit(0, 0).unwrap();
     b.set_zero_rpm(0, true).unwrap();
@@ -995,6 +1007,46 @@ fn stock_values_outlive_the_process_so_a_tuned_clock_is_not_mistaken_for_stock()
     let mut second = open(&tree);
     assert_eq!(second.read_tuning_state(0).unwrap().core_offset_mhz, 2400, "the card keeps the clock");
     assert_eq!(second.capabilities(0).unwrap().core_clock_default_mhz, 2525, "and stock is still stock");
+}
+
+#[test]
+fn a_blank_table_does_not_take_the_floor_off_the_memory_clock() {
+    let (tree, device) = rdna3("mem-blank");
+    let keep = tree.0.join("run");
+    fs::create_dir_all(&keep).unwrap();
+    let sim = KernelSim::default();
+    let mut b = AmdgpuBackend::with_paths(tree.root(), tree.module(), Box::new(sim.clone()))
+        .keeping_stock_in(Some(keep.clone()));
+    b.initialize().unwrap();
+
+    // The first read after boot finds the firmware with nothing to say.
+    let od = device.join("pp_od_clk_voltage");
+    let table = fs::read_to_string(&od).unwrap();
+    fs::write(&od, "\n").unwrap();
+    assert!(!b.capabilities(0).unwrap().can_set_memory_offset);
+    assert_eq!(fs::read_dir(&keep).unwrap().count(), 0, "nothing worth keeping came from that");
+
+    // It answers from then on, in this run and the next.
+    fs::write(&od, &table).unwrap();
+    assert_eq!(b.capabilities(0).unwrap().memory_offset_min_mhz, 1250);
+    b.set_memory_offset(0, 800).unwrap();
+    assert!(sim.log().iter().all(|l| !l.contains("m 1 800")), "{:?}", sim.log());
+
+    // A record left with a hole in it, by a version before this one, does not stand either.
+    let record = fs::read_dir(&keep).unwrap().next().unwrap().unwrap().path();
+    fs::write(&record, "0 0 0\n").unwrap();
+    let mut next = AmdgpuBackend::with_paths(tree.root(), tree.module(), Box::new(KernelSim::default()))
+        .keeping_stock_in(Some(keep));
+    next.initialize().unwrap();
+    assert_eq!(next.capabilities(0).unwrap().memory_offset_min_mhz, 1250);
+}
+
+#[test]
+fn a_temperature_that_cannot_be_read_is_not_zero() {
+    let (tree, device) = rdna3("temp-unread");
+    let (mut b, _) = backend(&tree);
+    fs::remove_file(device.join("hwmon/hwmon3/temp1_input")).unwrap();
+    assert!(b.read_temperature_only(0).unwrap().temperature_c.is_nan(), "a fan curve would read 0 as cold");
 }
 
 /// A card at the end of the path a real RX 7900 XT sits on: root port, the two ports of the switch on the
