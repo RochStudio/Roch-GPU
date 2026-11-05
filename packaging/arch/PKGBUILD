@@ -1,0 +1,49 @@
+# Maintainer: Roch Studio <300260898+RochStudio@users.noreply.github.com>
+
+# Installs the binary published with a release: nothing is compiled, so no Rust toolchain is needed.
+# It never runs `rochgpu setup`. Handing out the card's controls and changing kernel settings stay a
+# deliberate step for whoever installs this.
+
+pkgname=roch-gpu-bin
+pkgver=1.1.2
+pkgrel=1
+pkgdesc='GPU tuning and monitoring for AMD cards: clocks, voltage, power and fans'
+arch=(x86_64)
+url='https://github.com/RochStudio/Roch-GPU'
+license=(GPL-3.0-or-later)
+depends=(glibc hicolor-icon-theme libgcc)
+# The program loads the window's libraries when it opens the window, so the command line needs none of them.
+optdepends=(
+  'libglvnd: the window'
+  'libxkbcommon: the window'
+  'wayland: the window on Wayland'
+  'libx11: the window on X11'
+  'libxcursor: the window on X11'
+  'libxi: the window on X11'
+  'libxkbcommon-x11: the window on X11'
+  'fontconfig: the system fonts, and the font list in Settings'
+  'xdg-utils: opening links from the window'
+  'zenity: asking questions in a dialog (kdialog works too)'
+)
+provides=(roch-gpu)
+conflicts=(roch-gpu)
+# Already stripped, and left alone so /usr/bin/rochgpu matches the line in the release's SHA256SUMS.txt.
+options=(!debug !strip)
+install=roch-gpu.install
+_raw="https://raw.githubusercontent.com/RochStudio/Roch-GPU/v$pkgver"
+source=("RochGPU-linux-x86_64-$pkgver::$url/releases/download/v$pkgver/RochGPU-linux-x86_64"
+        "RochGPU-$pkgver.png::$_raw/crates/roch-gpu/assets/icon.png"
+        "THIRD-PARTY-NOTICES-$pkgver.md::$_raw/THIRD-PARTY-NOTICES.md"
+        RochGPU.desktop)
+sha256sums=('e1a62a72f7ab150c5b06dd8c3353ec99f3af4869a9e99cbba6180156a5dcb9f5'
+            '10d94d0e2e548248d6b32586f0ab9de42875ec75d4ef4ba9b07c4679a5ec33ba'
+            'eb5d1e8c827ed3c98d31dac2a8d537f5b4b3314e1098d64cd0d67d0148829631'
+            'bd9c93d3956aafc10e13164a509fb3881e548e940944c7fc5ba37808306444a9')
+
+package() {
+  install -Dm755 "RochGPU-linux-x86_64-$pkgver" "$pkgdir/usr/bin/rochgpu"
+  # The entry's name is the Wayland app id, which is how a compositor finds a running window's icon.
+  install -Dm644 RochGPU.desktop "$pkgdir/usr/share/applications/RochGPU.desktop"
+  install -Dm644 "RochGPU-$pkgver.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/RochGPU.png"
+  install -Dm644 "THIRD-PARTY-NOTICES-$pkgver.md" "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY-NOTICES.md"
+}

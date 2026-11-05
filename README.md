@@ -4,9 +4,9 @@
 
 A native Rust tuning and monitoring tool for NVIDIA, AMD and Intel Arc GPUs on Windows, and AMD GPUs on Linux.
 
-**[Download for Windows](https://github.com/RochStudio/Roch-GPU/releases/latest)** · **[Install on Linux](docs/linux.md)**
+**[Download for Windows](https://github.com/RochStudio/Roch-GPU/releases/latest)** · **[Install on Linux](docs/linux.md#install)**
 
-On Windows, run `RochGPU.exe` and allow administrator access when prompted.
+On Windows, run `RochGPU.exe` and allow administrator access when prompted. On Linux, use the Arch package or the download in the [Linux guide](docs/linux.md#install): neither needs Rust.
 
 - GPU tuning, fan controls, live telemetry and saved profiles.
 - Custom themes, colours, fonts and layouts through the Settings gear.

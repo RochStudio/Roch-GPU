@@ -129,6 +129,17 @@ mod tests {
     }
 
     #[test]
+    fn the_arch_package_installs_the_same_entry_under_the_same_names() {
+        // Line by line, because a Windows checkout can change the file's line endings.
+        let packaged = include_str!("../../packaging/arch/RochGPU.desktop");
+        assert!(packaged.lines().eq(desktop_entry(Path::new("/usr/bin/rochgpu")).lines()), "{packaged}");
+        let pkgbuild = include_str!("../../packaging/arch/PKGBUILD");
+        for file in [format!("bin/{COMMAND}"), DESKTOP_FILE.to_string(), ICON_FILE.to_string()] {
+            assert!(pkgbuild.contains(&format!("\"$pkgdir/usr/{file}\"")), "{file} is not installed by the PKGBUILD");
+        }
+    }
+
+    #[test]
     fn a_running_program_can_be_replaced() {
         let dir = std::env::temp_dir().join(format!("roch-install-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

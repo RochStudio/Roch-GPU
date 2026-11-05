@@ -10,6 +10,46 @@ Verified on two RX 7900 XTs with kernel 7.2: the [technical guide](development.m
 
 ## Install
 
+The program is one binary that links nothing beyond libc, so the command line also runs on a machine with no desktop.
+
+### Arch, Omarchy and other Arch-based systems
+
+This installs a release's binary as a package, so nothing is compiled and no Rust is needed:
+
+```bash
+sudo pacman -S --needed git base-devel
+git clone --depth 1 https://github.com/RochStudio/Roch-GPU
+cd Roch-GPU/packaging/arch
+makepkg -si
+```
+
+| File | What |
+|---|---|
+| `/usr/bin/rochgpu` | The program. No arguments opens the window; a verb runs the command line |
+| `/usr/share/applications/RochGPU.desktop` | The launcher entry |
+| `/usr/share/icons/hicolor/256x256/apps/RochGPU.png` | The icon |
+
+To update, run `git pull` in that folder and `makepkg -si` again. To remove it, undo the setup below if you ran it (`sudo rochgpu setup --undo`), then run `sudo pacman -Rns roch-gpu-bin`. Removing the package does not undo the setup for you, and tells you so if anything is left.
+
+If you already installed from source, run `cargo xtask uninstall` first, because that copy and its launcher entry would otherwise go on hiding the package's. A startup profile remembers where the program was, so turn it on again with `rochgpu startup --enable <profile>`.
+
+### Other distributions
+
+Download the binary from the latest release, check it, and put it on your path:
+
+```bash
+curl -LO https://github.com/RochStudio/Roch-GPU/releases/latest/download/RochGPU-linux-x86_64
+curl -LO https://github.com/RochStudio/Roch-GPU/releases/latest/download/SHA256SUMS.txt
+sha256sum -c --ignore-missing SHA256SUMS.txt
+sudo install -m 755 RochGPU-linux-x86_64 /usr/local/bin/rochgpu
+```
+
+It needs glibc 2.35 or newer. It has been run on Ubuntu 22.04 and Debian 12, and it will not start on Ubuntu 20.04 or AlmaLinux 9, which are too old. The window also needs the Wayland or X11 libraries, libxkbcommon and OpenGL, which a desktop already has.
+
+There is no launcher entry this way, so open the window by running `rochgpu`. `sudo rm /usr/local/bin/rochgpu` removes it, after `sudo rochgpu setup --undo` if you ran the setup.
+
+### From source
+
 You need [Rust stable](https://rustup.rs). No other development packages are required.
 
 ```bash
@@ -20,27 +60,27 @@ This builds a release binary and installs it for your user, with no root needed:
 
 | File | What |
 |---|---|
-| `~/.local/bin/rochgpu` | The program. No arguments opens the window; a verb runs the command line |
+| `~/.local/bin/rochgpu` | The program |
 | `~/.local/share/applications/RochGPU.desktop` | The launcher entry |
 | `~/.local/share/icons/hicolor/256x256/apps/RochGPU.png` | The icon |
 
-Use `--prefix PATH` to install somewhere else, and `cargo xtask uninstall` to remove them. The binary links nothing beyond libc, so the command line also runs on a machine with no desktop.
+Use `--prefix PATH` to install somewhere else, and `cargo xtask uninstall` to remove them.
 
-Reading sensors works straight away:
+## Let it change the card
+
+Reading sensors works as soon as it is installed:
 
 ```bash
 rochgpu info
 ```
 
-## Let it change the card
-
-The tuning files belong to root. Run this once, and they are handed to you at every boot, so neither the window nor the command line needs root afterwards:
+The tuning files belong to root. Run this once, and they are handed to you at every boot, so neither the window nor the command line needs root afterwards. No install does this for you, because it hands out control of the card:
 
 ```bash
-sudo ~/.local/bin/rochgpu setup
+sudo rochgpu setup
 ```
 
-(`sudo rochgpu` usually fails on a home install, because sudo only searches its own short path.)
+On a home install from source, write the path out, as in `sudo ~/.local/bin/rochgpu setup`, because sudo only searches its own short path. The program's own messages always give the command that works for your install.
 
 It writes one udev rule, `/etc/udev/rules.d/60-roch-gpu.rules`, and changes the owner of the files for the card now. `rochgpu setup --show` prints exactly what it would write. Use `--user NAME` to set it up for someone else.
 
@@ -51,12 +91,12 @@ Without it, reading still works, a change is refused with a message saying this,
 By default the kernel only offers the power limit. Clock, voltage and fan controls exist only once the driver's overdrive feature is on:
 
 ```bash
-sudo ~/.local/bin/rochgpu setup --overdrive
+sudo rochgpu setup --overdrive
 ```
 
 That writes `/etc/modprobe.d/roch-gpu.conf`, and then tells you the command that puts it in your boot image (for example `sudo limine-mkinitcpio` on Omarchy, `sudo mkinitcpio -P` on Arch, `sudo update-initramfs -u` on Debian and Ubuntu, `sudo dracut --force` on Fedora). Run that, then reboot.
 
-While overdrive is on the kernel marks itself as tainted, so mention it in any kernel bug report. `rochgpu setup --status` shows what the running kernel has, and `sudo ~/.local/bin/rochgpu setup --undo` removes everything the setup added.
+While overdrive is on the kernel marks itself as tainted, so mention it in any kernel bug report. `rochgpu setup --status` shows what the running kernel has, and `sudo rochgpu setup --undo` removes everything the setup added.
 
 ## A card that says "Asleep"
 
@@ -71,7 +111,7 @@ journalctl -k | grep -E 'rlc autoload|resume of IP block'
 Repeating errors there mean the card is unusable until the next boot. Keeping the kernel from powering cards down avoids the failed wake, at the cost of the card's idle power (around 15 W on an RX 7900 XT). On the pair of RX 7900 XTs this was developed on, the second card failed its resume about 14 times a minute from boot; with this set there were no failures and both cards read normally:
 
 ```bash
-sudo ~/.local/bin/rochgpu setup --keep-awake
+sudo rochgpu setup --keep-awake
 ```
 
 As with overdrive, rebuild the boot image and reboot. `--overdrive` and `--keep-awake` can be given together.

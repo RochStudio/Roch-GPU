@@ -1,0 +1,24 @@
+# This only prints. `rochgpu setup` hands out the card's controls and can change kernel settings, so
+# whoever installs this runs it themselves, and removing the package leaves what they did in place.
+
+post_install() {
+  cat <<'EOF'
+To let this user change the card without root, once:
+  sudo rochgpu setup
+See where things stand at any time:
+  rochgpu setup --status
+EOF
+}
+
+post_remove() {
+  local rules=/etc/udev/rules.d/60-roch-gpu.rules modprobe=/etc/modprobe.d/roch-gpu.conf
+  if [ -e "$rules" ]; then
+    echo "Still in place: $rules, which hands the card's tuning files to a user at every boot."
+    echo "To take that back: sudo rm $rules"
+  fi
+  if [ -e "$modprobe" ]; then
+    echo "Still in place: $modprobe, which sets amdgpu's options (overdrive, keep awake)."
+    echo "To take that back: sudo rm $modprobe, rebuild the boot image, and reboot."
+  fi
+  return 0
+}
