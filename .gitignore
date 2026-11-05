@@ -3,6 +3,12 @@
 /target-*/
 dist/
 
+# what makepkg downloads and builds next to the PKGBUILD
+/packaging/arch/*
+!/packaging/arch/PKGBUILD
+!/packaging/arch/RochGPU.desktop
+!/packaging/arch/roch-gpu.install
+
 # IDE / editor
 .vs/
 .vscode/

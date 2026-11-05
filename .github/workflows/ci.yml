@@ -49,13 +49,23 @@ jobs:
 
   # The amdgpu backend and the same app on Linux. Its tests run against a fake /sys, so no card is
   # needed, and the system libraries for the window are all loaded at run time, so none are installed.
+  #
+  # A release's Linux binary comes from this job, and the glibc it is built against sets the oldest
+  # system it runs on. So it builds in a fixed container rather than on whatever the runner's image has
+  # moved to, with a cache of its own, because what a newer image built links against a newer glibc.
   build-and-test-linux:
     name: Build, test and package (linux)
     runs-on: ubuntu-latest
+    container: ubuntu:22.04
     defaults:
       run:
         shell: bash
     steps:
+      - name: Install the compiler, and what the actions below use
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl gcc git libc6-dev
+
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
@@ -63,6 +73,8 @@ jobs:
           components: clippy, rustfmt
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ubuntu-22.04
 
       - name: Format
         run: cargo fmt --all --check
@@ -74,6 +86,14 @@ jobs:
         run: |
           ldd dist/RochGPU
           ! ldd dist/RochGPU | grep -vE 'linux-vdso|ld-linux|libc\.so|libm\.so|libgcc_s\.so'
+
+      # The Linux guide promises this. A newer version here makes the binary refuse to start on an older
+      # system, or, if the version is a weak one, print a complaint there on every run.
+      - name: The binary runs on glibc 2.35
+        run: |
+          newest=$(readelf -V --wide dist/RochGPU | grep -oP 'Name: GLIBC_\K[0-9.]+' | sort -V | tail -1)
+          echo "Newest glibc version it asks for: $newest"
+          [ "$(printf '%s\n' "$newest" 2.35 | sort -V | tail -1)" = 2.35 ]
 
       - uses: actions/upload-artifact@v4
         with:

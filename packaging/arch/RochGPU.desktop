@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Roch GPU
+GenericName=GPU tuning
+Comment=GPU tuning and monitoring: clocks, voltage, power, fans
+Exec="/usr/bin/rochgpu"
+Icon=RochGPU
+Terminal=false
+Categories=Settings;HardwareSettings;
+StartupWMClass=RochGPU
