@@ -165,6 +165,13 @@ pub trait GpuBackend: Send {
         "No diagnostics for this backend.".into()
     }
 
+    /// What stands between this card and its controls right now, each worded as something a person
+    /// can act on: a driver setting that hides them, a permission that refuses them. Empty when
+    /// nothing does, which is every Windows card: there the driver and UAC have already answered.
+    fn notes(&mut self, _gpu: usize) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Read the editable V/F curve points (valid points only). Empty if unsupported.
     fn read_vf_curve(&mut self, _gpu: usize) -> Result<Vec<VfCurveSample>> {
         Ok(Vec::new())

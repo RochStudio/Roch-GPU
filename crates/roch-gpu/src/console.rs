@@ -119,9 +119,37 @@ mod imp {
 
 #[cfg(not(windows))]
 mod imp {
+    use std::sync::atomic::Ordering;
+
+    /// There is no console to borrow here. What this run does need is to end with its pipe: Rust
+    /// ignores SIGPIPE, and every line goes through a `let _ = writeln!`, so `monitor | head` would
+    /// otherwise carry on writing to nobody for ever.
     pub fn attach_to_output() -> Option<u32> {
+        // SAFETY: restores the default disposition, before any thread that could care exists.
+        unsafe {
+            libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+        }
         None
     }
+
     pub fn set_output_code_page(_cp: u32) {}
-    pub fn install_ctrl_c_handler() {}
+
+    extern "C" fn handler(signal: libc::c_int) {
+        // An atomic store is one of the few things a signal handler may safely do; signal() is another.
+        super::CTRL_C.store(true, Ordering::SeqCst);
+        // The first asks nicely. Should this run be stuck, a second one ends it the usual way.
+        // SAFETY: restores the default disposition, and signal() is async-signal-safe.
+        unsafe {
+            libc::signal(signal, libc::SIG_DFL);
+        }
+    }
+
+    pub fn install_ctrl_c_handler() {
+        let handler = handler as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        // SAFETY: `handler` is a static function that only touches an atomic.
+        unsafe {
+            libc::signal(libc::SIGINT, handler);
+            libc::signal(libc::SIGTERM, handler);
+        }
+    }
 }

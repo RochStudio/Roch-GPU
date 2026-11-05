@@ -203,6 +203,7 @@ pub fn log_line(path: &std::path::Path, line: &str) {
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
         let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let _ = writeln!(f, "{now}  {line}");
+        roch_core::services::profile_store::storage_root::restore_owner(path);
     }
 }
 

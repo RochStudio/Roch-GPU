@@ -25,6 +25,28 @@ No AMD code or headers are included. `crates/roch-amd` is an independently writt
 values and structure layouts are AMD's published interface
 (https://gpuopen-librariesandsdks.github.io/adl/).
 
+## Linux amdgpu driver
+
+No kernel code is included. `crates/roch-amdgpu` reads and writes the sysfs files the amdgpu driver
+publishes, as documented in the Linux kernel's own
+[GPU power and thermal documentation](https://docs.kernel.org/gpu/amdgpu/thermal.html); the layout of
+`gpu_metrics` is the public `struct gpu_metrics_v1_3` from `kgd_pp_interface.h`.
+
+## LACT
+
+- **Upstream:** https://github.com/ilya-zlobintsev/LACT (MIT)
+
+No code from LACT is included. It was read as a reference for how amdgpu's overdrive files are driven
+in practice, notably that cards whose fans belong to the power management firmware take their fan
+control through `fan_curve` and not `pwm1`.
+
+## egui's built-in fonts (Linux builds)
+
+A Linux machine can have no fonts at all, so the Linux build compiles in egui's default fonts as its
+last resort: Hack (MIT and the Bitstream Vera licence), Ubuntu Light (Ubuntu Font Licence 1.0), Noto
+Emoji (SIL OFL 1.1), emoji-icon-font (MIT and SIL OFL 1.1) and egui's own icon font. The Windows build
+does not include them. Their licence texts ship with the `epaint_default_fonts` crate.
+
 ## RadeonTuner
 
 - **Upstream:** https://github.com/dumbie/RadeonTuner

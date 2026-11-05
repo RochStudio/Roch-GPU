@@ -4,6 +4,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::Result;
 
+/// What cargo calls the app on this platform.
+pub const BINARY: &str = if cfg!(windows) { "RochGPU.exe" } else { "RochGPU" };
+
 trait Runner {
     fn cargo(&mut self, root: &Path, args: &[&str]) -> Result<()>;
     fn smoke(&mut self, exe: &Path, appdata: &Path) -> Result<()>;
@@ -73,12 +76,12 @@ impl Drop for Scratch {
 fn package(source: &Path, destination: &Path, runner: &mut impl Runner) -> Result<()> {
     let scratch = Scratch::new()?;
     // Validate a private copy before touching any existing published executable.
-    let staged = scratch.0.join("RochGPU.exe");
+    let staged = scratch.0.join(BINARY);
     std::fs::copy(source, &staged).map_err(|e| format!("Could not stage {}: {e}", source.display()))?;
     runner.smoke(&staged, &scratch.0.join("appdata"))?;
     let folder = destination.parent().ok_or("Invalid output path")?;
     std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
-    let pending = folder.join(format!(".RochGPU-pending-{}.exe", std::process::id()));
+    let pending = folder.join(format!(".RochGPU-pending-{}{}", std::process::id(), std::env::consts::EXE_SUFFIX));
     std::fs::copy(&staged, &pending).map_err(|e| e.to_string())?;
     if let Err(error) = std::fs::rename(&pending, destination) {
         let _ = std::fs::remove_file(&pending);
@@ -106,7 +109,7 @@ pub fn run(args: &[String]) -> Result<()> {
     let target = if target.is_relative() { root.join(target) } else { target };
     let mut runner = ProcessRunner;
     steps(root, &mut runner)?;
-    package(&target.join("release/RochGPU.exe"), &folder.join("RochGPU.exe"), &mut runner)
+    package(&target.join("release").join(BINARY), &folder.join(BINARY), &mut runner)
 }
 
 #[cfg(test)]

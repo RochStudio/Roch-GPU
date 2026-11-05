@@ -33,6 +33,9 @@ pub fn is_elevated() -> bool {
     }
 }
 
+/// There is nothing to elevate to on Linux: the window runs as the person who opened it, because a
+/// root GUI on Wayland is more trouble than the permission it buys. `rochgpu setup` hands this user
+/// the tuning files instead, and a refused write says so.
 #[cfg(not(windows))]
 pub fn is_elevated() -> bool {
     true
@@ -40,6 +43,7 @@ pub fn is_elevated() -> bool {
 
 /// The argument string for the relaunch: arguments containing a space are quoted, the rest pass
 /// through (the C# joined them the same way).
+#[cfg(any(windows, test))]
 pub fn join_args(args: &[String]) -> String {
     args.iter().map(|a| if a.contains(' ') { format!("\"{a}\"") } else { a.clone() }).collect::<Vec<_>>().join(" ")
 }

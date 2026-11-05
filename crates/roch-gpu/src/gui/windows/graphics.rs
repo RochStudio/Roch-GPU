@@ -36,7 +36,7 @@ impl GraphicsWindow {
         let builder = self
             .chrome
             .builder("Roch GPU — Graphics", vec2(620.0, 600.0), w.icon, Placement::RightOfOwner, w.main_rect)
-            .with_min_inner_size(vec2(560.0, 480.0))
+            .with_min_inner_size(self.chrome.min_size(vec2(560.0, 480.0)))
             .with_taskbar(false);
         ctx.show_viewport_immediate(Self::id(), builder, |ui, _class: ViewportClass| {
             let closed = self.chrome.frame(ui.ctx(), w.dark);

@@ -5,6 +5,7 @@ use std::sync::{Arc, OnceLock};
 use eframe::egui::{self, IconData};
 
 pub const ICON_PNG: &[u8] = include_bytes!("../../assets/icon.png");
+#[cfg(any(windows, test))]
 pub const ICO: &[u8] = include_bytes!("../../assets/RochGPU.ico");
 
 /// Decode a PNG to (rgba, width, height).
@@ -16,6 +17,7 @@ pub fn png_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
 
 /// The frame of an .ico closest to `size` px, decoded. Only PNG-compressed frames are read (the
 /// shipped icon stores every frame that way).
+#[cfg(any(windows, test))]
 pub fn ico_frame_rgba(ico: &[u8], size: u32) -> Option<(Vec<u8>, u32, u32)> {
     let u16_at = |o: usize| ico.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
     let u32_at = |o: usize| ico.get(o..o + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));

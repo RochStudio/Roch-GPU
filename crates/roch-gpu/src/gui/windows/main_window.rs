@@ -445,7 +445,11 @@ fn profile_bar(ui: &mut Ui, vm: &mut MainViewModel, actions: &mut Vec<MainAction
                     ui.spacing_mut().item_spacing.x = 6.0;
                     let mut on = vm.apply_on_startup();
                     if widgets::checkbox(ui, &mut on, "Startup", !busy)
-                        .on_hover_text("Apply this profile automatically at Windows logon")
+                        .on_hover_text(if cfg!(windows) {
+                            "Apply this profile automatically at Windows logon"
+                        } else {
+                            "Apply this profile automatically at logon"
+                        })
                         .changed()
                     {
                         vm.set_apply_on_startup(on);

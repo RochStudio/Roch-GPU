@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/roch-core", "crates/roch-nvidia", "crates/roch-amd", "crates/roch-intel", "crates/roch-gpu", "xtask"]
+members = ["crates/roch-core", "crates/roch-nvidia", "crates/roch-amd", "crates/roch-amdgpu", "crates/roch-intel", "crates/roch-gpu", "xtask"]
 
 [workspace.package]
 version = "1.1.1"
@@ -14,11 +14,13 @@ roch-core = { path = "crates/roch-core" }
 roch-nvidia = { path = "crates/roch-nvidia" }
 roch-amd = { path = "crates/roch-amd" }
 roch-intel = { path = "crates/roch-intel" }
+roch-amdgpu = { path = "crates/roch-amdgpu" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 sha2 = "0.10"
 libloading = "0.8"
+libc = "0.2"
 winreg = "0.55"
 windows-sys = { version = "0.59" }
 

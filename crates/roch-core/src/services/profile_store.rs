@@ -20,6 +20,8 @@ impl ProfileStore {
         let root = root.unwrap_or_else(storage_root::resolve);
         let store = Self { root };
         fs::create_dir_all(store.profiles_directory())?;
+        storage_root::restore_owner(store.root_directory());
+        storage_root::restore_owner(&store.profiles_directory());
         Ok(store)
     }
 
@@ -73,6 +75,7 @@ impl ProfileStore {
         let tmp = PathBuf::from(format!("{}.tmp", target.display()));
         fs::write(&tmp, json)?;
         fs::rename(&tmp, &target)?;
+        storage_root::restore_owner(&target);
         Ok(())
     }
 
@@ -95,6 +98,7 @@ impl ProfileStore {
 
     pub fn save_settings(&self, s: &AppSettings) -> Result<()> {
         fs::write(self.settings_path(), to_indented_json(s)?)?;
+        storage_root::restore_owner(&self.settings_path());
         Ok(())
     }
 
@@ -131,12 +135,71 @@ pub fn sanitize_file_name(name: &str) -> String {
 /// outright would orphan every saved profile and the recorded rail defaults, so the old folder is
 /// moved across once.
 pub mod storage_root {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     pub fn app_data() -> PathBuf {
-        std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| {
-            std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")).unwrap_or_else(|| PathBuf::from("."))
-        })
+        std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(config_home)
+    }
+
+    /// The per-user config folder. Under sudo that is still the person who asked: root has no profiles
+    /// of its own, and `sudo rochgpu apply-profile` should find theirs.
+    pub fn config_home() -> PathBuf {
+        if let Some(invoker) = invoker() {
+            return invoker.home.join(".config");
+        }
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    /// Who ran `sudo` or `pkexec`.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Invoker {
+        pub name: String,
+        pub uid: u32,
+        pub gid: u32,
+        pub home: PathBuf,
+    }
+
+    /// This line of /etc/passwd, when it is the user with this number.
+    pub fn parse_passwd_line(line: &str, uid: u32) -> Option<Invoker> {
+        let mut fields = line.split(':');
+        let name = fields.next()?;
+        let (found, gid) = (fields.nth(1)?.parse::<u32>().ok()?, fields.next()?.parse::<u32>().ok()?);
+        let home = fields.nth(1)?;
+        (found == uid).then(|| Invoker { name: name.to_string(), uid, gid, home: PathBuf::from(home) })
+    }
+
+    /// The person behind this process, when it is root on someone's behalf. `None` otherwise, which is
+    /// every run on Windows.
+    #[cfg(not(windows))]
+    pub fn invoker() -> Option<Invoker> {
+        use std::os::unix::fs::MetadataExt;
+        // /proc/self belongs to the effective user, and asking it needs no unsafe code.
+        if std::fs::metadata("/proc/self").ok()?.uid() != 0 {
+            return None;
+        }
+        let uid = std::env::var("SUDO_UID").or_else(|_| std::env::var("PKEXEC_UID")).ok()?.trim().parse().ok()?;
+        let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
+        passwd.lines().find_map(|line| parse_passwd_line(line, uid))
+    }
+
+    #[cfg(windows)]
+    pub fn invoker() -> Option<Invoker> {
+        None
+    }
+
+    /// Give a file made under sudo back to the person it belongs to. A settings file left owned by
+    /// root would quietly stop saving on every later run without sudo.
+    pub fn restore_owner(path: &Path) {
+        #[cfg(not(windows))]
+        if let Some(invoker) = invoker() {
+            let _ = std::os::unix::fs::chown(path, Some(invoker.uid), Some(invoker.gid));
+        }
+        #[cfg(windows)]
+        let _ = path;
     }
 
     pub fn resolve() -> PathBuf {
